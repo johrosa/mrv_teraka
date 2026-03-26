@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/plugins/mrv_teraka" >
+        <file>icon.png</file>
+        <file>login_icon.svg</file>
+    </qresource>
+</RCC>

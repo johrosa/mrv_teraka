@@ -1,0 +1,47 @@
+# This file contains metadata for your plugin.
+
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=MRV Teraka
+qgisMinimumVersion=3.0
+description=plugin for the mrv team in iTeraka
+version=0.1
+author=iTeraka
+email=rosajohar@gmail.com
+
+about=Le plugin QGIS est un outil dédié à l’équipe MRV permettant de charger, vérifier et valider les données spatiales (bosquets, observations, arbres) avant leur intégration définitive dans la base de production. Il facilite le contrôle topologique, la correction des erreurs et la certification des données. Seules les informations validées via le plugin sont utilisées pour la facturation et le suivi des performances.
+
+tracker=http://bugs
+repository=http://repo
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=no
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=python
+
+homepage=http://homepage
+category=Plugins
+icon=icon.png
+# experimental flag
+experimental=False
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+Category of the plugin: Raster, Vector, Database or Web
+# category=
+
+# If the plugin can run on QGIS Server.
+server=False
+
