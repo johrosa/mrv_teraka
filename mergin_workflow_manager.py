@@ -221,13 +221,13 @@ class MerginDataMerger:
     def __init__(self, postgrest_client):
         self.postgrest = postgrest_client
 
-    def detect_conflicts(self, original, collected):
+    def detect_conflicts(self, original, collected, pk_field='id'):
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
         # Entrées supprimées
-        original_ids = {item.get('id') for item in original}
-        collected_ids = {item.get('id') for item in collected}
+        original_ids = {item.get(pk_field) for item in original}
+        collected_ids = {item.get(pk_field) for item in collected}
 
         deleted_ids = original_ids - collected_ids
         conflicts.append({
@@ -246,8 +246,8 @@ class MerginDataMerger:
 
         # Entrées modifiées
         for coll_item in collected:
-            item_id = coll_item.get('id')
-            orig_item = next((o for o in original if o.get('id') == item_id), None)
+            item_id = coll_item.get(pk_field)
+            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
@@ -259,7 +259,7 @@ class MerginDataMerger:
 
         return conflicts
 
-    def merge(self, table, original, collected, strategy='merge'):
+    def merge(self, table, original, collected, strategy='merge', pk_field='id'):
         """
         Fusionne les données
 
@@ -268,11 +268,12 @@ class MerginDataMerger:
             original: Données originales
             collected: Données collectées
             strategy: 'merge' | 'replace' | 'manual'
+            pk_field: Nom du champ clé primaire
 
         Returns:
             Résultats de la fusion
         """
-        conflicts = self.detect_conflicts(original, collected)
+        conflicts = self.detect_conflicts(original, collected, pk_field=pk_field)
         results = {
             'table': table,
             'strategy': strategy,
@@ -284,7 +285,7 @@ class MerginDataMerger:
         if strategy == 'merge':
             # Fusion intelligente
             for item in collected:
-                action = self._merge_item(table, item)
+                action = self._merge_item(table, item, pk_field=pk_field)
                 results['actions'].append(action)
 
         elif strategy == 'replace':
@@ -299,17 +300,17 @@ class MerginDataMerger:
 
         return results
 
-    def _merge_item(self, table, item):
+    def _merge_item(self, table, item, pk_field='id'):
         """Fusionne un article unique"""
-        item_id = item.get('id')
+        item_id = item.get(pk_field)
 
         try:
             # Vérifier si existe
-            result = self.postgrest.select(table, filters={f'id': f'eq.{item_id}'})
+            result = self.postgrest.select(table, filters={f'{pk_field}': f'eq.{item_id}'})
 
             if result:
                 # Mettre à jour
-                self.postgrest.update(table, item, {'id': f'eq.{item_id}'})
+                self.postgrest.update(table, item, {f'{pk_field}': f'eq.{item_id}'})
                 return {'type': 'updated', 'id': item_id}
             else:
                 # Insérer

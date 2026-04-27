@@ -188,41 +188,149 @@ class DataValidationDialog(QDialog):
         """Onglet validation ligne par ligne"""
         layout = QVBoxLayout()
         
+        # Section: Tableau de validation
+        table_label = QLabel("<b>Validation détaillée - Cliquez sur une ligne pour voir les détails:</b>")
+        layout.addWidget(table_label)
+
         self.table_validation = QTableWidget()
-        self.table_validation.setColumnCount(5)
+        self.table_validation.setColumnCount(6)
         self.table_validation.setHorizontalHeaderLabels([
-            "ID", "Statut", "Changements", "Action", "Commentaire"
+            "ID", "Statut", "Changements", "Type", "Action", "Commentaire"
         ])
-        
+        self.table_validation.itemSelectionChanged.connect(self.on_validation_row_selected)
+
         # Remplir les données de validation
         self.table_validation.setRowCount(len(self.collected_data))
         for row, item in enumerate(self.collected_data):
-            self.table_validation.setItem(row, 0, QTableWidgetItem(str(item.get('id', ''))))
-            
-            # Statut
+            item_id = item.get('id', row)
+
+            # Colonne ID
+            id_item = QTableWidgetItem(str(item_id))
+            self.table_validation.setItem(row, 0, id_item)
+
+            # Colonne Statut (combo)
             status_combo = QComboBox()
             status_combo.addItems(['✓ Valide', '⚠️ À Réviser', '❌ Rejeter', '🆕 Nouveau'])
+
+            # Choisir le statut par défaut
+            if row >= len(self.original_data):
+                status_combo.setCurrentIndex(3)  # Nouveau
+            else:
+                status_combo.setCurrentIndex(0)  # Valide
+
             self.table_validation.setCellWidget(row, 1, status_combo)
             
-            # Changements (détectés automatiquement)
+            # Colonne Changements (détectés automatiquement)
             changes = self.detect_changes(item, row)
-            self.table_validation.setItem(row, 2, QTableWidgetItem(changes))
-            
-            # Action
+            changes_item = QTableWidgetItem(changes)
+
+            # Colorer selon le type de changement
+            if "🆕" in changes:
+                changes_item.setBackground(QColor(200, 255, 200))  # Vert
+            elif "❌" in changes:
+                changes_item.setBackground(QColor(255, 100, 100))  # Rouge
+            elif "✏️" in changes or "⚠️" in changes:
+                changes_item.setBackground(QColor(255, 220, 100))  # Orange
+
+            self.table_validation.setItem(row, 2, changes_item)
+
+            # Colonne Type (avant/apr)
+            type_label = "NOUVEAU" if row >= len(self.original_data) else "MODIFIÉ" if self.has_changes(item, row) else "INCHANGÉ"
+            type_item = QTableWidgetItem(type_label)
+            self.table_validation.setItem(row, 3, type_item)
+
+            # Colonne Action (combo)
             action_combo = QComboBox()
             action_combo.addItems(['Fusionner', 'Remplacer', 'Archiver', 'Manuel'])
-            self.table_validation.setCellWidget(row, 3, action_combo)
-            
-            # Commentaire
+            self.table_validation.setCellWidget(row, 4, action_combo)
+
+            # Colonne Commentaire
             comment = QLineEdit()
-            self.table_validation.setCellWidget(row, 4, comment)
-        
+            comment.setPlaceholderText("Ajouter un commentaire...")
+            self.table_validation.setCellWidget(row, 5, comment)
+
+        self.table_validation.resizeColumnsToContents()
         layout.addWidget(self.table_validation)
         
+        # Section: Détails du changement
+        detail_label = QLabel("<b>Détails de la ligne sélectionnée:</b>")
+        layout.addWidget(detail_label)
+
+        self.detail_text = QTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setMaximumHeight(150)
+        layout.addWidget(self.detail_text)
+
         widget = QGroupBox("Validation Détaillée")
         widget.setLayout(layout)
         return widget
     
+    def has_changes(self, item, index):
+        """Vérifie si l'item a des changements"""
+        if index >= len(self.original_data):
+            return True
+
+        original = self.original_data[index]
+        for key in item.keys():
+            if key not in original or original[key] != item[key]:
+                return True
+
+        return False
+
+    def on_validation_row_selected(self):
+        """Affiche les détails de la ligne sélectionnée"""
+        selected_rows = self.table_validation.selectedIndexes()
+        if not selected_rows:
+            return
+
+        row = selected_rows[0].row()
+        if 0 <= row < len(self.collected_data):
+            self.show_row_details(row)
+
+    def show_row_details(self, row):
+        """Affiche les détails complets d'une ligne"""
+        collected_item = self.collected_data[row]
+        original_item = self.original_data[row] if row < len(self.original_data) else {}
+
+        # Construire le texte détaillé
+        details = []
+        details.append(f"{'='*60}")
+        details.append(f"ENREGISTREMENT #{row + 1} - ID: {collected_item.get('id', 'N/A')}")
+        details.append(f"{'='*60}")
+
+        # Déterminer le type
+        if row >= len(self.original_data):
+            details.append("TYPE: 🆕 NOUVEL ENREGISTREMENT")
+        else:
+            details.append(f"TYPE: {'✏️ MODIFIÉ' if self.has_changes(collected_item, row) else '✓ INCHANGÉ'}")
+
+        details.append("")
+        details.append("CHANGEMENTS DÉTECTÉS:")
+        details.append("-" * 60)
+
+        # Récupérer tous les champs
+        all_keys = set(list(collected_item.keys()) + list(original_item.keys()))
+
+        change_count = 0
+        for key in sorted(all_keys):
+            original_value = original_item.get(key)
+            collected_value = collected_item.get(key)
+
+            if original_value != collected_value:
+                change_count += 1
+                details.append(f"\n🔹 CHAMP: {key}")
+                details.append(f"   AVANT:  {original_value}")
+                details.append(f"   APRÈS:  {collected_value}")
+
+        if change_count == 0:
+            details.append("\n✓ Aucun changement détecté")
+        else:
+            details.append(f"\n\nTOTAL: {change_count} champ(s) modifié(s)")
+
+        details.append(f"{'='*60}")
+
+        self.detail_text.setText("\n".join(details))
+
     def populate_table_from_data(self, table, data):
         """Remplit une table à partir des données"""
         if not data:
@@ -274,32 +382,96 @@ class DataValidationDialog(QDialog):
     def show_comparison(self, index):
         """Affiche la comparaison avant/après pour un enregistrement"""
         if 0 <= index < len(self.collected_data):
-            item = self.collected_data[index]
-            
-            # Remplir après
-            self.table_after.clear()
-            self.table_after.setRowCount(len(item))
-            for row, (key, value) in enumerate(item.items()):
-                self.table_after.setItem(row, 0, QTableWidgetItem(key))
-                self.table_after.setItem(row, 1, QTableWidgetItem(str(value)))
-    
+            collected_item = self.collected_data[index]
+            original_item = self.original_data[index] if index < len(self.original_data) else {}
+
+            # Récupérer tous les champs (before + after)
+            all_keys = set(list(collected_item.keys()) + list(original_item.keys()))
+            all_keys = sorted(list(all_keys))
+
+            # Configuration des tableaux
+            self.table_before.setColumnCount(2)
+            self.table_before.setHorizontalHeaderLabels(["Champ", "Valeur"])
+            self.table_before.setRowCount(len(all_keys))
+
+            self.table_after.setColumnCount(2)
+            self.table_after.setHorizontalHeaderLabels(["Champ", "Valeur"])
+            self.table_after.setRowCount(len(all_keys))
+
+            # Remplir les tableaux avec détection des changements
+            for row, key in enumerate(all_keys):
+                original_value = original_item.get(key, "[absent]")
+                collected_value = collected_item.get(key, "[absent]")
+
+                # Formater les valeurs
+                original_str = str(original_value) if not isinstance(original_value, (dict, list)) else json.dumps(original_value)[:100]
+                collected_str = str(collected_value) if not isinstance(collected_value, (dict, list)) else json.dumps(collected_value)[:100]
+
+                # Table AVANT (original)
+                label_item_before = QTableWidgetItem(key)
+                value_item_before = QTableWidgetItem(original_str)
+                self.table_before.setItem(row, 0, label_item_before)
+                self.table_before.setItem(row, 1, value_item_before)
+
+                # Table APRÈS (collecté)
+                label_item_after = QTableWidgetItem(key)
+                value_item_after = QTableWidgetItem(collected_str)
+                self.table_after.setItem(row, 0, label_item_after)
+                self.table_after.setItem(row, 1, value_item_after)
+
+                # Colorer si changement détecté
+                if original_value != collected_value:
+                    # Colorer les deux tables
+                    before_color = QColor(255, 200, 200)  # Rose clair
+                    after_color = QColor(200, 255, 200)   # Vert clair
+
+                    value_item_before.setBackground(before_color)
+                    value_item_after.setBackground(after_color)
+                    label_item_before.setBackground(before_color)
+                    label_item_after.setBackground(after_color)
+
+                    # Font bold pour les modifications
+                    font = label_item_before.font()
+                    font.setBold(True)
+                    label_item_before.setFont(font)
+                    label_item_after.setFont(font)
+                    value_item_before.setFont(font)
+                    value_item_after.setFont(font)
+
+            # Redimensionner les colonnes
+            self.table_before.resizeColumnsToContents()
+            self.table_after.resizeColumnsToContents()
+
     def detect_changes(self, item, index):
         """Détecte les changements par rapport à l'original"""
         if index >= len(self.original_data):
-            return "🆕 Nouveau"
-        
+            return "🆕 NOUVEAU"
+
         original = self.original_data[index]
         changes = []
         
-        for key in item.keys():
-            if key not in original or original[key] != item[key]:
-                changes.append(key)
-        
+        # Comparer tous les champs
+        all_keys = set(list(item.keys()) + list(original.keys()))
+        for key in sorted(all_keys):
+            original_value = original.get(key)
+            item_value = item.get(key)
+
+            if key not in original:
+                changes.append(f"🆕 {key}")
+            elif key not in item:
+                changes.append(f"🗑️ {key}")
+            elif original_value != item_value:
+                changes.append(f"✏️ {key}")
+
         if not changes:
-            return "✓ Aucun changement"
-        
-        return f"⚠️ {', '.join(changes[:3])}"
-    
+            return "✓ INCHANGÉ"
+
+        # Afficher max 3 changements
+        summary = ", ".join(changes[:3])
+        if len(changes) > 3:
+            summary += f" ... +{len(changes) - 3}"
+        return summary
+
     def auto_merge(self):
         """Fusion automatique des données"""
         reply = QMessageBox.question(

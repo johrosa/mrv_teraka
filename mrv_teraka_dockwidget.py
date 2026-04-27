@@ -25,7 +25,11 @@
 import os
 
 from qgis.PyQt import QtGui, QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.PyQt.QtWidgets import (
+    QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget
+)
+from qgis.PyQt.QtGui import QColor, QIcon
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'mrv_teraka_dockwidget_base.ui'))
@@ -34,16 +38,129 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     closingPlugin = pyqtSignal()
+    auth_requested = pyqtSignal()
+    logout_requested = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, plugin=None, parent=None):
         """Constructor."""
         super(MrvTerakaDockWidget, self).__init__(parent)
-        # Set up the user interface from Designer.
-        # After setupUI you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://doc.qt.io/qt-5/designer-using-a-ui-file.html
-        # #widgets-and-dialogs-with-auto-connect
+        self.plugin = plugin
         self.setupUi(self)
+        self.setup_auth_ui()
+        self.setup_connections()
+
+    def setup_auth_ui(self):
+        """Ajoute les éléments d'authentification en haut de la dock"""
+        # Créer un widget pour la barre d'authentification
+        auth_widget = QWidget()
+        auth_layout = QHBoxLayout()
+
+        # Indicateur de statut
+        self.status_label = QLabel("● Déconnecté")
+        self.status_label.setStyleSheet("color: red; font-weight: bold;")
+        auth_layout.addWidget(self.status_label)
+
+        # Informations utilisateur
+        self.user_label = QLabel("Pas connecté")
+        self.user_label.setStyleSheet("color: gray; font-size: 9px;")
+        auth_layout.addWidget(self.user_label)
+
+        auth_layout.addStretch()
+
+        # Bouton de déconnexion
+        self.logout_button = QPushButton("Déconnecter")
+        self.logout_button.setMaximumWidth(100)
+        self.logout_button.setEnabled(False)
+        auth_layout.addWidget(self.logout_button)
+
+        auth_widget.setLayout(auth_layout)
+
+        # Insérer en haut de la dock (avant toolBox)
+        main_layout = self.dockWidgetContents.layout()
+        for i in reversed(range(main_layout.rowCount())):
+            for j in range(main_layout.columnCount()):
+                item = main_layout.itemAtPosition(i, j)
+                if item:
+                    widget = item.widget()
+                    if widget:
+                        main_layout.removeWidget(widget)
+                        main_layout.addWidget(widget, i + 1, j)
+
+        main_layout.addWidget(auth_widget, 0, 0)
+
+    def setup_connections(self):
+        """Connecte les signaux aux slots"""
+        if not self.plugin:
+            return
+
+        try:
+            # Boutons de comparaison et chargement
+            self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
+            self.loadDbButton.clicked.connect(self.plugin.load_database_data)
+            self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
+
+            # Actions Mergin et validation
+            try:
+                self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
+                self.uploadToMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
+                self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
+                self.refreshFromMerginButton.clicked.connect(self.plugin.refresh_data_via_mergin)
+                self.syncToBackendButton.clicked.connect(self.plugin.sync_validated_data_to_backend)
+                self.openValidationButton.clicked.connect(self.plugin.open_validation_form)
+            except AttributeError:
+                pass  # UI older version may not contain these widgets
+
+            # Nouvelles fonctionnalités - Si dispoes dans l'UI
+            try:
+                self.loadCollectedButton.clicked.connect(self.plugin.load_collected_data)
+            except AttributeError:
+                pass
+
+            # Bouton de déconnexion
+            self.logout_button.clicked.connect(self.on_logout_clicked)
+        except AttributeError as e:
+            print(f"Erreur de connexion: {e}")
+
+    def on_logout_clicked(self):
+        """Gère le clic sur le bouton de déconnexion"""
+        self.logout_requested.emit()
+
+    def set_authenticated(self, username=None, api_url=None):
+        """Affiche l'état connecté"""
+        self.status_label.setText("● Connecté")
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+
+        if username and api_url:
+            self.user_label.setText(f"{username} @ {api_url}")
+
+        self.logout_button.setEnabled(True)
+
+        # Activer les boutons d'action
+        self.compareButton.setEnabled(True)
+        self.loadDbButton.setEnabled(True)
+        self.prepareMerginButton.setEnabled(True)
+        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton'):
+            if hasattr(self, attr):
+                getattr(self, attr).setEnabled(True)
+        if hasattr(self, 'openValidationButton'):
+            self.openValidationButton.setEnabled(False)
+        if hasattr(self, 'syncToBackendButton'):
+            self.syncToBackendButton.setEnabled(False)
+
+    def set_unauthenticated(self):
+        """Affiche l'état déconnecté"""
+        self.status_label.setText("● Déconnecté")
+        self.status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.user_label.setText("Pas connecté")
+        self.logout_button.setEnabled(False)
+
+        # Désactiver les boutons d'action
+        self.compareButton.setEnabled(False)
+        self.loadDbButton.setEnabled(False)
+        self.prepareMerginButton.setEnabled(False)
+        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'):
+            if hasattr(self, attr):
+                getattr(self, attr).setEnabled(False)
 
     def closeEvent(self, event):
         self.closingPlugin.emit()

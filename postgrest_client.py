@@ -2,27 +2,58 @@
 """
 PostgREST Client pour le plugin MrvTeraka
 Fournit une abstraction pour interagir avec une API PostgREST
+Compatible avec PostgREST pur et PostgREST via Django
 """
 
 import json
 import urllib.request
 import urllib.error
 from typing import Any, Dict, List, Optional
+from enum import Enum
+import re
+
+
+class PostgRESTMode(Enum):
+    """Modes de PostgREST supportés"""
+    STANDALONE = "standalone"      # PostgREST pur (http://localhost:3000)
+    DJANGO = "django"              # PostgREST via Django (http://localhost:8000/api)
 
 
 class PostgREST:
-    """Client PostgREST avec authentification JWT"""
+    """Client PostgREST avec authentification JWT
     
-    def __init__(self, api_base_url: str):
+    Compatible avec:
+    - PostgREST standalone (http://localhost:3000)
+    - PostgREST via Django (http://localhost:8000/api)
+    """
+    
+    def __init__(self, api_base_url: str, mode: PostgRESTMode = PostgRESTMode.DJANGO):
         """
         Initialise le client PostgREST
         
         Args:
-            api_base_url: URL de base de l'API PostgREST (ex: http://localhost:3000)
+            api_base_url: URL de base de l'API PostgREST
+                - Standalone: http://localhost:3000
+                - Django: http://localhost:8000 ou http://localhost:8000/api
+            mode: Mode de PostgREST (STANDALONE ou DJANGO)
         """
         self.api_base_url = api_base_url.rstrip('/')
+        self.mode = mode
         self.jwt_token: Optional[str] = None
         self.headers: Dict[str, str] = {}
+        self.postgrest_api_url = self.api_base_url
+
+        # Pour Django, normaliser l'URL de proxy vers /api/data
+        if mode == PostgRESTMode.DJANGO:
+            self.postgrest_api_url = self._normalize_django_postgrest_url()
+    
+    def _normalize_django_postgrest_url(self) -> str:
+        """Retourne l'URL de base Django pour les requêtes PostgREST proxyées."""
+        if self.api_base_url.endswith('/api/data'):
+            return self.api_base_url
+        if self.api_base_url.endswith('/api'):
+            return f"{self.api_base_url}/data"
+        return f"{self.api_base_url}/api/data"
     
     def set_auth_token(self, token: str):
         """Définit le jeton JWT pour l'authentification"""
@@ -39,7 +70,8 @@ class PostgREST:
         endpoint: str,
         params: Optional[Dict[str, str]] = None,
         data: Optional[Dict[str, Any]] = None,
-        timeout: int = 20
+        timeout: int = 20,
+        show_error_ui: bool = False
     ) -> Dict[str, Any]:
         """
         Effectue une requête HTTP vers PostgREST
@@ -50,7 +82,8 @@ class PostgREST:
             params: Paramètres de requête QueryString
             data: Données à envoyer (pour POST/PATCH)
             timeout: Timeout en secondes
-        
+            show_error_ui: Si True, affiche l'erreur Django avec rendu HTML
+
         Returns:
             Réponse JSON parsée
         
@@ -58,7 +91,14 @@ class PostgREST:
             RuntimeError: Si la requête échoue
         """
         # Construire l'URL
-        url = f"{self.api_base_url}/{endpoint.lstrip('/')}"
+        endpoint = endpoint.strip('/')
+        if self.mode == PostgRESTMode.DJANGO:
+            if endpoint.startswith('api/data/'):
+                endpoint = endpoint[len('api/data/'):]
+            elif endpoint.startswith('data/'):
+                endpoint = endpoint[len('data/'):]
+
+        url = f"{self.postgrest_api_url}/{endpoint}" if endpoint else self.postgrest_api_url
         
         # Ajouter les querystring s'ils existent
         if params:
@@ -87,12 +127,49 @@ class PostgREST:
                 
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8', errors='ignore')
+
+            # Si show_error_ui est True, afficher avec rendu HTML
+            if show_error_ui:
+                self._show_django_error(e, url, error_body, method=method)
+
             raise RuntimeError(
                 f"PostgREST HTTP {e.code} : {e.reason}\n{error_body}"
             ) from e
         except Exception as exc:
             raise RuntimeError(f"Erreur PostgREST : {exc}") from exc
     
+    def _show_django_error(self, http_error, url, error_body, method='GET'):
+        """Affiche une erreur Django avec rendu HTML"""
+        try:
+            from django_error_viewer import show_django_error
+
+            # Extraire les en-têtes
+            headers = dict(http_error.headers)
+
+            # Déterminer si c'est du HTML
+            is_html = 'text/html' in headers.get('Content-Type', '').lower()
+            if not is_html:
+                is_html = bool(re.search(r'<(?:!DOCTYPE|html|head|body)', error_body, re.IGNORECASE))
+
+            html_content = error_body if is_html else ""
+            text_content = "" if is_html else error_body
+
+            # Afficher le visionneur
+            show_django_error(
+                parent=None,
+                error_code=http_error.code,
+                error_reason=http_error.reason,
+                html_content=html_content,
+                error_message=(error_body if not is_html else ""),
+                url=url,
+                method=method.upper(),
+                headers=headers,
+                text_content=text_content
+            )
+        except Exception:
+            # Fallback si django_error_viewer n'est pas disponible
+            pass
+
     def select(
         self,
         table: str,
@@ -130,7 +207,7 @@ class PostgREST:
         if offset:
             params['offset'] = str(offset)
         
-        result = self._make_request('GET', table, params=params)
+        result = self._make_request('GET', table, params=params, show_error_ui=True)
         return result if isinstance(result, list) else [result] if result else []
     
     def insert(self, table: str, data: Dict[str, Any] | List[Dict[str, Any]]):
@@ -146,7 +223,7 @@ class PostgREST:
         """
         # Normaliser en liste
         payload = data if isinstance(data, list) else [data]
-        return self._make_request('POST', table, data=payload)
+        return self._make_request('POST', table, data=payload, show_error_ui=True)
     
     def update(
         self,
@@ -165,7 +242,7 @@ class PostgREST:
         Returns:
             Enregistrements mis à jour
         """
-        return self._make_request('PATCH', table, params=filters, data=data)
+        return self._make_request('PATCH', table, params=filters, data=data, show_error_ui=True)
     
     def delete(self, table: str, filters: Dict[str, str]):
         """
@@ -178,7 +255,7 @@ class PostgREST:
         Returns:
             Réponse du serveur
         """
-        return self._make_request('DELETE', table, params=filters)
+        return self._make_request('DELETE', table, params=filters, show_error_ui=True)
     
     def call_rpc(
         self,
@@ -195,34 +272,190 @@ class PostgREST:
         Returns:
             Résultat de la fonction
         """
-        return self._make_request('POST', f'rpc/{function_name}', data=params or {})
+        return self._make_request('POST', f'rpc/{function_name}', data=params or {}, show_error_ui=True)
+
+    def verify_token(self) -> bool:
+        """Vérifie que le jeton actuel est accepté par le serveur."""
+        if not self.jwt_token:
+            return False
+        try:
+            self._make_request('GET', '', show_error_ui=False)
+            return True
+        except RuntimeError as exc:
+            message = str(exc)
+            if 'HTTP 401' in message or 'HTTP 403' in message:
+                return False
+            return True
+        except Exception:
+            return True
+
+    # Versions avec support UI pour les erreurs
+    def select_with_ui(
+        self,
+        table: str,
+        select: str = "*",
+        filters: Optional[Dict[str, str]] = None,
+        order: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Récupère des enregistrements avec affichage UI des erreurs Django
+
+        Args:
+            table: Nom de la table
+            select: Colonnes à sélectionner (par défaut *)
+            filters: Filtres (ex: {"id": "eq.5", "name": "ilike.*foo*"})
+            order: Ordre (ex: "id.desc")
+            limit: Limite d'enregistrements
+            offset: Offset pour pagination
+
+        Returns:
+            Liste des enregistrements
+        """
+        params = {'select': select}
+
+        if filters:
+            params.update(filters)
+
+        if order:
+            params['order'] = order
+
+        if limit:
+            params['limit'] = str(limit)
+
+        if offset:
+            params['offset'] = str(offset)
+
+        try:
+            result = self._make_request('GET', table, params=params, show_error_ui=True)
+            return result if isinstance(result, list) else [result] if result else []
+        except RuntimeError as e:
+            raise
+
+    def insert_with_ui(self, table: str, data: Dict[str, Any] | List[Dict[str, Any]]):
+        """
+        Insère des enregistrements avec affichage UI des erreurs Django
+
+        Args:
+            table: Nom de la table
+            data: Données à insérer (dict ou liste de dicts)
+
+        Returns:
+            Données insérées
+        """
+        payload = data if isinstance(data, list) else [data]
+        try:
+            return self._make_request('POST', table, data=payload, show_error_ui=True)
+        except RuntimeError as e:
+            raise
+
+    def update_with_ui(
+        self,
+        table: str,
+        data: Dict[str, Any],
+        filters: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Met à jour des enregistrements avec affichage UI des erreurs Django
+
+        Args:
+            table: Nom de la table
+            data: Données à mettre à jour
+            filters: Filtres pour identifier les enregistrements
+
+        Returns:
+            Enregistrements mis à jour
+        """
+        try:
+            return self._make_request('PATCH', table, params=filters, data=data, show_error_ui=True)
+        except RuntimeError as e:
+            raise
+
+    def delete_with_ui(self, table: str, filters: Dict[str, str]):
+        """
+        Supprime des enregistrements avec affichage UI des erreurs Django
+
+        Args:
+            table: Nom de la table
+            filters: Filtres pour identifier les enregistrements
+
+        Returns:
+            Réponse du serveur
+        """
+        try:
+            return self._make_request('DELETE', table, params=filters, show_error_ui=True)
+        except RuntimeError as e:
+            raise
+
+    def call_rpc_with_ui(
+        self,
+        function_name: str,
+        params: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """
+        Appelle une fonction RPC PostgREST avec affichage UI des erreurs Django
+
+        Args:
+            function_name: Nom de la fonction
+            params: Paramètres de la fonction
+
+        Returns:
+            Résultat de la fonction
+        """
+        try:
+            return self._make_request('POST', f'rpc/{function_name}', data=params or {}, show_error_ui=True)
+        except RuntimeError as e:
+            raise
 
 
 class PostgRESTAuthenticator:
-    """Gère l'authentification avec un backend JWT"""
+    """Gère l'authentification avec un backend JWT
     
-    def __init__(self, api_base_url: str):
+    Compatible avec:
+    - PostgREST standalone (http://localhost:3000)
+    - PostgREST via Django (http://localhost:8000/api)
+    """
+    
+    def __init__(self, api_base_url: str, mode: PostgRESTMode = PostgRESTMode.STANDALONE):
         """
         Initialise l'authentificateur
         
         Args:
             api_base_url: URL de base de l'API
+            mode: Mode de PostgREST (STANDALONE ou DJANGO)
         """
         self.api_base_url = api_base_url.rstrip('/')
+        self.mode = mode
+        self.auth_api_url = self.api_base_url
+        
+        # Pour Django, normaliser l'URL d'authentification vers /api
+        if mode == PostgRESTMode.DJANGO:
+            self.auth_api_url = self._normalize_django_auth_url()
     
+    def _normalize_django_auth_url(self) -> str:
+        """Retourne l'URL d'authentification Django (sans /data)."""
+        if self.api_base_url.endswith('/api/data'):
+            return self.api_base_url[:-len('/data')]
+        if self.api_base_url.endswith('/api'):
+            return self.api_base_url
+        return f"{self.api_base_url}/api"
+
     def authenticate(
         self,
         username: str,
         password: str,
-        login_endpoint: str = "auth/signin"
+        login_endpoint: Optional[str] = None
     ) -> str:
         """
         Authentifie un utilisateur et récupère un jeton JWT
         
         Args:
-            username: Nom d'utilisateur
+            username: Nom d'utilisateur ou email
             password: Mot de passe
-            login_endpoint: Endpoint de connexion (peut varier selon le backend)
+            login_endpoint: Endpoint de connexion personnalisé
+                - Par défaut pour STANDALONE: 'auth/signin'
+                - Par défaut pour DJANGO: 'api/auth/signin' ou 'auth/token'
         
         Returns:
             Jeton JWT
@@ -230,15 +463,35 @@ class PostgRESTAuthenticator:
         Raises:
             RuntimeError: Si l'authentification échoue
         """
-        login_url = f"{self.api_base_url}/{login_endpoint}"
-        payload = json.dumps({
-            'email': username,  # PostgREST utilise généralement 'email'
-            'password': password
-        }).encode('utf-8')
+        # Endpoint par défaut selon le mode
+        if login_endpoint is None:
+            if self.mode == PostgRESTMode.DJANGO:
+                login_endpoint = 'login/'  # Sera ajouté à /api automatiquement
+            else:
+                login_endpoint = 'auth/signin'
+        
+        login_endpoint = str(login_endpoint).lstrip('/')
+        login_url = f"{self.auth_api_url}/{login_endpoint}"
+        
+        # Format du payload selon le mode
+        if self.mode == PostgRESTMode.DJANGO:
+            # Django utilise généralement 'username' ou 'email'
+            payload = {
+                'username': username,
+                'password': password
+            }
+        else:
+            # PostgREST standalone utilise 'email'
+            payload = {
+                'email': username,
+                'password': password
+            }
+        
+        payload_json = json.dumps(payload).encode('utf-8')
         
         request = urllib.request.Request(
             login_url,
-            data=payload,
+            data=payload_json,
             headers={'Content-Type': 'application/json'},
             method='POST',
         )
@@ -249,17 +502,43 @@ class PostgRESTAuthenticator:
                 response_data = json.loads(response_text)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8', errors='ignore')
+            if self.mode == PostgRESTMode.DJANGO:
+                try:
+                    from django_error_viewer import show_django_error
+
+                    show_django_error(
+                        parent=None,
+                        error_code=e.code,
+                        error_reason=e.reason,
+                        html_content=error_body,
+                        url=login_url,
+                        method='POST',
+                        headers=dict(e.headers),
+                        text_content=error_body
+                    )
+                except Exception:
+                    pass
             raise RuntimeError(
                 f"Authentification échouée: {e.code} {e.reason}\n{error_body}"
             ) from e
         except Exception as exc:
             raise RuntimeError(f"Erreur d'authentification: {exc}") from exc
         
-        # PostgREST retourne généralement {access_token: "..."}
-        # Mais certains backends retournent {token: "..."}
-        token = response_data.get('access_token') or response_data.get('token')
+        # Extraire le jeton selon le format de réponse
+        # PostgREST standalone: {access_token: "..."}
+        # Django Token: {token: "..."}
+        # Django JWT: {access: "...", refresh: "..."}
+        token = (
+            response_data.get('access_token') or
+            response_data.get('access') or
+            response_data.get('token')
+        )
+        
         if not token:
             raise RuntimeError('Réponse invalide: jeton JWT introuvable')
         
         return token
+
+
+
 

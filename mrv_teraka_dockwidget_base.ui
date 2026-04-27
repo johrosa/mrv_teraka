@@ -11,24 +11,14 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MRV Teraka</string>
+   <string>Mrv Teraka</string>
   </property>
   <widget class="QWidget" name="dockWidgetContents">
    <layout class="QGridLayout" name="gridLayout">
-    <item row="1" column="1">
-     <layout class="QGridLayout" name="gridLayout_2"/>
-    </item>
-    <item row="2" column="1">
-     <widget class="QLabel" name="label">
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-    </item>
     <item row="1" column="0">
      <widget class="QLabel" name="label_2">
       <property name="text">
-       <string>TERAKA</string>
+       <string>MRV Teraka</string>
       </property>
      </widget>
     </item>
@@ -37,32 +27,6 @@
       <property name="currentIndex">
        <number>2</number>
       </property>
-      <widget class="QWidget" name="page">
-       <property name="geometry">
-        <rect>
-         <x>0</x>
-         <y>0</y>
-         <width>437</width>
-         <height>509</height>
-        </rect>
-       </property>
-       <attribute name="label">
-        <string>Page 1</string>
-       </attribute>
-      </widget>
-      <widget class="QWidget" name="page_2">
-       <property name="geometry">
-        <rect>
-         <x>0</x>
-         <y>0</y>
-         <width>437</width>
-         <height>509</height>
-        </rect>
-       </property>
-       <attribute name="label">
-        <string>Page 2</string>
-       </attribute>
-      </widget>
       <widget class="QWidget" name="page_3">
        <property name="geometry">
         <rect>
@@ -73,103 +37,145 @@
         </rect>
        </property>
        <attribute name="label">
-        <string>Page</string>
+        <string>Flux de travail</string>
        </attribute>
-       <widget class="QTreeWidget" name="treeWidget">
-        <property name="geometry">
-         <rect>
-          <x>-1</x>
-          <y>0</y>
-          <width>441</width>
-          <height>161</height>
-         </rect>
-        </property>
-        <column>
-         <property name="text">
-          <string>1</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>New Column</string>
-         </property>
-        </column>
+       <layout class="QVBoxLayout" name="verticalLayoutPage3">
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QLabel" name="labelCompareTitle">
+          <property name="text">
+           <string>Comparer projet et base</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QLineEdit" name="endpointLineEdit">
+          <property name="placeholderText">
+           <string>Endpoint API (ex: data/communes)</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <layout class="QHBoxLayout" name="buttonLayout">
+          <item>
+           <widget class="QPushButton" name="compareButton">
+            <property name="text">
+             <string>Comparer</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="loadDbButton">
+            <property name="text">
+             <string>Charger base</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QTextEdit" name="comparisonResultsTextEdit">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>Résultats de comparaison</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QLabel" name="labelMerginTitle">
+          <property name="text">
+           <string>Préparer et synchroniser Mergin</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QLineEdit" name="merginEndpointLineEdit">
+          <property name="placeholderText">
+           <string>Endpoint API pour Mergin (ex: data/arbres)</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QPushButton" name="prepareMerginButton">
+          <property name="text">
+           <string>Préparer Mergin</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <widget class="QTextEdit" name="merginResultsTextEdit">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>Statut Mergin</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>New Item</string>
-         </property>
+         <layout class="QHBoxLayout" name="merginActionLayout">
+          <item>
+           <widget class="QPushButton" name="loadFromMerginButton">
+            <property name="text">
+             <string>Importer Mergin</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="uploadToMerginButton">
+            <property name="text">
+             <string>Exporter Mergin</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
-       </widget>
+        <item>
+         <layout class="QHBoxLayout" name="refreshActionLayout">
+          <item>
+           <widget class="QPushButton" name="refreshFromApiButton">
+            <property name="text">
+             <string>Rafraîchir API</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="refreshFromMerginButton">
+            <property name="text">
+             <string>Rafraîchir Mergin</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QPushButton" name="syncToBackendButton">
+          <property name="text">
+           <string>Synchroniser</string>
+          </property>
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="openValidationButton">
+          <property name="text">
+           <string>Valider import</string>
+          </property>
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </widget>
     </item>

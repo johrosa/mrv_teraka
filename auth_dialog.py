@@ -4,6 +4,7 @@ Formulaire d'authentification pour MrvTeraka
 Gère la connexion et la déconnexion aux APIs PostgREST/Django
 """
 
+import re
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
     QPushButton, QCheckBox, QMessageBox, QComboBox
@@ -157,8 +158,27 @@ class AuthDialog(QDialog):
     def show_error(self, message):
         """Affiche un message d'erreur"""
         self.status_label.setText(f"❌ {message}")
+
+        if message and re.search(r'<(?:!doctype|html|head|body|div|span|p|h1|h2|h3)', message, re.IGNORECASE):
+            try:
+                from .django_error_viewer import show_django_error
+                show_django_error(
+                    parent=self,
+                    error_code=500,
+                    error_reason='Erreur d\'authentification',
+                    html_content=message,
+                    error_message='',
+                    url='',
+                    method='POST',
+                    headers={},
+                    text_content=message
+                )
+                return
+            except Exception:
+                pass
+
         QMessageBox.critical(self, "Erreur d'authentification", message)
-    
+
     def show_success(self, message):
         """Affiche un message de succès"""
         self.status_label.setText(f"✓ {message}")

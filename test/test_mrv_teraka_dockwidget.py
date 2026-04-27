@@ -14,7 +14,7 @@ __copyright__ = 'Copyright 2026, iTeraka'
 
 import unittest
 
-from qgis.PyQt.QtGui import QDockWidget
+from qgis.PyQt.QtWidgets import QDockWidget
 
 from mrv_teraka_dockwidget import MrvTerakaDockWidget
 
@@ -39,7 +39,6 @@ class MrvTerakaDockWidgetTest(unittest.TestCase):
         pass
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(MrvTerakaDialogTest)
+    suite = unittest.makeSuite(MrvTerakaDockWidgetTest)
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)
-

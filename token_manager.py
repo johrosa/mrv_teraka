@@ -4,6 +4,7 @@ Gestionnaire de jeton JWT pour MrvTeraka
 Gère le stockage, validation et expiration des jetons
 """
 
+import base64
 import json
 import time
 from datetime import datetime, timedelta
@@ -41,11 +42,11 @@ class TokenManager:
         self.api_url = api_url
         self.mode = mode
 
-        # Calculer le temps d'expiration (par défaut 24h)
+        # Calculer le temps d'expiration en fonction du JWT si possible
         if expires_in:
             expiry_time = time.time() + expires_in
         else:
-            expiry_time = time.time() + (24 * 3600)
+            expiry_time = self._get_jwt_expiry(token) or (time.time() + (24 * 3600))
 
         self.token_expiry = expiry_time
 
@@ -73,6 +74,14 @@ class TokenManager:
         if not token or not api_url:
             return None, None, None
 
+        # Si l'expiration n'est pas présente, essayer de la lire depuis le JWT
+        if token_expiry is None:
+            jwt_expiry = self._get_jwt_expiry(token)
+            if jwt_expiry:
+                token_expiry = jwt_expiry
+                self.settings.setValue('token/expiry', token_expiry)
+                self.settings.sync()
+
         # Vérifier si le jeton a expiré
         if token_expiry and time.time() > token_expiry:
             self.clear_token()
@@ -97,11 +106,36 @@ class TokenManager:
             if not token:
                 return False
 
+        if self.token_expiry is None:
+            jwt_expiry = self._get_jwt_expiry(self.token)
+            if jwt_expiry:
+                self.token_expiry = jwt_expiry
+                self.settings.setValue('token/expiry', self.token_expiry)
+                self.settings.sync()
+
         if self.token_expiry and time.time() > self.token_expiry:
             self.clear_token()
             return False
 
         return True
+
+    def _get_jwt_expiry(self, token: str):
+        """Retourne le timestamp d'expiration du JWT s'il est disponible."""
+        try:
+            parts = token.split('.')
+            if len(parts) != 3:
+                return None
+
+            payload = parts[1]
+            padding = '=' * (-len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload + padding).decode('utf-8')
+            payload_data = json.loads(decoded)
+            exp = payload_data.get('exp')
+            if isinstance(exp, (int, float)):
+                return float(exp)
+        except Exception:
+            return None
+        return None
 
     def get_token_info(self):
         """

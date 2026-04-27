@@ -4,7 +4,7 @@
 
 [general]
 name=MRV Teraka
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.36
 description=plugin for the mrv team in iTeraka
 version=0.1
 author=iTeraka
