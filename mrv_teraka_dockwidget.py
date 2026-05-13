@@ -90,37 +90,29 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         for w in widgets:
             main_layout.removeWidget(w)
 
-        # Réorganiser
-        main_layout.addWidget(self.auth_group, 0, 0)
-
-        # Groupe Gestion Base de données
+        # Configuration des groupes de widgets
         self.db_group = QGroupBox("Données PostgREST")
         db_layout = QVBoxLayout()
         db_layout.addWidget(self.endpointLineEdit)
-
         db_btns = QHBoxLayout()
         self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
         db_btns.addWidget(self.compareButton)
         db_btns.addWidget(self.loadDbButton)
         db_layout.addLayout(db_btns)
-
         db_layout.addWidget(QLabel("Résultats :"))
+        self.comparisonResultsTextEdit.setMaximumHeight(100)
         db_layout.addWidget(self.comparisonResultsTextEdit)
         self.db_group.setLayout(db_layout)
-        main_layout.addWidget(self.db_group, 1, 0)
 
-        # Groupe Workflow Mergin
         self.mergin_group = QGroupBox("Flux Mergin Map")
         mergin_layout = QVBoxLayout()
-
         l1 = QLabel("1. Préparation")
         l1.setStyleSheet("font-weight: bold; color: #1976d2;")
         mergin_layout.addWidget(l1)
         mergin_layout.addWidget(self.merginEndpointLineEdit)
         self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
         mergin_layout.addWidget(self.prepareMerginButton)
-
         l2 = QLabel("2. Collecte & Import")
         l2.setStyleSheet("font-weight: bold; color: #1976d2;")
         mergin_layout.addWidget(l2)
@@ -130,7 +122,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         mergin_btns.addWidget(self.loadFromMerginButton)
         mergin_btns.addWidget(self.refreshFromMerginButton)
         mergin_layout.addLayout(mergin_btns)
-
         l3 = QLabel("3. Validation & Fusion")
         l3.setStyleSheet("font-weight: bold; color: #1976d2;")
         mergin_layout.addWidget(l3)
@@ -138,12 +129,24 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.syncToBackendButton.setToolTip("Envoyer les modifications validées vers la base de données finale")
         mergin_layout.addWidget(self.openValidationButton)
         mergin_layout.addWidget(self.syncToBackendButton)
-
         mergin_layout.addWidget(QLabel("Statut Mergin :"))
+        self.merginResultsTextEdit.setMaximumHeight(100)
         mergin_layout.addWidget(self.merginResultsTextEdit)
-
         self.mergin_group.setLayout(mergin_layout)
-        main_layout.addWidget(self.mergin_group, 2, 0)
+
+        # Réorganiser le layout de façon robuste en détectant son type
+        is_grid = isinstance(main_layout, QtWidgets.QGridLayout)
+        if is_grid:
+            main_layout.addWidget(self.auth_group, 0, 0)
+            main_layout.addWidget(self.db_group, 1, 0)
+            main_layout.addWidget(self.mergin_group, 2, 0)
+            main_layout.setRowStretch(3, 1)  # Pousser tout vers le haut
+        else:
+            main_layout.addWidget(self.auth_group)
+            main_layout.addWidget(self.db_group)
+            main_layout.addWidget(self.mergin_group)
+            if hasattr(main_layout, 'addStretch'):
+                main_layout.addStretch()
 
         # Cacher la toolBox originale qui est maintenant redondante
         if hasattr(self, 'toolBox'):

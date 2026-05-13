@@ -138,6 +138,7 @@ class DataValidationDialog(QDialog):
         layout = QVBoxLayout()
         
         self.table_collected = QTableWidget()
+        self.table_collected.setAlternatingRowColors(True)
         self.table_collected.setColumnCount(0)
         self.populate_table_from_data(self.table_collected, self.collected_data)
         
@@ -216,6 +217,7 @@ class DataValidationDialog(QDialog):
     def _setup_validation_table(self):
         """Configure et remplit le tableau de validation."""
         table = QTableWidget()
+        table.setAlternatingRowColors(True)
         table.setColumnCount(6)
         table.setHorizontalHeaderLabels(["ID", "Statut", "Changements", "Type", "Action", "Commentaire"])
         table.itemSelectionChanged.connect(self.on_validation_row_selected)

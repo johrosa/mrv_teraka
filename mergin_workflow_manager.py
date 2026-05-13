@@ -332,16 +332,24 @@ class MerginDataMerger:
         elif strategy == 'replace':
             # Stratégie radicale : supprimer tout et réinsérer
             try:
-                # Attention: DELETE sans filtre peut être dangereux, dépend des permissions API
-                # Ici on fait un delete par IDs existants pour être plus sûr
-                original_ids = [o.get(pk_field) for o in original]
-                for o_id in original_ids:
-                    self.postgrest.delete(table, {pk_field: f'eq.{o_id}'})
+                # On utilise 'in' pour supprimer en une seule requête si possible
+                original_ids = [str(o.get(pk_field)) for o in original if o.get(pk_field) is not None]
+                if original_ids:
+                    # Syntaxe PostgREST: id=in.(1,2,3)
+                    id_list = ",".join(original_ids)
+                    self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
 
                 self.postgrest.insert(table, collected)
                 results['actions'].append({'type': 'replace_all', 'count': len(collected)})
             except Exception as e:
-                results['actions'].append({'type': 'error', 'msg': str(e)})
+                # Fallback sur suppression individuelle si le 'in.' échoue (ex: trop long)
+                try:
+                    for o_id in [o.get(pk_field) for o in original]:
+                        self.postgrest.delete(table, {pk_field: f'eq.{o_id}'})
+                    self.postgrest.insert(table, collected)
+                    results['actions'].append({'type': 'replace_all', 'count': len(collected)})
+                except Exception as e2:
+                    results['actions'].append({'type': 'error', 'msg': str(e2)})
 
         return results
 
