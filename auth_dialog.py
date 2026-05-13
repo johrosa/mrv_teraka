@@ -46,7 +46,9 @@ class AuthDialog(QDialog):
         # Mode API
         if self.api_modes:
             mode_layout = QHBoxLayout()
-            mode_layout.addWidget(QLabel("Mode API:"))
+            l_mode = QLabel("Mode API:")
+            l_mode.setMinimumWidth(120)
+            mode_layout.addWidget(l_mode)
             self.mode_combo = QComboBox()
             self.mode_combo.addItems(list(self.api_modes.keys()))
             mode_layout.addWidget(self.mode_combo)
@@ -54,7 +56,9 @@ class AuthDialog(QDialog):
         
         # URL de base
         url_layout = QHBoxLayout()
-        url_layout.addWidget(QLabel("URL API:"))
+        l_url = QLabel("URL API:")
+        l_url.setMinimumWidth(120)
+        url_layout.addWidget(l_url)
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("http://localhost:8000")
         self.url_input.setText("http://localhost:8000")
@@ -63,7 +67,9 @@ class AuthDialog(QDialog):
         
         # Email/Username
         user_layout = QHBoxLayout()
-        user_layout.addWidget(QLabel("Email/Utilisateur:"))
+        l_user = QLabel("Email/Utilisateur:")
+        l_user.setMinimumWidth(120)
+        user_layout.addWidget(l_user)
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("user@example.com")
         user_layout.addWidget(self.username_input)
@@ -71,7 +77,9 @@ class AuthDialog(QDialog):
         
         # Mot de passe
         pass_layout = QHBoxLayout()
-        pass_layout.addWidget(QLabel("Mot de passe:"))
+        l_pass = QLabel("Mot de passe:")
+        l_pass.setMinimumWidth(120)
+        pass_layout.addWidget(l_pass)
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("••••••••")
         self.password_input.setEchoMode(QLineEdit.Password)
