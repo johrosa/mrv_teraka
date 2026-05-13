@@ -46,9 +46,13 @@ def normalize_layer_mapping(layer_name: str, mapping) -> Dict[str, str]:
 
 
 def load_layer_mapping(plugin_dir: str) -> Dict[str, Dict[str, str]]:
-    """Charge les correspondances depuis un fichier JSON optionnel."""
+    """
+    Charge les correspondances depuis le fichier JSON.
+    Inclut une validation de base pour s'assurer que le format est correct.
+    """
     config_path = os.path.join(plugin_dir, MAPPING_FILENAME)
     if not os.path.exists(config_path):
+        # Logique de repli ou création par défaut si nécessaire
         return {}
 
     try:
@@ -57,7 +61,18 @@ def load_layer_mapping(plugin_dir: str) -> Dict[str, Dict[str, str]]:
             raw_mappings = content.get('mappings', {})
             normalized = {}
             for layer_name, mapping in raw_mappings.items():
-                normalized[str(layer_name)] = normalize_layer_mapping(str(layer_name), mapping)
+                norm = normalize_layer_mapping(str(layer_name), mapping)
+                normalized[str(layer_name)] = norm
             return normalized
-    except Exception:
+    except Exception as e:
+        # En cas d'erreur JSON, on retourne un dictionnaire vide pour éviter le crash
+        print(f"Erreur lors du chargement du mapping : {e}")
         return {}
+
+def get_geometric_mappings(mappings: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    """Retourne uniquement les tables ayant un champ géométrie configuré."""
+    return {
+        name: config
+        for name, config in mappings.items()
+        if config.get('geom_field')
+    }

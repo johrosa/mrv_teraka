@@ -97,9 +97,12 @@
       </property>
       <layout class="QVBoxLayout" name="verticalLayoutDB">
        <item>
-        <widget class="QLineEdit" name="endpointLineEdit">
+        <widget class="QComboBox" name="endpointComboBox">
+         <property name="editable">
+          <bool>true</bool>
+         </property>
          <property name="placeholderText">
-          <string>Endpoint API (ex: data/communes)</string>
+          <string>Sélectionner ou saisir une table...</string>
          </property>
         </widget>
        </item>
@@ -170,9 +173,12 @@
         </widget>
        </item>
        <item>
-        <widget class="QLineEdit" name="merginEndpointLineEdit">
+        <widget class="QComboBox" name="merginEndpointComboBox">
+         <property name="editable">
+          <bool>true</bool>
+         </property>
          <property name="placeholderText">
-          <string>Endpoint API pour Mergin</string>
+          <string>Sélectionner table terrain...</string>
          </property>
         </widget>
        </item>

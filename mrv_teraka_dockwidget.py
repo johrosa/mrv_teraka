@@ -57,6 +57,13 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.user_label = self.userLabel
         self.logout_button = self.logoutButton
 
+        # Mapping des nouveaux ComboBox
+        self.endpointLineEdit = self.endpointComboBox.lineEdit()
+        self.merginEndpointLineEdit = self.merginEndpointComboBox.lineEdit()
+
+        # Remplir les listes déroulantes depuis le mapping
+        self.populate_table_lists()
+
         # Configuration des icônes et info-bulles (ergonomie)
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
         self.logout_button.setToolTip("Se déconnecter de l'API et effacer le jeton local")
@@ -71,6 +78,17 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.refreshFromMerginButton.setToolTip("Mettre à jour les données à partir du stockage Mergin")
         self.openValidationButton.setToolTip("Ouvrir le formulaire de validation pour réviser les données collectées")
         self.syncToBackendButton.setToolTip("Envoyer les modifications validées vers la base de données finale")
+
+    def populate_table_lists(self):
+        """Remplit les ComboBox avec les tables disponibles dans le mapping."""
+        mappings = self.plugin.load_layer_mappings()
+        tables = sorted(list(mappings.keys()))
+
+        self.endpointComboBox.clear()
+        self.endpointComboBox.addItems(tables)
+
+        self.merginEndpointComboBox.clear()
+        self.merginEndpointComboBox.addItems(tables)
 
     def setup_connections(self):
         """Connecte les signaux aux slots du plugin."""
