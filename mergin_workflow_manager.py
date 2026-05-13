@@ -35,15 +35,15 @@ class MerginWorkflowManager:
 
     def create_project(self, project_name, source_table, description=""):
         """
-        Crée un nouveau projet Mergin
+        Crée un nouveau projet Mergin et initialise son dossier.
 
         Args:
-            project_name: Nom du projet
-            source_table: Table source de l'API
-            description: Description du projet
+            project_name (str): Nom convivial du projet.
+            source_table (str): Nom de la ou des tables sources (séparées par des virgules).
+            description (str): Description optionnelle.
 
         Returns:
-            project_id (str)
+            str: L'ID unique du projet généré.
         """
         project_id = f"{project_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
         project_path = os.path.join(self.projects_dir, project_id)
@@ -67,7 +67,13 @@ class MerginWorkflowManager:
         return project_id
 
     def save_exported_data(self, project_id, data):
-        """Sauvegarde les données exportées"""
+        """
+        Sauvegarde les données initiales extraites de l'API.
+
+        Args:
+            project_id (str): ID du projet Mergin.
+            data (dict): Données JSON exportées.
+        """
         project_path = os.path.join(self.projects_dir, project_id)
         export_file = os.path.join(project_path, 'exported_data.json')
 
@@ -261,17 +267,17 @@ class MerginDataMerger:
 
     def merge(self, table, original, collected, strategy='merge', pk_field='id'):
         """
-        Fusionne les données
+        Fusionne les données collectées avec la base de données.
 
         Args:
-            table: Nom de la table
-            original: Données originales
-            collected: Données collectées
-            strategy: 'merge' | 'replace' | 'manual'
-            pk_field: Nom du champ clé primaire
+            table: Nom de la table API.
+            original: Liste des données originales (snapshot).
+            collected: Liste des données collectées (validées).
+            strategy: 'merge' (intelligent) ou 'replace' (tout écraser).
+            pk_field: Champ de clé primaire.
 
         Returns:
-            Résultats de la fusion
+            dict: Résultats détaillés de la fusion.
         """
         conflicts = self.detect_conflicts(original, collected, pk_field=pk_field)
         results = {
@@ -283,40 +289,59 @@ class MerginDataMerger:
         }
 
         if strategy == 'merge':
-            # Fusion intelligente
+            # 1. Identifier les actions basées sur les conflits détectés
+            modified_ids = {c['id'] for c in conflicts if c['type'] == 'modified'}
+            added_ids = set()
+            for c in conflicts:
+                if c['type'] == 'added':
+                    added_ids.update(c['ids'])
+
+            # 2. Traiter les ajouts en batch
+            items_to_insert = [item for item in collected if item.get(pk_field) in added_ids]
+            if items_to_insert:
+                try:
+                    self.postgrest.insert(table, items_to_insert)
+                    for item in items_to_insert:
+                        results['actions'].append({'type': 'inserted', 'id': item.get(pk_field)})
+                except Exception as e:
+                    results['actions'].append({'type': 'error', 'msg': f"Erreur insertion batch: {str(e)}"})
+
+            # 3. Traiter les modifications (individuellement car PATCH nécessite souvent des filtres distincts)
             for item in collected:
-                action = self._merge_item(table, item, pk_field=pk_field)
-                results['actions'].append(action)
+                item_id = item.get(pk_field)
+                if item_id in modified_ids:
+                    try:
+                        self.postgrest.update(table, item, {pk_field: f'eq.{item_id}'})
+                        results['actions'].append({'type': 'updated', 'id': item_id})
+                    except Exception as e:
+                        results['actions'].append({'type': 'error', 'id': item_id, 'error': str(e)})
+
+            # 4. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
+            deleted_ids = []
+            for c in conflicts:
+                if c['type'] == 'deleted':
+                    deleted_ids.extend(c['ids'])
+
+            for d_id in deleted_ids:
+                try:
+                    self.postgrest.delete(table, {pk_field: f'eq.{d_id}'})
+                    results['actions'].append({'type': 'deleted', 'id': d_id})
+                except Exception as e:
+                    results['actions'].append({'type': 'error', 'id': d_id, 'error': str(e)})
 
         elif strategy == 'replace':
-            # Remplacer toutes les données
-            results['actions'] = [
-                {
-                    'type': 'replace_all',
-                    'table': table,
-                    'count': len(collected)
-                }
-            ]
+            # Stratégie radicale : supprimer tout et réinsérer
+            try:
+                # Attention: DELETE sans filtre peut être dangereux, dépend des permissions API
+                # Ici on fait un delete par IDs existants pour être plus sûr
+                original_ids = [o.get(pk_field) for o in original]
+                for o_id in original_ids:
+                    self.postgrest.delete(table, {pk_field: f'eq.{o_id}'})
+
+                self.postgrest.insert(table, collected)
+                results['actions'].append({'type': 'replace_all', 'count': len(collected)})
+            except Exception as e:
+                results['actions'].append({'type': 'error', 'msg': str(e)})
 
         return results
-
-    def _merge_item(self, table, item, pk_field='id'):
-        """Fusionne un article unique"""
-        item_id = item.get(pk_field)
-
-        try:
-            # Vérifier si existe
-            result = self.postgrest.select(table, filters={f'{pk_field}': f'eq.{item_id}'})
-
-            if result:
-                # Mettre à jour
-                self.postgrest.update(table, item, {f'{pk_field}': f'eq.{item_id}'})
-                return {'type': 'updated', 'id': item_id}
-            else:
-                # Insérer
-                self.postgrest.insert(table, item)
-                return {'type': 'inserted', 'id': item_id}
-
-        except Exception as e:
-            return {'type': 'error', 'id': item_id, 'error': str(e)}
 

@@ -17,7 +17,7 @@ from .resources import *
 
 from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
-from .layer_utils import is_geojson, create_vector_layer_from_json, create_vector_layer_from_postgrest
+from .layer_utils import is_geojson, create_vector_layer
 
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
@@ -426,7 +426,7 @@ class MrvTeraka:
         for layer_name, mapping in project_endpoints.items():
             try:
                 db_data = self.postgrest.select(mapping['endpoint'])
-                layer = create_vector_layer_from_json(db_data, layer_name, mapping.get('geom_field', 'geom'))
+                layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field', 'geom'))
                 if layer and layer.isValid():
                     layer.setCustomProperty('postgrest:endpoint', mapping['endpoint'])
                     layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
@@ -590,7 +590,7 @@ class MrvTeraka:
                     else:
                         QMessageBox.critical(self.iface.mainWindow(), "Erreur", f"GéoJSON invalide pour {endpoint_value}.")
                 else:
-                    layer = create_vector_layer_from_json(db_data, display_name, geom_field)
+                    layer = create_vector_layer(db_data, display_name, geom_field)
                     if layer and layer.isValid():
                         layer.setCustomProperty('postgrest:endpoint', endpoint_value)
                         layer.setCustomProperty('postgrest:geom_field', geom_field)

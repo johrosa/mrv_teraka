@@ -7,15 +7,85 @@ import json
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsVectorLayer, QgsField, QgsFeature, QgsJsonUtils,
-    QgsGeometry, QgsMapLayer
+    QgsGeometry, QgsCoordinateReferenceSystem
 )
 
 def is_geojson(data):
-    """Vérifie si les données sont au format GeoJSON."""
+    """
+    Vérifie si les données sont au format GeoJSON (Feature ou FeatureCollection).
+
+    Args:
+        data: Données à vérifier.
+
+    Returns:
+        bool: True si c'est du GeoJSON.
+    """
     return isinstance(data, dict) and data.get('type') in ['FeatureCollection', 'Feature']
 
-def create_vector_layer_from_json(data, layer_name, geom_field='geom'):
-    """Crée une couche mémoire à partir d'un JSON avec détection du CRS."""
+def _extract_geometry(value):
+    """Extrait un objet géométrie d'une valeur (dict ou string JSON)."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return None
+
+def _detect_crs(geom_obj, fallback_crs="EPSG:4326"):
+    """
+    Détecte le CRS à partir d'un objet géométrie ou utilise un fallback.
+
+    Args:
+        geom_obj: Objet géométrie (dict).
+        fallback_crs: CRS à utiliser si non détecté.
+
+    Returns:
+        str: Chaîne de définition du CRS (ex: 'EPSG:4326').
+    """
+    if not isinstance(geom_obj, dict):
+        return fallback_crs
+
+    # Recherche dans l'objet géométrie (format PostGIS GeoJSON)
+    crs_info = geom_obj.get("crs")
+    if crs_info and crs_info.get("type") == "name":
+        try:
+            crs_name = crs_info["properties"]["name"]
+            if "EPSG" in crs_name.upper():
+                code = crs_name.split(":")[-1]
+                return f"EPSG:{code}"
+        except Exception:
+            pass
+
+    # Validation via QgsCoordinateReferenceSystem si possible (serait mieux mais on reste simple ici)
+    return fallback_crs
+
+def _detect_geom_type(geom_obj):
+    """Détecte le type de géométrie QGIS à partir d'un objet GeoJSON."""
+    if not isinstance(geom_obj, dict):
+        return "Point"
+
+    g_type = geom_obj.get('type', 'Point')
+    if 'Polygon' in g_type:
+        return "Polygon"
+    if 'Line' in g_type:
+        return "LineString"
+    return "Point"
+
+def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4326'):
+    """
+    Crée une couche mémoire QGIS à partir d'une liste de dictionnaires.
+
+    Args:
+        data: Liste de dictionnaires contenant les données.
+        layer_name: Nom de la couche à créer.
+        geom_field: Nom du champ contenant la géométrie.
+        default_crs: CRS par défaut si non détecté.
+
+    Returns:
+        QgsVectorLayer: La couche créée ou None en cas d'erreur.
+    """
     if not data:
         return None
 
@@ -25,102 +95,17 @@ def create_vector_layer_from_json(data, layer_name, geom_field='geom'):
 
     sample = items[0]
     geom_keys = [geom_field, 'geom', 'geometry']
-    geom_key = next((k for k in geom_keys if k in sample), None)
+    actual_geom_key = next((k for k in geom_keys if k in sample), None)
 
-    # --- Détection du CRS ---
-    crs = "EPSG:4326"  # fallback
-
-    if geom_key and isinstance(sample.get(geom_key), dict):
-        geom_obj = sample[geom_key]
-        crs_info = geom_obj.get("crs")
-        if crs_info and crs_info.get("type") == "name":
-            try:
-                crs_name = crs_info["properties"]["name"]
-                if "EPSG" in crs_name.upper():
-                    code = crs_name.split(":")[-1]
-                    crs = f"EPSG:{code}"
-            except Exception:
-                pass
-    elif isinstance(data, dict) and "crs" in data:
-        try:
-            crs_info = data["crs"]
-            if crs_info.get("type") == "name":
-                crs_name = crs_info["properties"]["name"]
-                if "EPSG" in crs_name.upper():
-                    code = crs_name.split(":")[-1]
-                    crs = f"EPSG:{code}"
-        except Exception:
-            pass
-
-    # --- Détection du type géométrique ---
+    # --- Analyse du premier élément pour configuration ---
+    crs = default_crs
     geom_type = "Point"
-    if geom_key and isinstance(sample[geom_key], dict):
-        g_type = sample[geom_key].get('type', 'Point')
-        if 'Polygon' in g_type:
-            geom_type = "Polygon"
-        elif 'Line' in g_type:
-            geom_type = "LineString"
 
-    uri = f"{geom_type}?crs={crs}"
-    layer = QgsVectorLayer(uri, layer_name, "memory")
-    pr = layer.dataProvider()
-
-    # --- Champs attributaires ---
-    fields = [
-        QgsField(k, QVariant.String)
-        for k in sample.keys()
-        if k not in geom_keys
-    ]
-    pr.addAttributes(fields)
-    layer.updateFields()
-
-    # --- Features ---
-    features = []
-    for item in items:
-        fet = QgsFeature(layer.fields())
-        attrs = [
-            str(item.get(k, ''))
-            for k in sample.keys()
-            if k not in geom_keys
-        ]
-        fet.setAttributes(attrs)
-
-        if geom_key and item.get(geom_key):
-            geom_json = json.dumps(item[geom_key])
-            geom = QgsJsonUtils.geometryFromGeoJson(geom_json)
-            if geom and not geom.isNull():
-                fet.setGeometry(geom)
-        features.append(fet)
-
-    pr.addFeatures(features)
-    layer.updateExtents()
-    return layer
-
-def create_vector_layer_from_postgrest(data, layer_name, geom_field='geom', crs="EPSG:4326"):
-    """Crée une couche QGIS à partir de données PostgREST avec ST_AsGeoJSON."""
-    if not data:
-        return None
-
-    items = data if isinstance(data, list) else [data]
-    if not items or not isinstance(items[0], dict):
-        return None
-
-    sample = items[0]
-    geom_key = geom_field if geom_field in sample else 'geom'
-
-    # --- Détection type géométrique ---
-    geom_type = "Unknown"
-    try:
-        first_geom = json.loads(sample[geom_key])
-        gtype = first_geom.get("type", "Point")
-        if "Polygon" in gtype:
-            geom_type = "Polygon"
-        elif "Line" in gtype:
-            geom_type = "LineString"
-        elif "Point" in gtype:
-            geom_type = "Point"
-    except Exception:
-        geom_type = "Point"
+    if actual_geom_key:
+        geom_val = _extract_geometry(sample.get(actual_geom_key))
+        if geom_val:
+            crs = _detect_crs(geom_val, default_crs)
+            geom_type = _detect_geom_type(geom_val)
 
     uri = f"{geom_type}?crs={crs}"
     layer = QgsVectorLayer(uri, layer_name, "memory")
@@ -128,25 +113,31 @@ def create_vector_layer_from_postgrest(data, layer_name, geom_field='geom', crs=
         return None
 
     pr = layer.dataProvider()
-    fields = [
-        QgsField(k, QVariant.String)
-        for k in sample.keys()
-        if k != geom_key
-    ]
+
+    # --- Configuration des champs ---
+    # On exclut le champ géométrie des attributs
+    attribute_keys = [k for k in sample.keys() if k != actual_geom_key]
+    fields = [QgsField(k, QVariant.String) for k in attribute_keys]
     pr.addAttributes(fields)
     layer.updateFields()
 
+    # --- Création des entités ---
     features = []
     for item in items:
         fet = QgsFeature(layer.fields())
-        attrs = [str(item.get(k, "")) for k in sample.keys() if k != geom_key]
+
+        # Attributs
+        attrs = [str(item.get(k, '')) for k in attribute_keys]
         fet.setAttributes(attrs)
-        try:
-            geom = QgsGeometry.fromGeoJson(item[geom_key])
-            if geom and not geom.isNull():
-                fet.setGeometry(geom)
-        except Exception:
-            continue
+
+        # Géométrie
+        if actual_geom_key:
+            geom_obj = _extract_geometry(item.get(actual_geom_key))
+            if geom_obj:
+                geom = QgsGeometry.fromGeoJson(json.dumps(geom_obj))
+                if geom and not geom.isNull():
+                    fet.setGeometry(geom)
+
         features.append(fet)
 
     pr.addFeatures(features)
