@@ -117,7 +117,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.logout_requested.emit()
 
     def set_authenticated(self, username=None, api_url=None):
-        """Affiche l'état connecté"""
+        """Affiche l'état connecté et active les contrôles."""
         self.status_label.setText("● Connecté")
         self.status_label.setStyleSheet("color: green; font-weight: bold;")
 
@@ -126,32 +126,49 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.logout_button.setEnabled(True)
 
-        # Activer les boutons d'action
+        # Activer les groupes et les listes
+        self.groupBoxDB.setEnabled(True)
+        self.groupBoxMergin.setEnabled(True)
+        self.endpointComboBox.setEnabled(True)
+        self.merginEndpointComboBox.setEnabled(True)
+
+        # Activer les boutons d'action de base
         self.compareButton.setEnabled(True)
         self.loadDbButton.setEnabled(True)
         self.pushProjectButton.setEnabled(True)
         self.prepareMerginButton.setEnabled(True)
-        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton'):
+
+        # Boutons de flux Mergin
+        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton'):
             if hasattr(self, attr):
                 getattr(self, attr).setEnabled(True)
+
+        # Ces boutons restent désactivés jusqu'à ce qu'une donnée soit prête
         if hasattr(self, 'openValidationButton'):
             self.openValidationButton.setEnabled(False)
         if hasattr(self, 'syncToBackendButton'):
             self.syncToBackendButton.setEnabled(False)
 
     def set_unauthenticated(self):
-        """Affiche l'état déconnecté"""
+        """Affiche l'état déconnecté et désactive les contrôles."""
         self.status_label.setText("● Déconnecté")
         self.status_label.setStyleSheet("color: red; font-weight: bold;")
         self.user_label.setText("Pas connecté")
         self.logout_button.setEnabled(False)
 
-        # Désactiver les boutons d'action
-        self.compareButton.setEnabled(False)
-        self.loadDbButton.setEnabled(False)
-        self.pushProjectButton.setEnabled(False)
-        self.prepareMerginButton.setEnabled(False)
-        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'):
+        # Désactiver les groupes et les listes
+        self.groupBoxDB.setEnabled(False)
+        self.groupBoxMergin.setEnabled(False)
+        self.endpointComboBox.setEnabled(False)
+        self.merginEndpointComboBox.setEnabled(False)
+
+        # Désactiver tous les boutons d'action
+        buttons = [
+            'compareButton', 'loadDbButton', 'pushProjectButton', 'prepareMerginButton',
+            'loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton',
+            'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'
+        ]
+        for attr in buttons:
             if hasattr(self, attr):
                 getattr(self, attr).setEnabled(False)
 

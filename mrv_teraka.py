@@ -325,12 +325,18 @@ class MrvTeraka:
     def update_auth_ui(self):
         """Met à jour l'interface pour afficher l'état connecté"""
         if self.auth_action:
+            try:
+                self.auth_action.triggered.disconnect()
+            except Exception:
+                pass
             self.auth_action.setText(self.tr(u'Déconnecter'))
-            self.auth_action.triggered.disconnect()
             self.auth_action.triggered.connect(self.logout)
         
         if self.dockwidget:
-            self.dockwidget.set_authenticated(self.current_username, self.api_base_url)
+            # S'assurer que les infos sont à jour avant d'activer les boutons
+            username = self.current_username or "Utilisateur"
+            url = self.api_base_url or "API"
+            self.dockwidget.set_authenticated(username, url)
 
     def logout(self):
         """Déconnecte l'utilisateur et supprime le jeton"""
