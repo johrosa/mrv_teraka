@@ -134,7 +134,19 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
         if actual_geom_key:
             geom_obj = _extract_geometry(item.get(actual_geom_key))
             if geom_obj:
-                geom = QgsGeometry.fromGeoJson(json.dumps(geom_obj))
+                try:
+                    # QGIS 3.x >= 3.10 has QgsGeometry.fromGeoJson
+                    # But some versions might differ or we use OGR as backup
+                    geom = QgsGeometry.fromGeoJson(json.dumps(geom_obj))
+                except AttributeError:
+                    # Fallback OGR/WKT for very specific environments
+                    from osgeo import ogr
+                    ogr_geom = ogr.CreateGeometryFromJson(json.dumps(geom_obj))
+                    if ogr_geom:
+                        geom = QgsGeometry.fromWkt(ogr_geom.ExportToWkt())
+                    else:
+                        geom = None
+
                 if geom and not geom.isNull():
                     fet.setGeometry(geom)
 
