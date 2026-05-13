@@ -6,7 +6,7 @@ Utilitaires pour la gestion des couches QGIS et conversion JSON/GeoJSON.
 import json
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
-    QgsVectorLayer, QgsField, QgsFeature, QgsJsonUtils,
+    QgsVectorLayer, QgsField, QgsFeature,
     QgsGeometry, QgsCoordinateReferenceSystem
 )
 
