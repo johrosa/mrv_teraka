@@ -26,6 +26,7 @@ from .auth_dialog import AuthDialog
 from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
 from .validation_dialog import DataValidationDialog
+from .connection_checker import ConnectionChecker
 
 
 class MrvTeraka:
@@ -47,6 +48,10 @@ class MrvTeraka:
         # Managers pour le workflow Mergin
         self.mergin_manager = None
         self.current_project_id = None
+
+        # Initialisation du checker de connexion
+        self.conn_checker = ConnectionChecker(interval=60)
+        self.conn_checker.connection_status_changed.connect(self.on_connection_status_changed)
         self.mergin_validation_ready = False
         self.current_collected_data = None
         self.current_original_data = None
@@ -194,12 +199,19 @@ class MrvTeraka:
         
         # Charger le jeton sauvegardé à l'initialisation
         self.load_saved_token()
+
+        # Lancer le thread de vérification
+        self.conn_checker.start()
         # Ne pas ouvrir automatiquement le projet par défaut en développement
         if self.auto_open_default_project:
             self.open_default_qgis_project()
 
     def unload(self):
         """Supprime le plugin de l'interface QGIS."""
+        # Arrêter le checker
+        if hasattr(self, 'conn_checker'):
+            self.conn_checker.stop()
+
         for action in self.actions:
             self.iface.removePluginMenu(self.tr(u'&MRV Teraka'), action)
             self.iface.removeToolBarIcon(action)
@@ -258,6 +270,9 @@ class MrvTeraka:
             self.token_manager.save_token(token, self.api_base_url, self.postgrest_mode.value)
             self.current_username = username
             
+            # Mettre à jour le checker
+            self.conn_checker.set_client(self.postgrest)
+
             # Sauvegarder aussi les identifiants si demandé
             if credentials['remember']:
                 settings = QSettings('iTeraka', 'MrvTeraka')
@@ -269,6 +284,9 @@ class MrvTeraka:
             # Mettre à jour l'interface
             self.update_auth_ui()
             
+            # Relancer une vérification immédiate
+            self.conn_checker.set_client(self.postgrest)
+
             if self.dockwidget:
                 self.dockwidget.set_authenticated(username, self.api_base_url)
             
@@ -293,10 +311,14 @@ class MrvTeraka:
             self.postgrest.set_auth_token(token)
             self.api_base_url = api_url
 
+            # Mettre à jour le checker
+            self.conn_checker.set_client(self.postgrest)
+
             if not self.postgrest.verify_token():
                 self.token_manager.clear_token()
                 self.postgrest = None
                 self.current_username = None
+                self.conn_checker.set_client(None)
                 return
             
             # Charger le dernier username
@@ -338,30 +360,49 @@ class MrvTeraka:
             url = self.api_base_url or "API"
             self.dockwidget.set_authenticated(username, url)
 
-    def logout(self):
-        """Déconnecte l'utilisateur et supprime le jeton"""
-        reply = QMessageBox.question(
-            self.iface.mainWindow(),
-            self.tr(u'Confirmation'),
-            self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?'),
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            # Supprimer le jeton
-            self.token_manager.clear_token()
-            self.postgrest = None
-            self.current_username = None
-            
-            # Réinitialiser l'interface
-            if self.auth_action:
-                self.auth_action.setText(self.tr(u'Connexion'))
-                self.auth_action.triggered.disconnect()
-                self.auth_action.triggered.connect(self.show_auth_dialog)
-            
+    def on_connection_status_changed(self, is_connected, message):
+        """Réagit aux changements de statut de connexion détectés en arrière-plan."""
+        if not is_connected and self.postgrest:
+            # On a perdu la connexion ou le token a expiré
             if self.dockwidget:
-                self.dockwidget.set_unauthenticated()
-            
+                self.dockwidget.set_status_message(f"⚠️ {message}", color="orange")
+        elif is_connected and self.dockwidget:
+            self.dockwidget.set_authenticated(self.current_username, self.api_base_url)
+
+    def logout(self, confirm=True):
+        """Déconnecte l'utilisateur et supprime le jeton"""
+        if confirm:
+            reply = QMessageBox.question(
+                self.iface.mainWindow(),
+                self.tr(u'Confirmation'),
+                self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?'),
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+        
+        # Supprimer le jeton
+        self.token_manager.clear_token()
+        self.postgrest = None
+        self.current_username = None
+
+        # Mettre à jour le checker
+        if hasattr(self, 'conn_checker'):
+            self.conn_checker.set_client(None)
+
+        # Réinitialiser l'interface
+        if self.auth_action:
+            try:
+                self.auth_action.triggered.disconnect()
+            except Exception:
+                pass
+            self.auth_action.setText(self.tr(u'Connexion'))
+            self.auth_action.triggered.connect(self.show_auth_dialog)
+
+        if self.dockwidget:
+            self.dockwidget.set_unauthenticated()
+
+        if confirm:
             QMessageBox.information(
                 self.iface.mainWindow(),
                 self.tr(u'Déconnexion'),

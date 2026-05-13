@@ -116,6 +116,11 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         """Gère le clic sur le bouton de déconnexion"""
         self.logout_requested.emit()
 
+    def set_status_message(self, message, color="black"):
+        """Met à jour uniquement le message de statut."""
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+
     def set_authenticated(self, username=None, api_url=None):
         """Affiche l'état connecté et active les contrôles."""
         self.status_label.setText("● Connecté")
