@@ -50,140 +50,47 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.setup_connections()
 
     def setup_auth_ui(self):
-        """Ajoute les éléments d'authentification en haut de la dock"""
-        # Créer un widget pour la barre d'authentification
-        self.auth_group = QGroupBox("Connexion API")
-        auth_layout = QVBoxLayout()
+        """Initialise les composants UI et les info-bulles."""
+        # Les widgets sont maintenant définis dans le fichier .ui
+        # On mappe les noms d'objets XML aux membres Python attendus
+        self.status_label = self.statusLabel
+        self.user_label = self.userLabel
+        self.logout_button = self.logoutButton
 
-        status_layout = QHBoxLayout()
-        self.status_label = QLabel("● Déconnecté")
-        self.status_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
-        status_layout.addWidget(self.status_label)
-
-        self.user_label = QLabel("Pas connecté")
-        self.user_label.setStyleSheet("color: #666; font-size: 10px;")
-        status_layout.addWidget(self.user_label)
-        status_layout.addStretch()
-
-        self.logout_button = QPushButton("Déconnexion")
+        # Configuration des icônes et info-bulles (ergonomie)
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
         self.logout_button.setToolTip("Se déconnecter de l'API et effacer le jeton local")
-        self.logout_button.setEnabled(False)
 
-        auth_layout.addLayout(status_layout)
-        auth_layout.addWidget(self.logout_button)
-        self.auth_group.setLayout(auth_layout)
-
-        # Repositionner le layout principal pour plus d'ergonomie
-        main_layout = self.dockWidgetContents.layout()
-        # Supprimer le label_2 s'il existe (doublon titre)
-        if hasattr(self, 'label_2'):
-            self.label_2.hide()
-
-        # Vider le layout actuel pour tout réorganiser
-        widgets = []
-        for i in range(main_layout.count()):
-            item = main_layout.itemAt(i)
-            if item.widget():
-                widgets.append(item.widget())
-
-        for w in widgets:
-            main_layout.removeWidget(w)
-
-        # Configuration des groupes de widgets
-        self.db_group = QGroupBox("Données PostgREST")
-        db_layout = QVBoxLayout()
-        db_layout.addWidget(self.endpointLineEdit)
-        db_btns = QHBoxLayout()
         self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
-        db_btns.addWidget(self.compareButton)
-        db_btns.addWidget(self.loadDbButton)
-        db_layout.addLayout(db_btns)
-        db_layout.addWidget(QLabel("Résultats :"))
-        self.comparisonResultsTextEdit.setMaximumHeight(100)
-        db_layout.addWidget(self.comparisonResultsTextEdit)
-        self.db_group.setLayout(db_layout)
 
-        self.mergin_group = QGroupBox("Flux Mergin Map")
-        mergin_layout = QVBoxLayout()
-        l1 = QLabel("1. Préparation")
-        l1.setStyleSheet("font-weight: bold; color: #1976d2;")
-        mergin_layout.addWidget(l1)
-        mergin_layout.addWidget(self.merginEndpointLineEdit)
         self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
-        mergin_layout.addWidget(self.prepareMerginButton)
-        l2 = QLabel("2. Collecte & Import")
-        l2.setStyleSheet("font-weight: bold; color: #1976d2;")
-        mergin_layout.addWidget(l2)
-        mergin_btns = QHBoxLayout()
+        self.uploadToMerginButton.setToolTip("Alternative pour l'exportation Mergin")
+        self.refreshFromApiButton.setToolTip("Recharger les données depuis l'API PostgREST")
         self.loadFromMerginButton.setToolTip("Charger les données collectées depuis le dossier local Mergin")
         self.refreshFromMerginButton.setToolTip("Mettre à jour les données à partir du stockage Mergin")
-        mergin_btns.addWidget(self.loadFromMerginButton)
-        mergin_btns.addWidget(self.refreshFromMerginButton)
-        mergin_layout.addLayout(mergin_btns)
-        l3 = QLabel("3. Validation & Fusion")
-        l3.setStyleSheet("font-weight: bold; color: #1976d2;")
-        mergin_layout.addWidget(l3)
         self.openValidationButton.setToolTip("Ouvrir le formulaire de validation pour réviser les données collectées")
         self.syncToBackendButton.setToolTip("Envoyer les modifications validées vers la base de données finale")
-        mergin_layout.addWidget(self.openValidationButton)
-        mergin_layout.addWidget(self.syncToBackendButton)
-        mergin_layout.addWidget(QLabel("Statut Mergin :"))
-        self.merginResultsTextEdit.setMaximumHeight(100)
-        mergin_layout.addWidget(self.merginResultsTextEdit)
-        self.mergin_group.setLayout(mergin_layout)
-
-        # Réorganiser le layout de façon robuste en détectant son type
-        is_grid = isinstance(main_layout, QtWidgets.QGridLayout)
-        if is_grid:
-            main_layout.addWidget(self.auth_group, 0, 0)
-            main_layout.addWidget(self.db_group, 1, 0)
-            main_layout.addWidget(self.mergin_group, 2, 0)
-            main_layout.setRowStretch(3, 1)  # Pousser tout vers le haut
-        else:
-            main_layout.addWidget(self.auth_group)
-            main_layout.addWidget(self.db_group)
-            main_layout.addWidget(self.mergin_group)
-            if hasattr(main_layout, 'addStretch'):
-                main_layout.addStretch()
-
-        # Cacher la toolBox originale qui est maintenant redondante
-        if hasattr(self, 'toolBox'):
-            self.toolBox.hide()
 
     def setup_connections(self):
-        """Connecte les signaux aux slots"""
+        """Connecte les signaux aux slots du plugin."""
         if not self.plugin:
             return
 
-        try:
-            # Boutons de comparaison et chargement
-            self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
-            self.loadDbButton.clicked.connect(self.plugin.load_database_data)
-            self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
+        # Connexions garanties par le fichier .ui
+        self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
+        self.loadDbButton.clicked.connect(self.plugin.load_database_data)
+        self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
-            # Actions Mergin et validation
-            try:
-                self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
-                self.uploadToMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
-                self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
-                self.refreshFromMerginButton.clicked.connect(self.plugin.refresh_data_via_mergin)
-                self.syncToBackendButton.clicked.connect(self.plugin.sync_validated_data_to_backend)
-                self.openValidationButton.clicked.connect(self.plugin.open_validation_form)
-            except AttributeError:
-                pass  # UI older version may not contain these widgets
+        self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
+        self.uploadToMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
+        self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
+        self.refreshFromMerginButton.clicked.connect(self.plugin.refresh_data_via_mergin)
+        self.syncToBackendButton.clicked.connect(self.plugin.sync_validated_data_to_backend)
+        self.openValidationButton.clicked.connect(self.plugin.open_validation_form)
 
-            # Nouvelles fonctionnalités - Si dispoes dans l'UI
-            try:
-                self.loadCollectedButton.clicked.connect(self.plugin.load_collected_data)
-            except AttributeError:
-                pass
-
-            # Bouton de déconnexion
-            self.logout_button.clicked.connect(self.on_logout_clicked)
-        except AttributeError as e:
-            print(f"Erreur de connexion: {e}")
+        # Bouton de déconnexion
+        self.logout_button.clicked.connect(self.on_logout_clicked)
 
     def on_logout_clicked(self):
         """Gère le clic sur le bouton de déconnexion"""
