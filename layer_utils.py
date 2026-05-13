@@ -7,7 +7,7 @@ import json
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsVectorLayer, QgsField, QgsFeature,
-    QgsGeometry, QgsCoordinateReferenceSystem
+    QgsGeometry, QgsCoordinateReferenceSystem, QgsJsonUtils
 )
 
 def is_geojson(data):
@@ -155,3 +155,29 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
     pr.addFeatures(features)
     layer.updateExtents()
     return layer
+
+def layer_to_list_of_dicts(layer, geom_field='geom'):
+    """
+    Convertit une couche QGIS en liste de dictionnaires pour insertion API.
+
+    Args:
+        layer: QgsVectorLayer source.
+        geom_field: Nom du champ de géométrie attendu par le backend.
+
+    Returns:
+        list: Liste de dictionnaires (attributs + géométrie GeoJSON).
+    """
+    data_list = []
+    for feature in layer.getFeatures():
+        # Export des attributs en JSON
+        attrs_json = QgsJsonUtils.exportAttributes(feature)
+        item = json.loads(attrs_json)
+
+        # Ajout de la géométrie si elle existe
+        if layer.isSpatial() and feature.hasGeometry():
+            geom = feature.geometry()
+            if not geom.isNull():
+                item[geom_field] = json.loads(geom.asJson())
+
+        data_list.append(item)
+    return data_list

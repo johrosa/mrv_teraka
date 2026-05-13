@@ -17,7 +17,7 @@ from .resources import *
 
 from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
-from .layer_utils import is_geojson, create_vector_layer
+from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
@@ -553,6 +553,69 @@ class MrvTeraka:
         self.load_collected_data(self.current_collected_data)
 
     # --- ACTIONS SIG ---
+
+    def push_project_data_to_backend(self):
+        """Pousse toutes les données du projet QGIS vers le backend API."""
+        if not self.check_api_auth():
+            return
+
+        project_endpoints = self.get_project_layer_endpoints()
+        if not project_endpoints:
+            QMessageBox.information(
+                self.iface.mainWindow(),
+                self.tr(u'No mapped layers'),
+                self.tr(u"Aucune couche mappée n'a été trouvée dans le projet.")
+            )
+            return
+
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            self.tr(u'Confirmer la migration'),
+            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n"
+                  u"Attention : Cette opération insérera de nouveaux enregistrements.").format(count=len(project_endpoints)),
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        project = QgsProject.instance()
+        results = []
+        errors = []
+
+        for layer_name, mapping in project_endpoints.items():
+            layers = project.mapLayersByName(layer_name)
+            if not layers:
+                continue
+
+            layer = layers[0]
+            try:
+                # Extraction des données
+                data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+
+                if not data:
+                    results.append(f"⚪ {layer_name} : Aucune donnée à envoyer")
+                    continue
+
+                # Envoi à l'API (Insert)
+                # Note: On utilise insert qui supporte les listes de dicts
+                response = self.postgrest.insert(mapping['endpoint'], data)
+
+                count = len(data)
+                results.append(f"✅ {layer_name} : {count} enregistrements migrés vers {mapping['endpoint']}")
+
+            except Exception as exc:
+                err_msg = f"❌ {layer_name} : {str(exc)}"
+                errors.append(err_msg)
+                results.append(err_msg)
+
+        report = "\n".join(results)
+        self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
+
+        if errors:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
+        else:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
 
     def load_database_data(self):
         """Charge des données depuis l'API vers QGIS."""

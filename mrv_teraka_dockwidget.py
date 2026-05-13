@@ -70,6 +70,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
+        self.pushProjectButton.setToolTip("Pousser toutes les données du projet QGIS local vers la base de données")
 
         self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
         self.uploadToMerginButton.setToolTip("Alternative pour l'exportation Mergin")
@@ -98,6 +99,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Connexions garanties par le fichier .ui
         self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
         self.loadDbButton.clicked.connect(self.plugin.load_database_data)
+        self.pushProjectButton.clicked.connect(self.plugin.push_project_data_to_backend)
         self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
         self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
@@ -127,6 +129,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Activer les boutons d'action
         self.compareButton.setEnabled(True)
         self.loadDbButton.setEnabled(True)
+        self.pushProjectButton.setEnabled(True)
         self.prepareMerginButton.setEnabled(True)
         for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton'):
             if hasattr(self, attr):
@@ -146,6 +149,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Désactiver les boutons d'action
         self.compareButton.setEnabled(False)
         self.loadDbButton.setEnabled(False)
+        self.pushProjectButton.setEnabled(False)
         self.prepareMerginButton.setEnabled(False)
         for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'):
             if hasattr(self, attr):

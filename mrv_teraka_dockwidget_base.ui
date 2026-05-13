@@ -123,6 +123,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="pushProjectButton">
+           <property name="text">
+            <string>Migrer vers base</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QPushButton" name="refreshFromApiButton">
            <property name="text">
             <string>Rafraîchir API</string>
