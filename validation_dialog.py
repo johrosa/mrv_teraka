@@ -93,6 +93,7 @@ class DataValidationDialog(QDialog):
         
         self.btn_validate = QPushButton("✓ Valider et Fusionner")
         self.btn_validate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.btn_validate.setDefault(True)  # Permet d'utiliser 'Entrée'
         self.btn_validate.clicked.connect(self.accept)
         
         button_layout.addWidget(self.btn_cancel)
@@ -153,8 +154,12 @@ class DataValidationDialog(QDialog):
         # Contrôles de comparaison
         ctrl_layout = QHBoxLayout()
         
-        ctrl_layout.addWidget(QLabel("Sélectionner enregistrement:"))
+        l_sel = QLabel("Sélectionner l'enregistrement à comparer :")
+        l_sel.setStyleSheet("font-weight: bold;")
+        ctrl_layout.addWidget(l_sel)
+
         self.combo_records = QComboBox()
+        self.combo_records.setMinimumWidth(300)
         self.combo_records.currentIndexChanged.connect(self.show_comparison)
         ctrl_layout.addWidget(self.combo_records)
         
@@ -166,14 +171,20 @@ class DataValidationDialog(QDialog):
         
         # Avant
         layout_before = QVBoxLayout()
-        layout_before.addWidget(QLabel("<b>Avant (Original)</b>"))
+        l_before = QLabel("⬅️ Original (Base)")
+        l_before.setStyleSheet("color: #d32f2f; font-weight: bold; font-size: 11px;")
+        layout_before.addWidget(l_before)
         self.table_before = QTableWidget()
+        self.table_before.setAlternatingRowColors(True)
         layout_before.addWidget(self.table_before)
         
         # Après
         layout_after = QVBoxLayout()
-        layout_after.addWidget(QLabel("<b>Après (Collecté)</b>"))
+        l_after = QLabel("➡️ Collecté (Terrain)")
+        l_after.setStyleSheet("color: #388e3c; font-weight: bold; font-size: 11px;")
+        layout_after.addWidget(l_after)
         self.table_after = QTableWidget()
+        self.table_after.setAlternatingRowColors(True)
         layout_after.addWidget(self.table_after)
         
         tables_layout.addLayout(layout_before)

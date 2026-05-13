@@ -27,7 +27,7 @@ import os
 from qgis.PyQt import QtGui, QtWidgets, uic
 from qgis.PyQt.QtCore import pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (
-    QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget
+    QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget, QGroupBox, QSpacerItem, QSizePolicy
 )
 from qgis.PyQt.QtGui import QColor, QIcon
 
@@ -52,41 +52,102 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def setup_auth_ui(self):
         """Ajoute les éléments d'authentification en haut de la dock"""
         # Créer un widget pour la barre d'authentification
-        auth_widget = QWidget()
-        auth_layout = QHBoxLayout()
+        self.auth_group = QGroupBox("Connexion API")
+        auth_layout = QVBoxLayout()
 
-        # Indicateur de statut
+        status_layout = QHBoxLayout()
         self.status_label = QLabel("● Déconnecté")
-        self.status_label.setStyleSheet("color: red; font-weight: bold;")
-        auth_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
+        status_layout.addWidget(self.status_label)
 
-        # Informations utilisateur
         self.user_label = QLabel("Pas connecté")
-        self.user_label.setStyleSheet("color: gray; font-size: 9px;")
-        auth_layout.addWidget(self.user_label)
+        self.user_label.setStyleSheet("color: #666; font-size: 10px;")
+        status_layout.addWidget(self.user_label)
+        status_layout.addStretch()
 
-        auth_layout.addStretch()
-
-        # Bouton de déconnexion
-        self.logout_button = QPushButton("Déconnecter")
-        self.logout_button.setMaximumWidth(100)
+        self.logout_button = QPushButton("Déconnexion")
+        self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
+        self.logout_button.setToolTip("Se déconnecter de l'API et effacer le jeton local")
         self.logout_button.setEnabled(False)
+
+        auth_layout.addLayout(status_layout)
         auth_layout.addWidget(self.logout_button)
+        self.auth_group.setLayout(auth_layout)
 
-        auth_widget.setLayout(auth_layout)
-
-        # Insérer en haut de la dock (avant toolBox)
+        # Repositionner le layout principal pour plus d'ergonomie
         main_layout = self.dockWidgetContents.layout()
-        for i in reversed(range(main_layout.rowCount())):
-            for j in range(main_layout.columnCount()):
-                item = main_layout.itemAtPosition(i, j)
-                if item:
-                    widget = item.widget()
-                    if widget:
-                        main_layout.removeWidget(widget)
-                        main_layout.addWidget(widget, i + 1, j)
+        # Supprimer le label_2 s'il existe (doublon titre)
+        if hasattr(self, 'label_2'):
+            self.label_2.hide()
 
-        main_layout.addWidget(auth_widget, 0, 0)
+        # Vider le layout actuel pour tout réorganiser
+        widgets = []
+        for i in range(main_layout.count()):
+            item = main_layout.itemAt(i)
+            if item.widget():
+                widgets.append(item.widget())
+
+        for w in widgets:
+            main_layout.removeWidget(w)
+
+        # Réorganiser
+        main_layout.addWidget(self.auth_group, 0, 0)
+
+        # Groupe Gestion Base de données
+        self.db_group = QGroupBox("Données PostgREST")
+        db_layout = QVBoxLayout()
+        db_layout.addWidget(self.endpointLineEdit)
+
+        db_btns = QHBoxLayout()
+        self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
+        self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
+        db_btns.addWidget(self.compareButton)
+        db_btns.addWidget(self.loadDbButton)
+        db_layout.addLayout(db_btns)
+
+        db_layout.addWidget(QLabel("Résultats :"))
+        db_layout.addWidget(self.comparisonResultsTextEdit)
+        self.db_group.setLayout(db_layout)
+        main_layout.addWidget(self.db_group, 1, 0)
+
+        # Groupe Workflow Mergin
+        self.mergin_group = QGroupBox("Flux Mergin Map")
+        mergin_layout = QVBoxLayout()
+
+        l1 = QLabel("1. Préparation")
+        l1.setStyleSheet("font-weight: bold; color: #1976d2;")
+        mergin_layout.addWidget(l1)
+        mergin_layout.addWidget(self.merginEndpointLineEdit)
+        self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
+        mergin_layout.addWidget(self.prepareMerginButton)
+
+        l2 = QLabel("2. Collecte & Import")
+        l2.setStyleSheet("font-weight: bold; color: #1976d2;")
+        mergin_layout.addWidget(l2)
+        mergin_btns = QHBoxLayout()
+        self.loadFromMerginButton.setToolTip("Charger les données collectées depuis le dossier local Mergin")
+        self.refreshFromMerginButton.setToolTip("Mettre à jour les données à partir du stockage Mergin")
+        mergin_btns.addWidget(self.loadFromMerginButton)
+        mergin_btns.addWidget(self.refreshFromMerginButton)
+        mergin_layout.addLayout(mergin_btns)
+
+        l3 = QLabel("3. Validation & Fusion")
+        l3.setStyleSheet("font-weight: bold; color: #1976d2;")
+        mergin_layout.addWidget(l3)
+        self.openValidationButton.setToolTip("Ouvrir le formulaire de validation pour réviser les données collectées")
+        self.syncToBackendButton.setToolTip("Envoyer les modifications validées vers la base de données finale")
+        mergin_layout.addWidget(self.openValidationButton)
+        mergin_layout.addWidget(self.syncToBackendButton)
+
+        mergin_layout.addWidget(QLabel("Statut Mergin :"))
+        mergin_layout.addWidget(self.merginResultsTextEdit)
+
+        self.mergin_group.setLayout(mergin_layout)
+        main_layout.addWidget(self.mergin_group, 2, 0)
+
+        # Cacher la toolBox originale qui est maintenant redondante
+        if hasattr(self, 'toolBox'):
+            self.toolBox.hide()
 
     def setup_connections(self):
         """Connecte les signaux aux slots"""
