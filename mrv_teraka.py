@@ -15,8 +15,9 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit
 # Initialisation des ressources Qt
 from .resources import *
 
-from qgis.core import QgsProject, QgsVectorLayer, QgsField, QgsFeature, QgsJsonUtils, QgsPointXY, QgsGeometry, QgsMapLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
+from .layer_utils import is_geojson, create_vector_layer
 
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
@@ -425,7 +426,7 @@ class MrvTeraka:
         for layer_name, mapping in project_endpoints.items():
             try:
                 db_data = self.postgrest.select(mapping['endpoint'])
-                layer = self.create_vector_layer_from_json(db_data, layer_name, mapping.get('geom_field', 'geom'))
+                layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field', 'geom'))
                 if layer and layer.isValid():
                     layer.setCustomProperty('postgrest:endpoint', mapping['endpoint'])
                     layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
@@ -551,10 +552,6 @@ class MrvTeraka:
             return
         self.load_collected_data(self.current_collected_data)
 
-    def is_geojson(self, data):
-        """Vérifie si les données sont au format GeoJSON."""
-        return isinstance(data, dict) and data.get('type') in ['FeatureCollection', 'Feature']
-
     # --- ACTIONS SIG ---
 
     def load_database_data(self):
@@ -580,7 +577,7 @@ class MrvTeraka:
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
 
-                if self.is_geojson(db_data):
+                if is_geojson(db_data):
                     import tempfile
                     with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as f:
                         json.dump(db_data, f)
@@ -593,7 +590,7 @@ class MrvTeraka:
                     else:
                         QMessageBox.critical(self.iface.mainWindow(), "Erreur", f"GéoJSON invalide pour {endpoint_value}.")
                 else:
-                    layer = self.create_vector_layer_from_json(db_data, display_name, geom_field)
+                    layer = create_vector_layer(db_data, display_name, geom_field)
                     if layer and layer.isValid():
                         layer.setCustomProperty('postgrest:endpoint', endpoint_value)
                         layer.setCustomProperty('postgrest:geom_field', geom_field)
@@ -608,167 +605,6 @@ class MrvTeraka:
 
         except Exception as exc:
             self.show_error(self.tr(u'Erreur'), exc)
-
-    def create_vector_layer_from_json(self, data, layer_name, geom_field='geom'):
-        """Crée une couche mémoire à partir d'un JSON avec détection du CRS (y compris dans geom)."""
-        if not data:
-            return None
-
-        items = data if isinstance(data, list) else [data]
-        if not items or not isinstance(items[0], dict):
-            return None
-
-        sample = items[0]
-        geom_keys = [geom_field, 'geom', 'geometry']
-        geom_key = next((k for k in geom_keys if k in sample), None)
-
-        # --- Détection du CRS ---
-        crs = "EPSG:4326"  # fallback
-
-        # 1. CRS dans la géométrie (ton cas)
-        if geom_key and isinstance(sample.get(geom_key), dict):
-            geom_obj = sample[geom_key]
-            crs_info = geom_obj.get("crs")
-
-            if crs_info and crs_info.get("type") == "name":
-                try:
-                    crs_name = crs_info["properties"]["name"]
-                    if "EPSG" in crs_name.upper():
-                        code = crs_name.split(":")[-1]
-                        crs = f"EPSG:{code}"
-                except Exception:
-                    pass
-
-        # 2. CRS au niveau global (fallback secondaire)
-        elif isinstance(data, dict) and "crs" in data:
-            try:
-                crs_info = data["crs"]
-                if crs_info.get("type") == "name":
-                    crs_name = crs_info["properties"]["name"]
-                    if "EPSG" in crs_name.upper():
-                        code = crs_name.split(":")[-1]
-                        crs = f"EPSG:{code}"
-            except Exception:
-                pass
-
-        # --- Détection du type géométrique ---
-        geom_type = "Point"
-        if geom_key and isinstance(sample[geom_key], dict):
-            g_type = sample[geom_key].get('type', 'Point')
-            if 'Polygon' in g_type:
-                geom_type = "Polygon"
-            elif 'Line' in g_type:
-                geom_type = "LineString"
-
-        uri = f"{geom_type}?crs={crs}"
-
-        layer = QgsVectorLayer(uri, layer_name, "memory")
-        pr = layer.dataProvider()
-
-        # --- Champs attributaires ---
-        fields = [
-            QgsField(k, QVariant.String)
-            for k in sample.keys()
-            if k not in geom_keys
-        ]
-        pr.addAttributes(fields)
-        layer.updateFields()
-
-        # --- Features ---
-        features = []
-        for item in items:
-            fet = QgsFeature(layer.fields())
-
-            attrs = [
-                str(item.get(k, ''))
-                for k in sample.keys()
-                if k not in geom_keys
-            ]
-            fet.setAttributes(attrs)
-
-            if geom_key and item.get(geom_key):
-                geom_json = json.dumps(item[geom_key])
-                geom = QgsJsonUtils.geometryFromGeoJson(geom_json)
-                if geom and not geom.isNull():
-                    fet.setGeometry(geom)
-
-            features.append(fet)
-
-        pr.addFeatures(features)
-        layer.updateExtents()
-
-        return layer
-
-    def create_vector_layer_from_postgrest(self, data, layer_name, geom_field='geom', crs="EPSG:4326"):
-        """Crée une couche QGIS à partir de données PostgREST avec ST_AsGeoJSON."""
-        if not data:
-            return None
-
-        items = data if isinstance(data, list) else [data]
-        if not items or not isinstance(items[0], dict):
-            return None
-
-        sample = items[0]
-
-        geom_key = geom_field if geom_field in sample else 'geom'
-
-        # --- Détection type géométrique ---
-        geom_type = "Unknown"
-
-        try:
-            first_geom = json.loads(sample[geom_key])
-            gtype = first_geom.get("type", "Point")
-
-            if "Polygon" in gtype:
-                geom_type = "Polygon"
-            elif "Line" in gtype:
-                geom_type = "LineString"
-            elif "Point" in gtype:
-                geom_type = "Point"
-        except Exception:
-            geom_type = "Point"
-
-        uri = f"{geom_type}?crs={crs}"
-        layer = QgsVectorLayer(uri, layer_name, "memory")
-
-        if not layer.isValid():
-            return None
-
-        pr = layer.dataProvider()
-
-        # --- Champs attributaires ---
-        fields = [
-            QgsField(k, QVariant.String)
-            for k in sample.keys()
-            if k != geom_key
-        ]
-        pr.addAttributes(fields)
-        layer.updateFields()
-
-        # --- Features ---
-        features = []
-
-        for item in items:
-            fet = QgsFeature(layer.fields())
-
-            # attributs
-            attrs = [str(item.get(k, "")) for k in sample.keys() if k != geom_key]
-            fet.setAttributes(attrs)
-
-            # géométrie
-            try:
-                geom = QgsGeometry.fromGeoJson(item[geom_key])
-                if geom and not geom.isNull():
-                    fet.setGeometry(geom)
-            except Exception:
-                continue
-
-            features.append(fet)
-
-        pr.addFeatures(features)
-        layer.updateExtents()
-
-        return layer
 
 
     def compare_project_with_db(self):

@@ -187,75 +187,12 @@ class DataValidationDialog(QDialog):
     def create_validation_tab(self):
         """Onglet validation ligne par ligne"""
         layout = QVBoxLayout()
-        
-        # Section: Tableau de validation
-        table_label = QLabel("<b>Validation détaillée - Cliquez sur une ligne pour voir les détails:</b>")
-        layout.addWidget(table_label)
+        layout.addWidget(QLabel("<b>Validation détaillée - Cliquez sur une ligne pour voir les détails:</b>"))
 
-        self.table_validation = QTableWidget()
-        self.table_validation.setColumnCount(6)
-        self.table_validation.setHorizontalHeaderLabels([
-            "ID", "Statut", "Changements", "Type", "Action", "Commentaire"
-        ])
-        self.table_validation.itemSelectionChanged.connect(self.on_validation_row_selected)
-
-        # Remplir les données de validation
-        self.table_validation.setRowCount(len(self.collected_data))
-        for row, item in enumerate(self.collected_data):
-            item_id = item.get('id', row)
-
-            # Colonne ID
-            id_item = QTableWidgetItem(str(item_id))
-            self.table_validation.setItem(row, 0, id_item)
-
-            # Colonne Statut (combo)
-            status_combo = QComboBox()
-            status_combo.addItems(['✓ Valide', '⚠️ À Réviser', '❌ Rejeter', '🆕 Nouveau'])
-
-            # Choisir le statut par défaut
-            if row >= len(self.original_data):
-                status_combo.setCurrentIndex(3)  # Nouveau
-            else:
-                status_combo.setCurrentIndex(0)  # Valide
-
-            self.table_validation.setCellWidget(row, 1, status_combo)
-            
-            # Colonne Changements (détectés automatiquement)
-            changes = self.detect_changes(item, row)
-            changes_item = QTableWidgetItem(changes)
-
-            # Colorer selon le type de changement
-            if "🆕" in changes:
-                changes_item.setBackground(QColor(200, 255, 200))  # Vert
-            elif "❌" in changes:
-                changes_item.setBackground(QColor(255, 100, 100))  # Rouge
-            elif "✏️" in changes or "⚠️" in changes:
-                changes_item.setBackground(QColor(255, 220, 100))  # Orange
-
-            self.table_validation.setItem(row, 2, changes_item)
-
-            # Colonne Type (avant/apr)
-            type_label = "NOUVEAU" if row >= len(self.original_data) else "MODIFIÉ" if self.has_changes(item, row) else "INCHANGÉ"
-            type_item = QTableWidgetItem(type_label)
-            self.table_validation.setItem(row, 3, type_item)
-
-            # Colonne Action (combo)
-            action_combo = QComboBox()
-            action_combo.addItems(['Fusionner', 'Remplacer', 'Archiver', 'Manuel'])
-            self.table_validation.setCellWidget(row, 4, action_combo)
-
-            # Colonne Commentaire
-            comment = QLineEdit()
-            comment.setPlaceholderText("Ajouter un commentaire...")
-            self.table_validation.setCellWidget(row, 5, comment)
-
-        self.table_validation.resizeColumnsToContents()
+        self.table_validation = self._setup_validation_table()
         layout.addWidget(self.table_validation)
         
-        # Section: Détails du changement
-        detail_label = QLabel("<b>Détails de la ligne sélectionnée:</b>")
-        layout.addWidget(detail_label)
-
+        layout.addWidget(QLabel("<b>Détails de la ligne sélectionnée:</b>"))
         self.detail_text = QTextEdit()
         self.detail_text.setReadOnly(True)
         self.detail_text.setMaximumHeight(150)
@@ -264,6 +201,48 @@ class DataValidationDialog(QDialog):
         widget = QGroupBox("Validation Détaillée")
         widget.setLayout(layout)
         return widget
+
+    def _setup_validation_table(self):
+        """Configure et remplit le tableau de validation."""
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["ID", "Statut", "Changements", "Type", "Action", "Commentaire"])
+        table.itemSelectionChanged.connect(self.on_validation_row_selected)
+        table.setRowCount(len(self.collected_data))
+
+        for row, item in enumerate(self.collected_data):
+            self._fill_validation_row(table, row, item)
+
+        table.resizeColumnsToContents()
+        return table
+
+    def _fill_validation_row(self, table, row, item):
+        """Remplit une ligne du tableau de validation."""
+        item_id = item.get('id', row)
+        table.setItem(row, 0, QTableWidgetItem(str(item_id)))
+
+        status_combo = QComboBox()
+        status_combo.addItems(['✓ Valide', '⚠️ À Réviser', '❌ Rejeter', '🆕 Nouveau'])
+        status_combo.setCurrentIndex(3 if row >= len(self.original_data) else 0)
+        table.setCellWidget(row, 1, status_combo)
+
+        changes = self.detect_changes(item, row)
+        changes_item = QTableWidgetItem(changes)
+        if "🆕" in changes: changes_item.setBackground(QColor(200, 255, 200))
+        elif "❌" in changes: changes_item.setBackground(QColor(255, 100, 100))
+        elif "✏️" in changes or "⚠️" in changes: changes_item.setBackground(QColor(255, 220, 100))
+        table.setItem(row, 2, changes_item)
+
+        type_label = "NOUVEAU" if row >= len(self.original_data) else "MODIFIÉ" if self.has_changes(item, row) else "INCHANGÉ"
+        table.setItem(row, 3, QTableWidgetItem(type_label))
+
+        action_combo = QComboBox()
+        action_combo.addItems(['Fusionner', 'Remplacer', 'Archiver', 'Manuel'])
+        table.setCellWidget(row, 4, action_combo)
+
+        comment = QLineEdit()
+        comment.setPlaceholderText("Ajouter un commentaire...")
+        table.setCellWidget(row, 5, comment)
     
     def has_changes(self, item, index):
         """Vérifie si l'item a des changements"""

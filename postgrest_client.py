@@ -8,6 +8,7 @@ Compatible avec PostgREST pur et PostgREST via Django
 import json
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Any, Dict, List, Optional
 from enum import Enum
 import re
@@ -64,6 +65,30 @@ class PostgREST:
             'Accept': 'application/json'
         }
     
+    def _build_url(self, endpoint: str, params: Optional[Dict[str, str]] = None) -> str:
+        """
+        Construit l'URL complète pour la requête.
+        
+        Args:
+            endpoint: Endpoint de l'API.
+            params: Paramètres de requête optionnels.
+
+        Returns:
+            URL complète formatée.
+        """
+        endpoint = endpoint.strip('/')
+        if self.mode == PostgRESTMode.DJANGO:
+            if endpoint.startswith('api/data/'):
+                endpoint = endpoint[len('api/data/'):]
+            elif endpoint.startswith('data/'):
+                endpoint = endpoint[len('data/'):]
+
+        url = f"{self.postgrest_api_url}/{endpoint}" if endpoint else self.postgrest_api_url
+        if params:
+            query_string = urllib.parse.urlencode(params)
+            url = f"{url}?{query_string}"
+        return url
+
     def _make_request(
         self,
         method: str,
@@ -73,44 +98,10 @@ class PostgREST:
         timeout: int = 20,
         show_error_ui: bool = False
     ) -> Dict[str, Any]:
-        """
-        Effectue une requête HTTP vers PostgREST
+        """Effectue une requête HTTP vers PostgREST."""
+        url = self._build_url(endpoint, params)
+        request_data = json.dumps(data).encode('utf-8') if data is not None else None
         
-        Args:
-            method: Méthode HTTP (GET, POST, PATCH, DELETE)
-            endpoint: Endpoint PostgREST (ex: rpc/function_name ou table_name)
-            params: Paramètres de requête QueryString
-            data: Données à envoyer (pour POST/PATCH)
-            timeout: Timeout en secondes
-            show_error_ui: Si True, affiche l'erreur Django avec rendu HTML
-
-        Returns:
-            Réponse JSON parsée
-        
-        Raises:
-            RuntimeError: Si la requête échoue
-        """
-        # Construire l'URL
-        endpoint = endpoint.strip('/')
-        if self.mode == PostgRESTMode.DJANGO:
-            if endpoint.startswith('api/data/'):
-                endpoint = endpoint[len('api/data/'):]
-            elif endpoint.startswith('data/'):
-                endpoint = endpoint[len('data/'):]
-
-        url = f"{self.postgrest_api_url}/{endpoint}" if endpoint else self.postgrest_api_url
-        
-        # Ajouter les querystring s'ils existent
-        if params:
-            query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
-            url = f"{url}?{query_string}"
-        
-        # Préparer les données
-        request_data = None
-        if data is not None:
-            request_data = json.dumps(data).encode('utf-8')
-        
-        # Faire la requête
         try:
             request = urllib.request.Request(
                 url,
@@ -121,20 +112,13 @@ class PostgREST:
             
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 response_text = response.read().decode('utf-8')
-                if response_text:
-                    return json.loads(response_text)
-                return {}
+                return json.loads(response_text) if response_text else {}
                 
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8', errors='ignore')
-
-            # Si show_error_ui est True, afficher avec rendu HTML
             if show_error_ui:
                 self._show_django_error(e, url, error_body, method=method)
-
-            raise RuntimeError(
-                f"PostgREST HTTP {e.code} : {e.reason}\n{error_body}"
-            ) from e
+            raise RuntimeError(f"PostgREST HTTP {e.code} : {e.reason}\n{error_body}") from e
         except Exception as exc:
             raise RuntimeError(f"Erreur PostgREST : {exc}") from exc
     
