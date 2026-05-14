@@ -96,17 +96,23 @@ class PostgREST:
         params: Optional[Dict[str, str]] = None,
         data: Optional[Dict[str, Any]] = None,
         timeout: int = 20,
-        show_error_ui: bool = False
+        show_error_ui: bool = False,
+        headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """Effectue une requête HTTP vers PostgREST."""
         url = self._build_url(endpoint, params)
         request_data = json.dumps(data).encode('utf-8') if data is not None else None
         
+        # Fusionner les headers globaux avec les headers spécifiques à la requête
+        request_headers = self.headers.copy()
+        if headers:
+            request_headers.update(headers)
+
         try:
             request = urllib.request.Request(
                 url,
                 data=request_data,
-                headers=self.headers,
+                headers=request_headers,
                 method=method.upper(),
             )
             
@@ -161,53 +167,84 @@ class PostgREST:
         filters: Optional[Dict[str, str]] = None,
         order: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        auto_paginate: bool = True,
+        page_size: int = 1000
     ) -> List[Dict[str, Any]]:
         """
-        Récupère des enregistrements d'une table
+        Récupère des enregistrements d'une table avec support optionnel de la pagination automatique.
         
         Args:
-            table: Nom de la table
-            select: Colonnes à sélectionner (par défaut *)
-            filters: Filtres (ex: {"id": "eq.5", "name": "ilike.*foo*"})
-            order: Ordre (ex: "id.desc")
-            limit: Limite d'enregistrements
-            offset: Offset pour pagination
+            table: Nom de la table.
+            select: Colonnes à sélectionner.
+            filters: Filtres optionnels.
+            order: Tri (ex: "id.asc").
+            limit: Limite globale.
+            offset: Offset initial.
+            auto_paginate: Si True, récupère toutes les pages jusqu'à la limite.
+            page_size: Taille de chaque page pour la pagination.
         
         Returns:
-            Liste des enregistrements
+            Liste consolidée des enregistrements.
         """
-        params = {'select': select}
+        all_data = []
+        current_offset = offset or 0
+        remaining_limit = limit
         
-        if filters:
-            params.update(filters)
-        
-        if order:
-            params['order'] = order
-        
-        if limit:
-            params['limit'] = str(limit)
-        
-        if offset:
-            params['offset'] = str(offset)
-        
-        result = self._make_request('GET', table, params=params, show_error_ui=True)
-        return result if isinstance(result, list) else [result] if result else []
+        while True:
+            params = {'select': select}
+            if filters:
+                params.update(filters)
+            if order:
+                params['order'] = order
+
+            # Calculer la limite pour cette page
+            current_limit = page_size
+            if remaining_limit is not None:
+                current_limit = min(page_size, remaining_limit)
+
+            params['limit'] = str(current_limit)
+            params['offset'] = str(current_offset)
+
+            result = self._make_request('GET', table, params=params, show_error_ui=True)
+            page_data = result if isinstance(result, list) else [result] if result else []
+
+            if not page_data:
+                break
+
+            all_data.extend(page_data)
+
+            # Arrêter si on a atteint la limite globale demandée ou si on n'a plus de données
+            if not auto_paginate or len(page_data) < current_limit:
+                break
+
+            current_offset += len(page_data)
+            if remaining_limit is not None:
+                remaining_limit -= len(page_data)
+                if remaining_limit <= 0:
+                    break
+
+        return all_data
     
-    def insert(self, table: str, data: Dict[str, Any] | List[Dict[str, Any]]):
+    def insert(self, table: str, data: Dict[str, Any] | List[Dict[str, Any]], upsert: bool = False):
         """
-        Insère un ou plusieurs enregistrements
+        Insère ou met à jour un ou plusieurs enregistrements.
         
         Args:
-            table: Nom de la table
-            data: Données à insérer (dict ou liste de dicts)
+            table: Nom de la table.
+            data: Données (dict ou liste de dicts).
+            upsert: Si True, met à jour les enregistrements existants (basé sur la PK).
         
         Returns:
-            Données insérées
+            Données traitées.
         """
-        # Normaliser en liste
         payload = data if isinstance(data, list) else [data]
-        return self._make_request('POST', table, data=payload, show_error_ui=True)
+        headers = {}
+        if upsert:
+            # Header PostgREST pour support Upsert
+            headers['Prefer'] = 'resolution=merge-duplicates'
+
+        return self._make_request('POST', table, data=payload, show_error_ui=True, headers=headers)
     
     def update(
         self,

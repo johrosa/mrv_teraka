@@ -15,7 +15,7 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit
 # Initialisation des ressources Qt
 from .resources import *
 
-from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
@@ -602,64 +602,84 @@ class MrvTeraka:
     # --- ACTIONS SIG ---
 
     def push_project_data_to_backend(self):
-        """Pousse toutes les données du projet QGIS vers le backend API."""
+        """Pousse toutes les données du projet QGIS vers le backend API via une tâche asynchrone."""
         if not self.check_api_auth():
             return
 
         project_endpoints = self.get_project_layer_endpoints()
         if not project_endpoints:
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                self.tr(u'No mapped layers'),
-                self.tr(u"Aucune couche mappée n'a été trouvée dans le projet.")
-            )
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
+                                  self.tr(u"Aucune couche mappée n'a été trouvée dans le projet."))
             return
 
         reply = QMessageBox.question(
-            self.iface.mainWindow(),
-            self.tr(u'Confirmer la migration'),
-            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n"
-                  u"Attention : Cette opération insérera de nouveaux enregistrements.").format(count=len(project_endpoints)),
+            self.iface.mainWindow(), self.tr(u'Confirmer la migration'),
+            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n\n"
+                  u"La migration utilisera la logique 'Upsert' : les enregistrements existants seront mis à jour "
+                  u"et les nouveaux seront créés.").format(count=len(project_endpoints)),
             QMessageBox.Yes | QMessageBox.No
         )
-
         if reply != QMessageBox.Yes:
             return
 
+        # Préparer les données pour la tâche (car on ne peut pas manipuler les couches QGIS dans un thread)
         project = QgsProject.instance()
-        results = []
-        errors = []
-
+        migration_data = []
         for layer_name, mapping in project_endpoints.items():
             layers = project.mapLayersByName(layer_name)
-            if not layers:
-                continue
+            if layers:
+                data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+                if data:
+                    migration_data.append((layer_name, mapping['endpoint'], data))
 
-            layer = layers[0]
+        if not migration_data:
+            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
+            return
+
+        # Créer et lancer la tâche asynchrone
+        task = QgsTask.fromFunction(
+            self.tr(u'Migration des données MrvTeraka'),
+            self._do_migration_task,
+            migration_data=migration_data,
+            on_finished=self._on_migration_finished
+        )
+        QgsApplication.taskManager().addTask(task)
+
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours en arrière-plan..."))
+
+    def _do_migration_task(self, task, migration_data):
+        """Exécution de la migration dans un thread séparé."""
+        results = []
+        errors_count = 0
+        total = len(migration_data)
+
+        for i, (layer_name, endpoint, data) in enumerate(migration_data):
+            if task.isCanceled():
+                return {'results': results, 'status': 'canceled'}
+
             try:
-                # Extraction des données
-                data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+                self.postgrest.insert(endpoint, data, upsert=True)
+                results.append(f"✅ {layer_name} : {len(data)} enregistrements migrés")
+            except Exception as e:
+                results.append(f"❌ {layer_name} : {str(e)}")
+                errors_count += 1
 
-                if not data:
-                    results.append(f"⚪ {layer_name} : Aucune donnée à envoyer")
-                    continue
+            task.setProgress((i + 1) / total * 100)
 
-                # Envoi à l'API (Insert)
-                # Note: On utilise insert qui supporte les listes de dicts
-                response = self.postgrest.insert(mapping['endpoint'], data)
+        return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
 
-                count = len(data)
-                results.append(f"✅ {layer_name} : {count} enregistrements migrés vers {mapping['endpoint']}")
+    def _on_migration_finished(self, result):
+        """Callback appelé à la fin de la tâche de migration."""
+        if not result or result.get('status') == 'canceled':
+            self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
+            return
 
-            except Exception as exc:
-                err_msg = f"❌ {layer_name} : {str(exc)}"
-                errors.append(err_msg)
-                results.append(err_msg)
+        report = "\n".join(result['results'])
+        if self.dockwidget:
+            self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
 
-        report = "\n".join(results)
-        self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
-
-        if errors:
+        if result['errors_count'] > 0:
             QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
         else:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
