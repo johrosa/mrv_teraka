@@ -82,6 +82,9 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     def populate_table_lists(self):
         """Remplit les ComboBox avec les tables disponibles dans le mapping."""
+        if not self.plugin:
+            return
+
         mappings = self.plugin.load_layer_mappings()
         tables = sorted(list(mappings.keys()))
 
