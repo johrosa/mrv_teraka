@@ -68,6 +68,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
         self.logout_button.setToolTip("Se déconnecter de l'API et effacer le jeton local")
 
+        self.districtLineEdit.setPlaceholderText("Filtrer par district (ex: Itasy)")
+
         self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
         self.pushProjectButton.setToolTip("Pousser toutes les données du projet QGIS local vers la base de données")

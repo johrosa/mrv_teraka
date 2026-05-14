@@ -107,6 +107,24 @@
         </widget>
        </item>
        <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutDistrict">
+         <item>
+          <widget class="QLabel" name="labelDistrict">
+           <property name="text">
+            <string>District :</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="districtLineEdit">
+           <property name="placeholderText">
+            <string>Filtrer par district...</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
         <layout class="QHBoxLayout" name="horizontalLayoutDBBtns">
          <item>
           <widget class="QPushButton" name="compareButton">

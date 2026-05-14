@@ -690,6 +690,7 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
+        district_filter = self.dockwidget.districtLineEdit.text().strip()
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -703,7 +704,13 @@ class MrvTeraka:
         try:
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
-                db_data = self.postgrest.select(endpoint_value)
+
+                filters = {}
+                # Appliquer le filtre de district si spécifié et si la table est 'communes'
+                if district_filter and endpoint_value == 'communes':
+                    filters['district'] = f'eq.{district_filter}'
+
+                db_data = self.postgrest.select(endpoint_value, filters=filters)
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
 
@@ -743,6 +750,7 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
+        district_filter = self.dockwidget.districtLineEdit.text().strip()
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -755,9 +763,17 @@ class MrvTeraka:
 
         try:
             report = [f"Statut : Connecté à {self.api_base_url}"]
+            if district_filter:
+                report.append(f"Filtre District : {district_filter}")
+
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
-                count = len(self.postgrest.select(endpoint_value, select="id"))
+
+                filters = {}
+                if district_filter and endpoint_value == 'communes':
+                    filters['district'] = f'eq.{district_filter}'
+
+                count = len(self.postgrest.select(endpoint_value, select="id", filters=filters))
                 report.append(f"{layer_name} -> {endpoint_value} : {count} enregistrements")
 
             qgis_layers = [l.name() for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
