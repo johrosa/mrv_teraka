@@ -76,7 +76,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.pushProjectButton.setToolTip("Pousser toutes les données du projet QGIS local vers la base de données")
 
         self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
-        self.uploadToMerginButton.setToolTip("Alternative pour l'exportation Mergin")
         self.refreshFromApiButton.setToolTip("Recharger les données depuis l'API PostgREST")
         self.loadFromMerginButton.setToolTip("Charger les données collectées depuis le dossier local Mergin")
         self.refreshFromMerginButton.setToolTip("Mettre à jour les données à partir du stockage Mergin")
@@ -122,7 +121,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
         self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
-        self.uploadToMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
         self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
         self.refreshFromMerginButton.clicked.connect(self.plugin.refresh_data_via_mergin)
         self.syncToBackendButton.clicked.connect(self.plugin.sync_validated_data_to_backend)
@@ -181,7 +179,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.prepareMerginButton.setEnabled(True)
 
         # Boutons de flux Mergin
-        for attr in ('loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton'):
+        for attr in ('loadFromMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton'):
             if hasattr(self, attr):
                 getattr(self, attr).setEnabled(True)
 
@@ -208,7 +206,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Désactiver tous les boutons d'action
         buttons = [
             'compareButton', 'loadDbButton', 'pushProjectButton', 'prepareMerginButton',
-            'loadFromMerginButton', 'uploadToMerginButton', 'refreshFromApiButton',
+            'loadFromMerginButton', 'refreshFromApiButton',
             'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'
         ]
         for attr in buttons:

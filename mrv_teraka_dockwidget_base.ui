@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>800</height>
+    <height>850</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,51 +16,120 @@
   <widget class="QWidget" name="dockWidgetContents">
    <layout class="QVBoxLayout" name="verticalLayoutMain">
     <property name="spacing">
-     <number>10</number>
+     <number>6</number>
     </property>
     <property name="leftMargin">
-     <number>9</number>
+     <number>6</number>
     </property>
     <property name="topMargin">
-     <number>9</number>
+     <number>6</number>
     </property>
     <property name="rightMargin">
-     <number>9</number>
+     <number>6</number>
     </property>
     <property name="bottomMargin">
-     <number>9</number>
+     <number>6</number>
     </property>
 
-    <!-- Groupe Projets -->
+    <!-- HEADER: Authentification (Compact) -->
     <item>
-     <widget class="QGroupBox" name="groupBoxProject">
-      <property name="title">
-       <string>Gestion des Projets</string>
+     <widget class="QFrame" name="headerFrame">
+      <property name="frameShape">
+       <enum>QFrame::StyledPanel</enum>
       </property>
-      <layout class="QVBoxLayout" name="verticalLayoutProject">
+      <layout class="QHBoxLayout" name="horizontalLayoutHeader">
+       <property name="spacing">
+        <number>4</number>
+       </property>
+       <property name="leftMargin">
+        <number>4</number>
+       </property>
+       <property name="topMargin">
+        <number>4</number>
+       </property>
+       <property name="rightMargin">
+        <number>4</number>
+       </property>
+       <property name="bottomMargin">
+        <number>4</number>
+       </property>
        <item>
-        <widget class="QComboBox" name="projectComboBox">
-         <property name="editable">
-          <bool>true</bool>
+        <widget class="QLabel" name="statusLabel">
+         <property name="font">
+          <font>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
          </property>
-         <property name="placeholderText">
-          <string>Sélectionner un projet...</string>
+         <property name="text">
+          <string>●</string>
          </property>
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutProjectBtns">
+        <widget class="QLabel" name="userLabel">
+         <property name="text">
+          <string>Déconnecté</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="headerSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="logoutButton">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Quitter</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <!-- ETAPE 1: GESTION DE PROJET -->
+    <item>
+     <widget class="QGroupBox" name="groupBoxProject">
+      <property name="title">
+       <string>1. Sélection du Projet</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayoutProject">
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutProj">
+         <item>
+          <widget class="QComboBox" name="projectComboBox">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="editable">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
          <item>
           <widget class="QPushButton" name="loadProjectButton">
            <property name="text">
-            <string>Ouvrir Projet</string>
+            <string>Ouvrir</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QPushButton" name="saveProjectButton">
            <property name="text">
-            <string>Enregistrer Projet</string>
+            <string>Enregistrer</string>
            </property>
           </widget>
          </item>
@@ -70,78 +139,17 @@
      </widget>
     </item>
 
-    <!-- Groupe Authentification -->
-    <item>
-     <widget class="QGroupBox" name="groupBoxAuth">
-      <property name="title">
-       <string>Connexion API</string>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayoutAuth">
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutStatus">
-         <item>
-          <widget class="QLabel" name="statusLabel">
-           <property name="font">
-            <font>
-             <weight>75</weight>
-             <bold>true</bold>
-            </font>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">color: #d32f2f;</string>
-           </property>
-           <property name="text">
-            <string>● Déconnecté</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="userLabel">
-           <property name="styleSheet">
-            <string notr="true">color: #666; font-size: 10px;</string>
-           </property>
-           <property name="text">
-            <string>Pas connecté</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="horizontalSpacerStatus">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-          </spacer>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QPushButton" name="logoutButton">
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="text">
-          <string>Déconnexion</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
-
-    <!-- Groupe Base de Données -->
+    <!-- ETAPE 2: OPERATIONS DONNEES -->
     <item>
      <widget class="QGroupBox" name="groupBoxDB">
       <property name="title">
-       <string>Données PostgREST</string>
+       <string>2. Gestion des Couches (API)</string>
       </property>
       <layout class="QVBoxLayout" name="verticalLayoutDB">
        <item>
         <widget class="QComboBox" name="endpointComboBox">
          <property name="editable">
           <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>Sélectionner ou saisir une table...</string>
          </property>
         </widget>
        </item>
@@ -157,61 +165,57 @@
          <item>
           <widget class="QLineEdit" name="districtLineEdit">
            <property name="placeholderText">
-            <string>Filtrer par district...</string>
+            <string>Optionnel...</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutDBBtns">
-         <item>
+        <layout class="QGridLayout" name="gridLayoutDB">
+         <item row="0" column="0">
+          <widget class="QPushButton" name="loadDbButton">
+           <property name="text">
+            <string>Charger</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
           <widget class="QPushButton" name="compareButton">
            <property name="text">
             <string>Comparer</string>
            </property>
           </widget>
          </item>
-         <item>
-          <widget class="QPushButton" name="loadDbButton">
-           <property name="text">
-            <string>Charger base</string>
-           </property>
-          </widget>
-         </item>
-         <item>
+         <item row="1" column="0">
           <widget class="QPushButton" name="pushProjectButton">
            <property name="text">
-            <string>Migrer vers base</string>
+            <string>Migrer Projet</string>
            </property>
           </widget>
          </item>
-         <item>
+         <item row="1" column="1">
           <widget class="QPushButton" name="refreshFromApiButton">
            <property name="text">
-            <string>Rafraîchir API</string>
+            <string>Actualiser</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
        <item>
-        <widget class="QLabel" name="labelResDB">
-         <property name="text">
-          <string>Résultats :</string>
-         </property>
-        </widget>
-       </item>
-       <item>
         <widget class="QTextEdit" name="comparisonResultsTextEdit">
          <property name="maximumSize">
           <size>
            <width>16777215</width>
-           <height>100</height>
+           <height>80</height>
           </size>
          </property>
          <property name="readOnly">
           <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>Résultats des opérations...</string>
          </property>
         </widget>
        </item>
@@ -219,109 +223,99 @@
      </widget>
     </item>
 
-    <!-- Groupe Workflow Mergin -->
+    <!-- ETAPE 3: WORKFLOW TERRAIN (MERGIN) -->
     <item>
      <widget class="QGroupBox" name="groupBoxMergin">
       <property name="title">
-       <string>Flux Mergin Map</string>
+       <string>3. Cycle Terrain (Mergin Map)</string>
       </property>
       <layout class="QVBoxLayout" name="verticalLayoutMergin">
        <item>
-        <widget class="QLabel" name="labelStep1">
-         <property name="styleSheet">
-          <string notr="true">font-weight: bold; color: #1976d2;</string>
+        <widget class="QLabel" name="labelMerginStep1">
+         <property name="font">
+          <font>
+           <italic>true</italic>
+          </font>
          </property>
          <property name="text">
-          <string>1. Préparation</string>
+          <string>A. Préparation pour le terrain</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QComboBox" name="merginEndpointComboBox">
-         <property name="editable">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>Sélectionner table terrain...</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="prepareMerginButton">
-         <property name="text">
-          <string>Préparer Mergin</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="labelStep2">
-         <property name="styleSheet">
-          <string notr="true">font-weight: bold; color: #1976d2;</string>
-         </property>
-         <property name="text">
-          <string>2. Collecte &amp; Import</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutMerginBtns">
+        <layout class="QHBoxLayout" name="horizontalLayoutMerginPrep">
          <item>
-          <widget class="QPushButton" name="loadFromMerginButton">
-           <property name="text">
-            <string>Importer Mergin</string>
+          <widget class="QComboBox" name="merginEndpointComboBox">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="uploadToMerginButton">
+          <widget class="QPushButton" name="prepareMerginButton">
            <property name="text">
-            <string>Exporter Mergin</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="refreshFromMerginButton">
-           <property name="text">
-            <string>Rafraîchir Mergin</string>
+            <string>Préparer</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
        <item>
-        <widget class="QLabel" name="labelStep3">
-         <property name="styleSheet">
-          <string notr="true">font-weight: bold; color: #1976d2;</string>
+        <widget class="QLabel" name="labelMerginStep2">
+         <property name="font">
+          <font>
+           <italic>true</italic>
+          </font>
          </property>
          <property name="text">
-          <string>3. Validation &amp; Fusion</string>
+          <string>B. Import &amp; Validation (Retour terrain)</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="openValidationButton">
-         <property name="enabled">
-          <bool>false</bool>
+        <layout class="QHBoxLayout" name="horizontalLayoutMerginImport">
+         <item>
+          <widget class="QPushButton" name="loadFromMerginButton">
+           <property name="text">
+            <string>Importer</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="refreshFromMerginButton">
+           <property name="text">
+            <string>Actualiser</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="openValidationButton">
+           <property name="text">
+            <string>Valider</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="labelMerginStep3">
+         <property name="font">
+          <font>
+           <italic>true</italic>
+          </font>
          </property>
          <property name="text">
-          <string>Valider import</string>
+          <string>C. Finalisation</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="syncToBackendButton">
-         <property name="enabled">
-          <bool>false</bool>
+         <property name="styleSheet">
+          <string notr="true">font-weight: bold;</string>
          </property>
          <property name="text">
-          <string>Synchroniser</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="labelResMergin">
-         <property name="text">
-          <string>Statut Mergin :</string>
+          <string>Synchroniser vers API</string>
          </property>
         </widget>
        </item>
@@ -330,11 +324,14 @@
          <property name="maximumSize">
           <size>
            <width>16777215</width>
-           <height>100</height>
+           <height>80</height>
           </size>
          </property>
          <property name="readOnly">
           <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>Statut du flux terrain...</string>
          </property>
         </widget>
        </item>
