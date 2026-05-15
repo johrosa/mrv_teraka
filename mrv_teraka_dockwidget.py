@@ -63,6 +63,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         # Remplir les listes déroulantes depuis le mapping
         self.populate_table_lists()
+        self.populate_project_list()
 
         # Configuration des icônes et info-bulles (ergonomie)
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
@@ -96,12 +97,25 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.merginEndpointComboBox.clear()
         self.merginEndpointComboBox.addItems(tables)
 
+    def populate_project_list(self):
+        """Remplit la liste des projets existants."""
+        if not self.plugin or not self.plugin.mergin_manager:
+            return
+
+        self.projectComboBox.clear()
+        projects = self.plugin.mergin_manager.list_projects()
+        for p in projects:
+            self.projectComboBox.addItem(p.get('name', 'Sans nom'), p.get('id'))
+
     def setup_connections(self):
         """Connecte les signaux aux slots du plugin."""
         if not self.plugin:
             return
 
         # Connexions garanties par le fichier .ui
+        self.loadProjectButton.clicked.connect(self.on_load_project_clicked)
+        self.saveProjectButton.clicked.connect(self.plugin.save_current_project_configuration)
+
         self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
         self.loadDbButton.clicked.connect(self.plugin.load_database_data)
         self.pushProjectButton.clicked.connect(self.plugin.push_project_data_to_backend)
@@ -121,6 +135,23 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         """Gère le clic sur le bouton de déconnexion"""
         self.logout_requested.emit()
 
+    def on_load_project_clicked(self):
+        """Gère le chargement d'un projet sélectionné."""
+        project_id = self.projectComboBox.currentData()
+        if not project_id:
+            # Essayer de trouver par nom si pas de data (cas editable)
+            name = self.projectComboBox.currentText()
+            projects = self.plugin.mergin_manager.list_projects()
+            for p in projects:
+                if p.get('name') == name:
+                    project_id = p.get('id')
+                    break
+
+        if project_id:
+            self.plugin.load_project_by_id(project_id)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Projet introuvable", "Veuillez sélectionner un projet valide.")
+
     def set_status_message(self, message, color="black"):
         """Met à jour uniquement le message de statut."""
         self.status_label.setText(message)
@@ -137,6 +168,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.logout_button.setEnabled(True)
 
         # Activer les groupes et les listes
+        self.groupBoxProject.setEnabled(True)
         self.groupBoxDB.setEnabled(True)
         self.groupBoxMergin.setEnabled(True)
         self.endpointComboBox.setEnabled(True)
@@ -167,6 +199,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.logout_button.setEnabled(False)
 
         # Désactiver les groupes et les listes
+        self.groupBoxProject.setEnabled(False)
         self.groupBoxDB.setEnabled(False)
         self.groupBoxMergin.setEnabled(False)
         self.endpointComboBox.setEnabled(False)

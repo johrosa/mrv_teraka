@@ -31,6 +31,45 @@
      <number>9</number>
     </property>
 
+    <!-- Groupe Projets -->
+    <item>
+     <widget class="QGroupBox" name="groupBoxProject">
+      <property name="title">
+       <string>Gestion des Projets</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayoutProject">
+       <item>
+        <widget class="QComboBox" name="projectComboBox">
+         <property name="editable">
+          <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>Sélectionner un projet...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutProjectBtns">
+         <item>
+          <widget class="QPushButton" name="loadProjectButton">
+           <property name="text">
+            <string>Ouvrir Projet</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="saveProjectButton">
+           <property name="text">
+            <string>Enregistrer Projet</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
     <!-- Groupe Authentification -->
     <item>
      <widget class="QGroupBox" name="groupBoxAuth">

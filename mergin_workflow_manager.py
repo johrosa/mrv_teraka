@@ -33,18 +33,21 @@ class MerginWorkflowManager:
         for directory in [self.workflow_dir, self.projects_dir, self.backups_dir]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
-    def create_project(self, project_name, source_table, description=""):
+    def create_project(self, project_name, source_tables, description=""):
         """
         Crée un nouveau projet Mergin et initialise son dossier.
 
         Args:
             project_name (str): Nom convivial du projet.
-            source_table (str): Nom de la ou des tables sources (séparées par des virgules).
+            source_tables (list or str): Liste des tables sources ou chaîne séparée par virgules.
             description (str): Description optionnelle.
 
         Returns:
             str: L'ID unique du projet généré.
         """
+        if isinstance(source_tables, str):
+            source_tables = [t.strip() for t in source_tables.split(',') if t.strip()]
+
         project_id = f"{project_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
         project_path = os.path.join(self.projects_dir, project_id)
         Path(project_path).mkdir(parents=True, exist_ok=True)
@@ -53,7 +56,7 @@ class MerginWorkflowManager:
         metadata = {
             'id': project_id,
             'name': project_name,
-            'source_table': source_table,
+            'source_tables': source_tables,
             'description': description,
             'created': datetime.datetime.now().isoformat(),
             'stage': 1,  # Préparation
@@ -158,13 +161,30 @@ class MerginWorkflowManager:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def get_project_info(self, project_id):
-        """Récupère les informations d'un projet"""
+        """Récupère les informations d'un projet et gère la migration des anciennes métadonnées."""
         metadata_file = os.path.join(self.projects_dir, project_id, 'metadata.json')
 
         if os.path.exists(metadata_file):
             with open(metadata_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                metadata = json.load(f)
+
+            # Migration logic: convert source_table (str) to source_tables (list)
+            if 'source_table' in metadata and 'source_tables' not in metadata:
+                table = metadata.pop('source_table')
+                metadata['source_tables'] = [t.strip() for t in table.split(',') if t.strip()]
+                # Update the file with migrated data
+                with open(metadata_file, 'w', encoding='utf-8') as f:
+                    json.dump(metadata, f, indent=2)
+
+            return metadata
         return None
+
+    def get_project_layers(self, project_id):
+        """Retourne la liste des tables associées à un projet"""
+        info = self.get_project_info(project_id)
+        if info:
+            return info.get('source_tables', [])
+        return []
 
     def list_projects(self):
         """Liste tous les projets Mergin"""

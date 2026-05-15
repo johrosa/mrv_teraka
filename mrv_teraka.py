@@ -510,11 +510,93 @@ class MrvTeraka:
         if not endpoint:
             return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
 
+        # Chercher d'abord dans les mappings chargés explicitement
+        mappings = self.load_layer_mappings()
+        for m_name, m_data in mappings.items():
+            if m_data.get('endpoint') == endpoint:
+                return m_data
+
+        # Fallback sur les couches du projet
         for mapping in self.get_project_layer_endpoints().values():
             if mapping.get('endpoint') == endpoint:
                 return mapping
 
         return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
+
+    def save_current_project_configuration(self):
+        """Enregistre la configuration actuelle des couches comme un nouveau projet."""
+        if not self.check_api_auth():
+            return
+
+        name, ok = QInputDialog.getText(self.iface.mainWindow(), self.tr(u"Enregistrer Projet"), self.tr(u"Nom du projet :"))
+        if not ok or not name:
+            return
+
+        endpoints = self.get_project_layer_endpoints()
+        if not endpoints:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u"Erreur"), self.tr(u"Aucune couche mappée trouvée dans le projet."))
+            return
+
+        tables = list(set([m['endpoint'] for m in endpoints.values()]))
+        project_id = self.mergin_manager.create_project(name, tables)
+        self.current_project_id = project_id
+
+        if self.dockwidget:
+            self.dockwidget.populate_project_list()
+            # Sélectionner le nouveau projet
+            idx = self.dockwidget.projectComboBox.findData(project_id)
+            if idx >= 0:
+                self.dockwidget.projectComboBox.setCurrentIndex(idx)
+
+        QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet enregistré"),
+                                self.tr(u"Projet '{0}' enregistré avec {1} couches.").format(name, len(tables)))
+
+    def load_project_by_id(self, project_id):
+        """Charge toutes les couches associées à un projet."""
+        if not self.check_api_auth():
+            return
+
+        info = self.mergin_manager.get_project_info(project_id)
+        if not info:
+            QMessageBox.critical(self.iface.mainWindow(), self.tr(u"Erreur"), self.tr(u"Informations du projet introuvables."))
+            return
+
+        self.current_project_id = project_id
+        tables = info.get('source_tables', [])
+
+        if not tables:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u"Projet vide"), self.tr(u"Ce projet ne contient aucune table."))
+            return
+
+        # Charger chaque table
+        errors = []
+        project = QgsProject.instance()
+
+        for table in tables:
+            try:
+                mapping = self.get_mapping_for_endpoint(table)
+                db_data = self.postgrest.select(table)
+                display_name = f"{table} (API)"
+                geom_field = mapping.get('geom_field', 'geom')
+
+                layer = create_vector_layer(db_data, display_name, geom_field)
+                if layer and layer.isValid():
+                    layer.setCustomProperty('postgrest:endpoint', table)
+                    layer.setCustomProperty('postgrest:geom_field', geom_field)
+                    layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+                    project.addMapLayer(layer)
+                else:
+                    errors.append(table)
+            except Exception as e:
+                errors.append(f"{table} ({str(e)})")
+
+        if errors:
+            self.show_message(self.tr(u"Chargement partiel"),
+                                self.tr(u"Erreur lors du chargement des tables : {0}").format(", ".join(errors)),
+                                icon=QMessageBox.Warning)
+        else:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet chargé"),
+                                    self.tr(u"Le projet '{0}' a été chargé avec succès.").format(info.get('name')))
 
     def set_validation_ready(self, ready: bool):
         """Active ou désactive le bouton de validation."""
@@ -788,8 +870,20 @@ class MrvTeraka:
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
-        requested_endpoints = self.get_requested_endpoints(endpoint)
+        # Si un projet est déjà sélectionné, on exporte ses tables
+        info = None
+        if self.current_project_id:
+            info = self.mergin_manager.get_project_info(self.current_project_id)
+
+        requested_endpoints = {}
+        if info:
+            tables = info.get('source_tables', [])
+            for table in tables:
+                requested_endpoints[table] = self.get_mapping_for_endpoint(table)
+        else:
+            endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
+            requested_endpoints = self.get_requested_endpoints(endpoint)
+
         if not requested_endpoints:
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -804,13 +898,14 @@ class MrvTeraka:
                 endpoint_value = mapping['endpoint']
                 export_payload[endpoint_value] = self.postgrest.select(endpoint_value)
 
-            project_name = 'mergin_' + __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
-            project_description = f"Collecte terrain - {', '.join(requested_endpoints.keys())}"
-            self.current_project_id = self.mergin_manager.create_project(
-                project_name,
-                ','.join([mapping['endpoint'] for mapping in requested_endpoints.values()]),
-                project_description
-            )
+            if not self.current_project_id:
+                project_name = 'mergin_' + __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+                project_description = f"Collecte terrain - {', '.join(requested_endpoints.keys())}"
+                self.current_project_id = self.mergin_manager.create_project(
+                    project_name,
+                    ','.join([mapping['endpoint'] for mapping in requested_endpoints.values()]),
+                    project_description
+                )
 
             self.mergin_manager.save_exported_data(self.current_project_id, export_payload)
 
@@ -924,20 +1019,24 @@ class MrvTeraka:
             )
             return
 
-        mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-            self.dockwidget.merginEndpointLineEdit.text().strip()
-        )
-
-        if not mapping or not mapping.get('endpoint'):
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Endpoint introuvable'),
-                self.tr(u'Impossible de déterminer l\'endpoint API pour la synchronisation.')
+        # Gérer les données multi-tables ou mono-table
+        sync_payloads = []
+        if isinstance(self.current_validated_data, dict) and not is_geojson(self.current_validated_data):
+            # C'est un dictionnaire {endpoint: [data]}
+            for endpoint, data in self.current_validated_data.items():
+                sync_payloads.append((self.get_mapping_for_endpoint(endpoint), data))
+        else:
+            # C'est une liste de données (mono-table)
+            mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
+                self.dockwidget.merginEndpointLineEdit.text().strip()
             )
-            return
+            sync_payloads.append((mapping, self.current_validated_data))
 
         try:
-            original_data = []
+            all_merge_results = []
+
+            # Charger les données originales complètes si possible
+            full_original_data = {}
             if self.current_project_id:
                 metadata_file = os.path.join(
                     self.mergin_manager.projects_dir,
@@ -946,16 +1045,26 @@ class MrvTeraka:
                 )
                 if os.path.exists(metadata_file):
                     with open(metadata_file, 'r', encoding='utf-8') as f:
-                        original_data = json.load(f)
+                        full_original_data = json.load(f)
 
-            if not original_data:
-                original_data = self.postgrest.select(mapping['endpoint'])
+            for mapping, validated_data in sync_payloads:
+                endpoint = mapping.get('endpoint')
+                if not endpoint:
+                    continue
 
-            merge_results = self.merge_validated_data(mapping, original_data, self.current_validated_data)
-            if merge_results and self.current_project_id:
+                original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else None
+                if not original_data:
+                    original_data = self.postgrest.select(endpoint)
+
+                merge_results = self.merge_validated_data(mapping, original_data, validated_data)
+                if merge_results:
+                    all_merge_results.append(merge_results)
+
+            if all_merge_results and self.current_project_id:
+                total_actions = sum(len(r.get('actions', [])) for r in all_merge_results)
                 self.mergin_manager.sync_to_api(self.current_project_id, {
                     'status': 'synced',
-                    'merged_actions': len(merge_results.get('actions', [])),
+                    'merged_actions': total_actions,
                     'timestamp': str(__import__('datetime').datetime.now())
                 })
                 self.set_sync_ready(False)
