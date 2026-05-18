@@ -164,6 +164,9 @@
          </item>
          <item>
           <widget class="QLineEdit" name="districtLineEdit">
+           <property name="toolTip">
+            <string>Filtre global par district pour le chargement et la préparation des données Mergin.</string>
+           </property>
            <property name="placeholderText">
             <string>Optionnel...</string>
            </property>

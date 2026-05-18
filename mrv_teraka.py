@@ -893,17 +893,32 @@ class MrvTeraka:
             return
 
         try:
+            district_filter = self.dockwidget.districtLineEdit.text().strip()
             export_payload = {}
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
-                export_payload[endpoint_value] = self.postgrest.select(endpoint_value)
+                filters = {}
+                # Appliquer le filtre de district si spécifié (ex: communes)
+                if district_filter and endpoint_value == 'communes':
+                    filters['district'] = f'eq.{district_filter}'
+
+                export_payload[endpoint_value] = self.postgrest.select(endpoint_value, filters=filters)
 
             if not self.current_project_id:
-                project_name = 'mergin_' + __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
-                project_description = f"Collecte terrain - {', '.join(requested_endpoints.keys())}"
+                timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+                project_name = 'mergin_'
+                if district_filter:
+                    project_name += f"{district_filter}_"
+                project_name += timestamp
+
+                project_description = f"Collecte terrain"
+                if district_filter:
+                    project_description += f" [District: {district_filter}]"
+                project_description += f" - {', '.join(requested_endpoints.keys())}"
+
                 self.current_project_id = self.mergin_manager.create_project(
                     project_name,
-                    ','.join([mapping['endpoint'] for mapping in requested_endpoints.values()]),
+                    list(set([mapping['endpoint'] for mapping in requested_endpoints.values()])),
                     project_description
                 )
 
