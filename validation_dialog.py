@@ -23,8 +23,23 @@ class DataValidationDialog(QDialog):
     
     def __init__(self, parent=None, collected_data=None, original_data=None):
         super().__init__(parent)
-        self.collected_data = collected_data or []
-        self.original_data = original_data or []
+
+        # Gérer les données multi-tables ou mono-table
+        self.full_collected_data = collected_data or {}
+        self.full_original_data = original_data or {}
+
+        # S'assurer que c'est un dictionnaire pour le multi-table
+        if isinstance(self.full_collected_data, list):
+            self.full_collected_data = {'default': self.full_collected_data}
+        if isinstance(self.full_original_data, list):
+            self.full_original_data = {'default': self.full_original_data}
+
+        # Table active
+        self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
+
+        self.collected_data = self.full_collected_data.get(self.current_table, [])
+        self.original_data = self.full_original_data.get(self.current_table, [])
+
         self.validated_data = []
         self.setWindowTitle("Validation des Données Collectées")
         self.setGeometry(100, 100, 1000, 600)
@@ -34,6 +49,17 @@ class DataValidationDialog(QDialog):
         """Initialise l'interface"""
         layout = QVBoxLayout()
         
+        # --- Sélecteur de table (pour multi-table) ---
+        if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+            table_selector_layout = QHBoxLayout()
+            table_selector_layout.addWidget(QLabel("<b>Table à valider :</b>"))
+            self.table_selector = QComboBox()
+            self.table_selector.addItems(sorted(self.full_collected_data.keys()))
+            self.table_selector.currentTextChanged.connect(self.switch_table)
+            table_selector_layout.addWidget(self.table_selector)
+            table_selector_layout.addStretch()
+            layout.addLayout(table_selector_layout)
+
         # --- Titre et Description ---
         title = QLabel("Validation des Données Collectées au Terrain")
         title_font = QFont()
@@ -103,6 +129,16 @@ class DataValidationDialog(QDialog):
         
         self.setLayout(layout)
         self.populate_data()
+
+    def switch_table(self, table_name):
+        """Change la table active et rafraîchit l'UI."""
+        self.current_table = table_name
+        self.collected_data = self.full_collected_data.get(table_name, [])
+        self.original_data = self.full_original_data.get(table_name, [])
+
+        # Rafraîchir toutes les vues
+        self.populate_data()
+        self.tabs.setCurrentIndex(0) # Revenir au résumé
     
     def create_overview_tab(self):
         """Onglet vue d'ensemble"""
@@ -356,7 +392,18 @@ class DataValidationDialog(QDialog):
         table.resizeColumnsToContents()
     
     def populate_data(self):
-        """Remplit les tables avec les données"""
+        """Remplit les tables avec les données de la table active."""
+        # Vider les onglets
+        self.table_collected.setRowCount(0)
+        self.table_before.setRowCount(0)
+        self.combo_records.clear()
+
+        # Recréer la table de validation car sa structure peut changer
+        self.table_validation.setRowCount(0)
+        self.table_validation.setRowCount(len(self.collected_data))
+        for row, item in enumerate(self.collected_data):
+            self._fill_validation_row(self.table_validation, row, item)
+
         # Remplir les onglets
         self.populate_table_from_data(self.table_collected, self.collected_data)
         self.populate_table_from_data(self.table_before, self.original_data)
@@ -520,15 +567,19 @@ class DataValidationDialog(QDialog):
         return summary
 
     def auto_merge(self):
-        """Fusion automatique des données"""
+        """Fusion automatique des données pour toutes les tables."""
         reply = QMessageBox.question(
             self, "Fusion Automatique",
-            "Fusionner automatiquement toutes les données?\n"
+            "Fusionner automatiquement toutes les données de TOUTES les tables ?\n"
             "Les nouveaux enregistrements seront ajoutés."
         )
         
         if reply == QMessageBox.Yes:
-            self.validated_data = self.collected_data
+            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+                self.validated_data = self.full_collected_data
+            else:
+                self.validated_data = self.collected_data
+
             self.progress.setValue(100)
             QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
     

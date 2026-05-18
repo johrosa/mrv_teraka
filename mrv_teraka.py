@@ -461,10 +461,13 @@ class MrvTeraka:
         mappings = self.load_layer_mappings()
         if layer_name in mappings and mappings[layer_name].get('endpoint'):
             return mappings[layer_name]
+
+        # Mapping par défaut dynamique
         return {
             'endpoint': normalize_layer_name_to_endpoint(layer_name),
             'geom_field': 'geom',
-            'pk_field': 'id'
+            'pk_field': 'id',
+            'columns': [] # Inconnu par défaut
         }
 
     def get_project_layer_endpoints(self):
