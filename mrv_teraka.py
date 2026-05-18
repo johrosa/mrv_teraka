@@ -715,12 +715,68 @@ class MrvTeraka:
 
     # --- ACTIONS SIG ---
 
+    def show_mapping_dialog(self):
+        """Affiche le dialogue de mapping manuel des couches."""
+        from .layer_mapping_dialog import LayerMappingDialog
+
+        layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
+        mappings = self.load_layer_mappings()
+        endpoints = [m.get('endpoint') for m in mappings.values()]
+
+        dialog = LayerMappingDialog(self.iface.mainWindow(), layers, endpoints)
+        if dialog.exec_() == LayerMappingDialog.Accepted:
+            manual_mapping = dialog.get_mapping()
+            # On stocke le mapping dans les propriétés des couches
+            for layer_id, endpoint in manual_mapping.items():
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer:
+                    mapping = self.get_mapping_for_endpoint(endpoint)
+                    layer.setCustomProperty('postgrest:endpoint', endpoint)
+                    layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                    layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+
+            QMessageBox.information(self.iface.mainWindow(), "Mapping mis à jour",
+                                    f"{len(manual_mapping)} couches ont été mappées avec succès.")
+            return True
+        return False
+
     def push_project_data_to_backend(self):
         """Pousse toutes les données du projet QGIS vers le backend API via une tâche asynchrone."""
         if not self.check_api_auth():
             return
 
-        project_endpoints = self.get_project_layer_endpoints()
+        # Vérifier si des couches sont déjà mappées
+        project_endpoints = {}
+        for layer in QgsProject.instance().mapLayers().values():
+            if layer.type() != QgsMapLayer.VectorLayer:
+                continue
+            endpoint = layer.customProperty('postgrest:endpoint')
+            if endpoint:
+                project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+
+        # Si aucune couche n'est mappée via propriétés, on propose le mapping manuel
+        if not project_endpoints:
+            reply = QMessageBox.question(
+                self.iface.mainWindow(), self.tr(u"Mapping requis"),
+                self.tr(u"Aucune couche n'est associée à l'API. Voulez-vous configurer le mapping maintenant ?"),
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                if self.show_mapping_dialog():
+                    # Recalculer les endpoints après mapping
+                    for layer in QgsProject.instance().mapLayers().values():
+                        if layer.type() != QgsMapLayer.VectorLayer:
+                            continue
+                        endpoint = layer.customProperty('postgrest:endpoint')
+                        if endpoint:
+                            project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+                else:
+                    return # Annulé
+
+        if not project_endpoints:
+            # Fallback sur le mapping automatique par nom si toujours rien
+            project_endpoints = self.get_project_layer_endpoints()
+
         if not project_endpoints:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
                                   self.tr(u"Aucune couche mappée n'a été trouvée dans le projet."))
@@ -741,10 +797,27 @@ class MrvTeraka:
         migration_data = []
         for layer_name, mapping in project_endpoints.items():
             layers = project.mapLayersByName(layer_name)
-            if layers:
-                data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
-                if data:
-                    migration_data.append((layer_name, mapping['endpoint'], data))
+            if not layers:
+                continue
+
+            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+            if not raw_data:
+                continue
+
+            # Filtrage des colonnes : ne garder que celles qui existent dans l'API
+            # Utile pour les couches issues de jointures
+            api_columns = mapping.get('columns', [])
+            if api_columns:
+                filtered_data = []
+                geom_field = mapping.get('geom_field', 'geom')
+                for row in raw_data:
+                    filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
+                    filtered_data.append(filtered_row)
+                data_to_push = filtered_data
+            else:
+                data_to_push = raw_data
+
+            migration_data.append((layer_name, mapping['endpoint'], data_to_push))
 
         if not migration_data:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
