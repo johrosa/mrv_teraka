@@ -295,6 +295,15 @@ class PostgREST:
         """
         return self._make_request('POST', f'rpc/{function_name}', data=params or {}, show_error_ui=True)
 
+    def fetch_schema(self) -> Dict[str, Any]:
+        """
+        Récupère le schéma complet de l'API (OpenAPI / Root endpoint).
+
+        Returns:
+            Dict contenant les tables, vues et fonctions disponibles.
+        """
+        return self._make_request('GET', '', show_error_ui=True)
+
     def verify_token(self) -> bool:
         """Vérifie que le jeton actuel est accepté par le serveur."""
         if not self.jwt_token:

@@ -165,6 +165,10 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.logout_button.setEnabled(True)
 
+        # Recharger les tables dynamiquement si possible
+        self.populate_table_lists()
+        self.populate_project_list()
+
         # Activer les groupes et les listes
         self.groupBoxProject.setEnabled(True)
         self.groupBoxDB.setEnabled(True)

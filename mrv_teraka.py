@@ -422,9 +422,38 @@ class MrvTeraka:
         return True
 
     def load_layer_mappings(self):
-        """Charge les correspondances couche QGIS -> endpoint PostgREST."""
-        if getattr(self, 'layer_mappings', None) is None:
-            self.layer_mappings = load_layer_mapping(self.plugin_dir)
+        """Charge les correspondances couche QGIS -> endpoint PostgREST, via API ou local."""
+        if getattr(self, 'layer_mappings', None) is not None:
+            return self.layer_mappings
+
+        # Tentative via API
+        if self.postgrest:
+            try:
+                schema = self.postgrest.fetch_schema()
+                if schema and 'definitions' in schema:
+                    mappings = {}
+                    for table_name, definition in schema['definitions'].items():
+                        # Chercher les champs géométrie dans les propriétés
+                        geom_field = 'geom'
+                        props = definition.get('properties', {})
+                        for p_name, p_data in props.items():
+                            if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                                geom_field = p_name
+                                break
+
+                        mappings[table_name] = {
+                            'endpoint': table_name,
+                            'geom_field': geom_field,
+                            'pk_field': 'id', # PostgREST standard
+                            'columns': list(props.keys())
+                        }
+                    self.layer_mappings = mappings
+                    return mappings
+            except Exception:
+                pass
+
+        # Fallback sur le mapping local statique
+        self.layer_mappings = load_layer_mapping(self.plugin_dir)
         return self.layer_mappings
 
     def get_layer_mapping(self, layer_name):
@@ -788,8 +817,8 @@ class MrvTeraka:
                 endpoint_value = mapping['endpoint']
 
                 filters = {}
-                # Appliquer le filtre de district si spécifié et si la table est 'communes'
-                if district_filter and endpoint_value == 'communes':
+                # Appliquer le filtre de district si spécifié et si la table possède cette colonne
+                if district_filter and 'district' in mapping.get('columns', []):
                     filters['district'] = f'eq.{district_filter}'
 
                 db_data = self.postgrest.select(endpoint_value, filters=filters)
@@ -898,8 +927,8 @@ class MrvTeraka:
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
                 filters = {}
-                # Appliquer le filtre de district si spécifié (ex: communes)
-                if district_filter and endpoint_value == 'communes':
+                # Appliquer le filtre de district si spécifié et si la table possède cette colonne
+                if district_filter and 'district' in mapping.get('columns', []):
                     filters['district'] = f'eq.{district_filter}'
 
                 export_payload[endpoint_value] = self.postgrest.select(endpoint_value, filters=filters)

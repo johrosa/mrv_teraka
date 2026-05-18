@@ -12,7 +12,7 @@ from qgis.PyQt.QtWidgets import (
     QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout
 )
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.core import QgsProject, QgsVectorLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField
 import json
 
 
@@ -106,9 +106,20 @@ class DataValidationDialog(QDialog):
     
     def create_overview_tab(self):
         """Onglet vue d'ensemble"""
-        widget = QGroupBox("Résumé des Données")
+        widget = QGroupBox("Résumé et Contrôle Qualité")
         layout = QFormLayout()
         
+        # Règles de validation
+        self.rules_edit = QTextEdit()
+        self.rules_edit.setPlaceholderText("Saisir une expression QGIS par ligne (ex: diameter > 0)")
+        self.rules_edit.setMaximumHeight(80)
+        self.rules_edit.setToolTip("Une expression QGIS par ligne. Les lignes invalides seront marquées en orange.")
+        layout.addRow("Règles métier :", self.rules_edit)
+
+        self.btn_run_rules = QPushButton("🚀 Lancer vérification")
+        self.btn_run_rules.clicked.connect(self.run_validation_rules)
+        layout.addRow("", self.btn_run_rules)
+
         # Statistiques
         total_collected = len(self.collected_data)
         total_original = len(self.original_data)
@@ -370,6 +381,50 @@ class DataValidationDialog(QDialog):
         recs.append("✓ Résoudre les doublons potentiels")
         
         self.recommendation.setText("\n".join(recs))
+
+    def run_validation_rules(self):
+        """Exécute les expressions QGIS sur les données collectées."""
+        rules_text = self.rules_edit.toPlainText().strip()
+        if not rules_text:
+            return
+
+        rules = [r.strip() for t in rules_text.split('\n') if (r := t.strip())]
+        invalid_count = 0
+
+        # Préparer le contexte QGIS
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+
+        for row in range(self.table_validation.rowCount()):
+            item_data = self.collected_data[row]
+
+            # Créer une feature virtuelle pour l'expression
+            feat = QgsFeature()
+            for key, value in item_data.items():
+                feat.setAttribute(key, value)
+
+            context.setFeature(feat)
+
+            row_valid = True
+            for rule_str in rules:
+                exp = QgsExpression(rule_str)
+                if not exp.evaluate(context):
+                    row_valid = False
+                    break
+
+            if not row_valid:
+                invalid_count += 1
+                # Marquer en orange dans l'onglet Validation
+                for col in range(self.table_validation.columnCount()):
+                    tbl_item = self.table_validation.item(row, col)
+                    if tbl_item:
+                        tbl_item.setBackground(QColor(255, 165, 0, 100)) # Orange transparent
+
+        if invalid_count > 0:
+            QMessageBox.warning(self, "Contrôle Qualité", f"{invalid_count} enregistrements ne respectent pas les règles.")
+            self.tabs.setCurrentIndex(3) # Aller à l'onglet validation
+        else:
+            QMessageBox.information(self, "Contrôle Qualité", "Tous les enregistrements respectent les règles.")
     
     def show_comparison(self, index):
         """Affiche la comparaison avant/après pour un enregistrement"""
