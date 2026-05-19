@@ -141,13 +141,6 @@
          </item>
         </layout>
        </item>
-       <item>
-        <widget class="QPushButton" name="mapLayersButton">
-         <property name="text">
-          <string>Associer les couches (Mapping)</string>
-         </property>
-        </widget>
-       </item>
       </layout>
      </widget>
     </item>
@@ -204,9 +197,12 @@
           </widget>
          </item>
          <item row="1" column="0">
-          <widget class="QPushButton" name="pushProjectButton">
+          <widget class="QPushButton" name="processProjectButton">
+           <property name="styleSheet">
+            <string notr="true">font-weight: bold; color: darkblue;</string>
+           </property>
            <property name="text">
-            <string>Migrer Projet</string>
+            <string>Traiter le Projet</string>
            </property>
           </widget>
          </item>

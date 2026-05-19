@@ -73,7 +73,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.compareButton.setToolTip("Comparer le nombre d'enregistrements entre QGIS et la base de données")
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
-        self.pushProjectButton.setToolTip("Pousser toutes les données du projet QGIS local vers la base de données")
+        self.processProjectButton.setToolTip("Analyser le projet pour décider d'une migration initiale ou d'un workflow terrain")
 
         self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
         self.refreshFromApiButton.setToolTip("Recharger les données depuis l'API PostgREST")
@@ -117,8 +117,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
         self.loadDbButton.clicked.connect(self.plugin.load_database_data)
-        self.pushProjectButton.clicked.connect(self.plugin.push_project_data_to_backend)
-        self.mapLayersButton.clicked.connect(self.plugin.show_mapping_dialog)
+        self.processProjectButton.clicked.connect(self.plugin.analyze_and_process_project)
         self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
         self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
@@ -180,8 +179,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Activer les boutons d'action de base
         self.compareButton.setEnabled(True)
         self.loadDbButton.setEnabled(True)
-        self.pushProjectButton.setEnabled(True)
-        self.mapLayersButton.setEnabled(True)
+        self.processProjectButton.setEnabled(True)
         self.prepareMerginButton.setEnabled(True)
 
         # Boutons de flux Mergin
@@ -211,7 +209,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         # Désactiver tous les boutons d'action
         buttons = [
-            'compareButton', 'loadDbButton', 'pushProjectButton', 'mapLayersButton',
+            'compareButton', 'loadDbButton', 'processProjectButton',
             'prepareMerginButton', 'loadFromMerginButton', 'refreshFromApiButton',
             'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'
         ]

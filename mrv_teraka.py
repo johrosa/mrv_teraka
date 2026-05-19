@@ -715,19 +715,37 @@ class MrvTeraka:
 
     # --- ACTIONS SIG ---
 
-    def show_mapping_dialog(self):
-        """Affiche le dialogue de mapping manuel des couches."""
-        from .layer_mapping_dialog import LayerMappingDialog
+    def analyze_and_process_project(self):
+        """Analyse le projet QGIS, affiche les correspondances et propose une action."""
+        if not self.check_api_auth():
+            return
 
+        from .project_action_dialog import ProjectActionDialog
+
+        # Collecter les infos des couches vectorielles
         layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
+        layer_info = []
+        for l in layers:
+            layer_info.append({
+                'layer_id': l.id(),
+                'name': l.name(),
+                'endpoint': l.customProperty('postgrest:endpoint'),
+                'is_spatial': l.isSpatial()
+            })
+
         mappings = self.load_layer_mappings()
         endpoints = [m.get('endpoint') for m in mappings.values()]
 
-        dialog = LayerMappingDialog(self.iface.mainWindow(), layers, endpoints)
-        if dialog.exec_() == LayerMappingDialog.Accepted:
-            manual_mapping = dialog.get_mapping()
-            # On stocke le mapping dans les propriétés des couches
-            for layer_id, endpoint in manual_mapping.items():
+        dialog = ProjectActionDialog(self.iface.mainWindow(), layer_info, endpoints)
+        if dialog.exec_() == ProjectActionDialog.Accepted:
+            action, selected_mappings = dialog.get_results()
+
+            if not selected_mappings:
+                QMessageBox.warning(self.iface.mainWindow(), "Action annulée", "Aucune couche sélectionnée pour le traitement.")
+                return
+
+            # Mettre à jour les propriétés des couches
+            for layer_id, endpoint in selected_mappings.items():
                 layer = QgsProject.instance().mapLayer(layer_id)
                 if layer:
                     mapping = self.get_mapping_for_endpoint(endpoint)
@@ -735,47 +753,33 @@ class MrvTeraka:
                     layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
                     layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
 
-            QMessageBox.information(self.iface.mainWindow(), "Mapping mis à jour",
-                                    f"{len(manual_mapping)} couches ont été mappées avec succès.")
-            return True
-        return False
+            if action == "migrate":
+                self.push_project_data_to_backend(selected_mappings)
+            else:
+                # Workflow terrain (on bascule sur le bouton préparer du panneau Mergin)
+                # Mais on peut aussi le déclencher ici
+                self.prepare_mergin_project(selected_mappings)
 
-    def push_project_data_to_backend(self):
-        """Pousse toutes les données du projet QGIS vers le backend API via une tâche asynchrone."""
+    def push_project_data_to_backend(self, selected_mappings=None):
+        """Pousse les données sélectionnées vers le backend API."""
         if not self.check_api_auth():
             return
 
-        # Vérifier si des couches sont déjà mappées
+        # Si appelé depuis le dialogue, on a déjà le mapping
         project_endpoints = {}
-        for layer in QgsProject.instance().mapLayers().values():
-            if layer.type() != QgsMapLayer.VectorLayer:
-                continue
-            endpoint = layer.customProperty('postgrest:endpoint')
-            if endpoint:
-                project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
-
-        # Si aucune couche n'est mappée via propriétés, on propose le mapping manuel
-        if not project_endpoints:
-            reply = QMessageBox.question(
-                self.iface.mainWindow(), self.tr(u"Mapping requis"),
-                self.tr(u"Aucune couche n'est associée à l'API. Voulez-vous configurer le mapping maintenant ?"),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                if self.show_mapping_dialog():
-                    # Recalculer les endpoints après mapping
-                    for layer in QgsProject.instance().mapLayers().values():
-                        if layer.type() != QgsMapLayer.VectorLayer:
-                            continue
-                        endpoint = layer.customProperty('postgrest:endpoint')
-                        if endpoint:
-                            project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
-                else:
-                    return # Annulé
-
-        if not project_endpoints:
-            # Fallback sur le mapping automatique par nom si toujours rien
-            project_endpoints = self.get_project_layer_endpoints()
+        if selected_mappings:
+            for layer_id, endpoint in selected_mappings.items():
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer:
+                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+        else:
+            # Fallback legacy
+            for layer in QgsProject.instance().mapLayers().values():
+                if layer.type() != QgsMapLayer.VectorLayer:
+                    continue
+                endpoint = layer.customProperty('postgrest:endpoint')
+                if endpoint:
+                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
 
         if not project_endpoints:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
@@ -792,7 +796,7 @@ class MrvTeraka:
         if reply != QMessageBox.Yes:
             return
 
-        # Préparer les données pour la tâche (car on ne peut pas manipuler les couches QGIS dans un thread)
+        # Préparer les données pour la tâche
         project = QgsProject.instance()
         migration_data = []
         for layer_name, mapping in project_endpoints.items():
@@ -901,6 +905,14 @@ class MrvTeraka:
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
 
+                if not db_data:
+                    # Gérer table vide
+                    layer = create_vector_layer([{'id': ''}], display_name, geom_field)
+                    if layer:
+                        layer.setCustomProperty('postgrest:endpoint', endpoint_value)
+                        QgsProject.instance().addMapLayer(layer)
+                    continue
+
                 if is_geojson(db_data):
                     import tempfile
                     with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as f:
@@ -970,24 +982,28 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error("Erreur", exc)
 
-    def prepare_mergin_project(self):
+    def prepare_mergin_project(self, selected_mappings=None):
         """Prépare un export des données DB pour ingestion dans un projet Mergin."""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        # Si un projet est déjà sélectionné, on exporte ses tables
-        info = None
-        if self.current_project_id:
-            info = self.mergin_manager.get_project_info(self.current_project_id)
-
         requested_endpoints = {}
-        if info:
-            tables = info.get('source_tables', [])
-            for table in tables:
-                requested_endpoints[table] = self.get_mapping_for_endpoint(table)
+        if selected_mappings:
+            for endpoint in selected_mappings.values():
+                requested_endpoints[endpoint] = self.get_mapping_for_endpoint(endpoint)
         else:
-            endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
-            requested_endpoints = self.get_requested_endpoints(endpoint)
+            # Si un projet est déjà sélectionné, on exporte ses tables
+            info = None
+            if self.current_project_id:
+                info = self.mergin_manager.get_project_info(self.current_project_id)
+
+            if info:
+                tables = info.get('source_tables', [])
+                for table in tables:
+                    requested_endpoints[table] = self.get_mapping_for_endpoint(table)
+            else:
+                endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
+                requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
             QMessageBox.warning(

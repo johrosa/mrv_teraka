@@ -101,13 +101,18 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
     crs = default_crs
     geom_type = "Point"
 
+    is_spatial = False
     if actual_geom_key:
         geom_val = _extract_geometry(sample.get(actual_geom_key))
         if geom_val:
             crs = _detect_crs(geom_val, default_crs)
             geom_type = _detect_geom_type(geom_val)
+            is_spatial = True
 
-    uri = f"{geom_type}?crs={crs}"
+    if is_spatial:
+        uri = f"{geom_type}?crs={crs}"
+    else:
+        uri = "NoGeometry"
     layer = QgsVectorLayer(uri, layer_name, "memory")
     if not layer.isValid():
         return None
