@@ -69,13 +69,20 @@ class MerginWorkflowManager:
 
         return project_id
 
+    def save_exported_gpkg(self, project_id, gpkg_path):
+        """
+        Enregistre le chemin du GeoPackage généré pour le terrain.
+        """
+        import shutil
+        project_path = os.path.join(self.projects_dir, project_id)
+        target_path = os.path.join(project_path, 'mission_data.gpkg')
+
+        shutil.copy(gpkg_path, target_path)
+        self.update_stage(project_id, 2)  # Export
+
     def save_exported_data(self, project_id, data):
         """
-        Sauvegarde les données initiales extraites de l'API.
-
-        Args:
-            project_id (str): ID du projet Mergin.
-            data (dict): Données JSON exportées.
+        Sauvegarde les données initiales extraites de l'API (Snapshot JSON pour comparaison).
         """
         project_path = os.path.join(self.projects_dir, project_id)
         export_file = os.path.join(project_path, 'exported_data.json')
@@ -83,7 +90,8 @@ class MerginWorkflowManager:
         with open(export_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        self.update_stage(project_id, 2)  # Export
+        if not os.path.exists(os.path.join(project_path, 'mission_data.gpkg')):
+            self.update_stage(project_id, 2)  # Export
 
     def import_collected_data(self, project_id, data):
         """Importe les données collectées au terrain"""

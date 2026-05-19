@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField
 import json
+from .business_rules import BusinessRulesEngine
 
 
 class DataValidationDialog(QDialog):
@@ -430,48 +431,43 @@ class DataValidationDialog(QDialog):
         self.recommendation.setText("\n".join(recs))
 
     def run_validation_rules(self):
-        """Exécute les expressions QGIS sur les données collectées."""
-        rules_text = self.rules_edit.toPlainText().strip()
-        if not rules_text:
-            return
-
-        rules = [r.strip() for t in rules_text.split('\n') if (r := t.strip())]
+        """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
-
-        # Préparer le contexte QGIS
-        context = QgsExpressionContext()
-        context.appendScope(QgsExpressionContextUtils.globalScope())
 
         for row in range(self.table_validation.rowCount()):
             item_data = self.collected_data[row]
 
-            # Créer une feature virtuelle pour l'expression
+            # Créer une feature virtuelle
             feat = QgsFeature()
+            # On simule les champs pour l'expression
             for key, value in item_data.items():
                 feat.setAttribute(key, value)
 
-            context.setFeature(feat)
+            # Utiliser le moteur de règles
+            errors = BusinessRulesEngine.validate_feature(self.current_table, feat)
 
-            row_valid = True
-            for rule_str in rules:
-                exp = QgsExpression(rule_str)
-                if not exp.evaluate(context):
-                    row_valid = False
-                    break
-
-            if not row_valid:
+            if errors:
                 invalid_count += 1
-                # Marquer en orange dans l'onglet Validation
+                error_msgs = [e['message'] for e in errors]
+
+                # Marquer en orange et ajouter le commentaire d'erreur
                 for col in range(self.table_validation.columnCount()):
                     tbl_item = self.table_validation.item(row, col)
                     if tbl_item:
-                        tbl_item.setBackground(QColor(255, 165, 0, 100)) # Orange transparent
+                        tbl_item.setBackground(QColor(255, 165, 0, 150))
+
+                # Mettre à jour le champ commentaire
+                comment_widget = self.table_validation.cellWidget(row, 5)
+                if isinstance(comment_widget, QLineEdit):
+                    comment_widget.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
 
         if invalid_count > 0:
-            QMessageBox.warning(self, "Contrôle Qualité", f"{invalid_count} enregistrements ne respectent pas les règles.")
-            self.tabs.setCurrentIndex(3) # Aller à l'onglet validation
+            QMessageBox.warning(self, "Contrôle Qualité Automatisé",
+                                f"{invalid_count} enregistrements présentent des anomalies métier.")
+            self.tabs.setCurrentIndex(3)
         else:
-            QMessageBox.information(self, "Contrôle Qualité", "Tous les enregistrements respectent les règles.")
+            QMessageBox.information(self, "Contrôle Qualité Automatisé",
+                                    "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
         """Affiche la comparaison avant/après pour un enregistrement"""

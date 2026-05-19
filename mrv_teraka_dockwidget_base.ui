@@ -235,115 +235,77 @@
      </widget>
     </item>
 
-    <!-- ETAPE 3: WORKFLOW TERRAIN (MERGIN) -->
+    <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
     <item>
      <widget class="QGroupBox" name="groupBoxMergin">
       <property name="title">
-       <string>3. Cycle Terrain (Mergin Map)</string>
+       <string>3. Cycle Automatisé des Missions</string>
       </property>
       <layout class="QVBoxLayout" name="verticalLayoutMergin">
        <item>
-        <widget class="QLabel" name="labelMerginStep1">
-         <property name="font">
-          <font>
-           <italic>true</italic>
-          </font>
+        <widget class="QProgressBar" name="missionProgressBar">
+         <property name="value">
+          <number>0</number>
          </property>
-         <property name="text">
-          <string>A. Préparation pour le terrain</string>
+         <property name="textVisible">
+          <bool>true</bool>
+         </property>
+         <property name="format">
+          <string>Progression Mission : %p%</string>
          </property>
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutMerginPrep">
-         <item>
-          <widget class="QComboBox" name="merginEndpointComboBox">
-           <property name="editable">
-            <bool>true</bool>
+        <layout class="QGridLayout" name="gridLayoutMission">
+         <item row="0" column="0">
+          <widget class="QPushButton" name="autoPrepareButton">
+           <property name="styleSheet">
+            <string notr="true">background-color: #e3f2fd;</string>
+           </property>
+           <property name="text">
+            <string>1. Déploiement Terrain</string>
            </property>
           </widget>
          </item>
-         <item>
-          <widget class="QPushButton" name="prepareMerginButton">
+         <item row="0" column="1">
+          <widget class="QPushButton" name="autoImportButton">
            <property name="text">
-            <string>Préparer</string>
+            <string>2. Retour de Mission</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QPushButton" name="autoValidateButton">
+           <property name="text">
+            <string>3. Validation Métier</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QPushButton" name="autoSyncButton">
+           <property name="styleSheet">
+            <string notr="true">background-color: #e8f5e9; font-weight: bold;</string>
+           </property>
+           <property name="text">
+            <string>4. Intégration Finale</string>
            </property>
           </widget>
          </item>
         </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="labelMerginStep2">
-         <property name="font">
-          <font>
-           <italic>true</italic>
-          </font>
-         </property>
-         <property name="text">
-          <string>B. Import &amp; Validation (Retour terrain)</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutMerginImport">
-         <item>
-          <widget class="QPushButton" name="loadFromMerginButton">
-           <property name="text">
-            <string>Importer</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="refreshFromMerginButton">
-           <property name="text">
-            <string>Actualiser</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="openValidationButton">
-           <property name="text">
-            <string>Valider</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="labelMerginStep3">
-         <property name="font">
-          <font>
-           <italic>true</italic>
-          </font>
-         </property>
-         <property name="text">
-          <string>C. Finalisation</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="syncToBackendButton">
-         <property name="styleSheet">
-          <string notr="true">font-weight: bold;</string>
-         </property>
-         <property name="text">
-          <string>Synchroniser vers API</string>
-         </property>
-        </widget>
        </item>
        <item>
         <widget class="QTextEdit" name="merginResultsTextEdit">
          <property name="maximumSize">
           <size>
            <width>16777215</width>
-           <height>80</height>
+           <height>120</height>
           </size>
          </property>
          <property name="readOnly">
           <bool>true</bool>
          </property>
          <property name="placeholderText">
-          <string>Statut du flux terrain...</string>
+          <string>Journal de mission...</string>
          </property>
         </widget>
        </item>

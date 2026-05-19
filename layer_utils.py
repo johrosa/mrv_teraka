@@ -7,7 +7,8 @@ import json
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsVectorLayer, QgsField, QgsFeature,
-    QgsGeometry, QgsCoordinateReferenceSystem, QgsJsonUtils
+    QgsGeometry, QgsCoordinateReferenceSystem, QgsJsonUtils,
+    QgsVectorFileWriter, QgsProject
 )
 
 def is_geojson(data):
@@ -186,3 +187,29 @@ def layer_to_list_of_dicts(layer, geom_field='geom'):
 
         data_list.append(item)
     return data_list
+
+def export_to_geopackage(layers_map, output_path):
+    """
+    Exporte une collection de couches vers un GeoPackage.
+
+    Args:
+        layers_map: Dict {layer_name: QgsVectorLayer}
+        output_path: Chemin du fichier .gpkg
+    """
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GPKG"
+
+    first = True
+    for name, layer in layers_map.items():
+        options.layerName = name
+        if first:
+            options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
+            first = False
+        else:
+            options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
+
+        error = QgsVectorFileWriter.writeAsVectorLayer(layer, output_path, options)
+        if error[0] != QgsVectorFileWriter.NoError:
+            return False, error[1]
+
+    return True, "Export réussi"

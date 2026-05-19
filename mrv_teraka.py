@@ -27,6 +27,9 @@ from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
 from .validation_dialog import DataValidationDialog
 from .connection_checker import ConnectionChecker
+from .project_analyzer import ProjectAnalyzer
+from .business_rules import BusinessRulesEngine
+from .mergin_api_client import MerginAPIClient
 
 
 class MrvTeraka:
@@ -266,6 +269,14 @@ class MrvTeraka:
             self.postgrest = PostgREST(self.api_base_url, mode=self.postgrest_mode)
             self.postgrest.set_auth_token(token)
             
+            # Authentification Mergin Maps
+            if credentials.get('mergin_username') and credentials.get('mergin_password'):
+                self.mergin_api = MerginAPIClient()
+                if self.mergin_api.login(credentials['mergin_username'], credentials['mergin_password']):
+                    self.dockwidget.merginResultsTextEdit.append(f"✓ Connecté à Mergin Maps : {credentials['mergin_username']}")
+                else:
+                    self.dockwidget.merginResultsTextEdit.append("⚠️ Échec connexion Mergin Maps. Automatisation restreinte.")
+
             # Sauvegarde du jeton et des informations
             self.token_manager.save_token(token, self.api_base_url, self.postgrest_mode.value)
             self.current_username = username
@@ -277,9 +288,12 @@ class MrvTeraka:
             if credentials['remember']:
                 settings = QSettings('iTeraka', 'MrvTeraka')
                 settings.setValue('auth/last_username', username)
+                if credentials.get('mergin_username'):
+                    settings.setValue('auth/mergin_username', credentials['mergin_username'])
             else:
                 settings = QSettings('iTeraka', 'MrvTeraka')
                 settings.remove('auth/last_username')
+                settings.remove('auth/mergin_username')
             
             # Mettre à jour l'interface
             self.update_auth_ui()
@@ -716,49 +730,127 @@ class MrvTeraka:
     # --- ACTIONS SIG ---
 
     def analyze_and_process_project(self):
-        """Analyse le projet QGIS, affiche les correspondances et propose une action."""
+        """Analyse automatique et intelligente du projet."""
         if not self.check_api_auth():
             return
 
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        # Mettre à jour les mappings suggérés
+        updated_count = 0
+        for l_info in report['layers']:
+            if l_info['status'] == 'suggested':
+                layer = QgsProject.instance().mapLayer(l_info['id'])
+                if layer:
+                    mapping = self.get_mapping_for_endpoint(l_info['mapping'])
+                    layer.setCustomProperty('postgrest:endpoint', l_info['mapping'])
+                    layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                    updated_count += 1
+
+        msg = f"Analyse terminée : {len(report['layers'])} couches détectées.\n"
+        if updated_count > 0:
+            msg += f"{updated_count} mappings automatiques appliqués."
+
+        self.dockwidget.merginResultsTextEdit.setPlainText(msg)
+
+        # Ouvrir le dialogue pour confirmation
         from .project_action_dialog import ProjectActionDialog
-
-        # Collecter les infos des couches vectorielles
-        layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
-        layer_info = []
-        for l in layers:
-            layer_info.append({
-                'layer_id': l.id(),
-                'name': l.name(),
-                'endpoint': l.customProperty('postgrest:endpoint'),
-                'is_spatial': l.isSpatial()
-            })
-
-        mappings = self.load_layer_mappings()
-        endpoints = [m.get('endpoint') for m in mappings.values()]
-
-        dialog = ProjectActionDialog(self.iface.mainWindow(), layer_info, endpoints)
+        dialog = ProjectActionDialog(self.iface.mainWindow(), report['layers'], list(self.load_layer_mappings().keys()))
         if dialog.exec_() == ProjectActionDialog.Accepted:
             action, selected_mappings = dialog.get_results()
-
-            if not selected_mappings:
-                QMessageBox.warning(self.iface.mainWindow(), "Action annulée", "Aucune couche sélectionnée pour le traitement.")
-                return
-
-            # Mettre à jour les propriétés des couches
-            for layer_id, endpoint in selected_mappings.items():
-                layer = QgsProject.instance().mapLayer(layer_id)
-                if layer:
-                    mapping = self.get_mapping_for_endpoint(endpoint)
-                    layer.setCustomProperty('postgrest:endpoint', endpoint)
-                    layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
-                    layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
-
             if action == "migrate":
                 self.push_project_data_to_backend(selected_mappings)
             else:
-                # Workflow terrain (on bascule sur le bouton préparer du panneau Mergin)
-                # Mais on peut aussi le déclencher ici
-                self.prepare_mergin_project(selected_mappings)
+                self.auto_deploy_mission(selected_mappings)
+
+    def auto_deploy_mission(self, selected_mappings=None):
+        """Déploiement terrain automatisé (GPKG + API Mergin)."""
+        if not self.check_api_auth(): return
+
+        self.dockwidget.missionProgressBar.setValue(10)
+        self.dockwidget.merginResultsTextEdit.append("🚀 Début du déploiement automatisé...")
+
+        # 1. Analyser et mapper si besoin
+        if not selected_mappings:
+            analyzer = ProjectAnalyzer(self.load_layer_mappings())
+            report = analyzer.analyze_active_project()
+            selected_mappings = {l['id']: l['mapping'] for l in report['layers'] if l['mapping']}
+
+        if not selected_mappings:
+            self.show_message("Erreur", "Aucune couche mappée trouvée. Utilisez 'Traiter le Projet' d'abord.")
+            return
+
+        # 2. Créer le projet dans le manager
+        timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+        project_name = f"mission_{timestamp}"
+        project_id = self.mergin_manager.create_project(project_name, list(selected_mappings.values()))
+        self.current_project_id = project_id
+
+        # 3. Préparation du GPKG
+        from .layer_utils import export_to_geopackage
+        project_dir = os.path.join(self.mergin_manager.projects_dir, project_id)
+        gpkg_path = os.path.join(project_dir, f"mission_data.gpkg")
+
+        layers_to_export = {}
+        for lid, ep in selected_mappings.items():
+            layers_to_export[ep] = QgsProject.instance().mapLayer(lid)
+
+        success, err = export_to_geopackage(layers_to_export, gpkg_path)
+        if not success:
+            self.show_error("Erreur Export GPKG", err)
+            return
+
+        self.mergin_manager.save_exported_gpkg(project_id, gpkg_path)
+
+        # Snapshot JSON pour la validation future
+        snapshot_data = {}
+        for ep, layer in layers_to_export.items():
+            snapshot_data[ep] = layer_to_list_of_dicts(layer)
+        self.mergin_manager.save_exported_data(project_id, snapshot_data)
+
+        self.dockwidget.missionProgressBar.setValue(50)
+        self.dockwidget.merginResultsTextEdit.append(f"📦 GeoPackage mission créé : {len(layers_to_export)} couches.")
+
+        # 4. Synchronisation Mergin Maps Réelle
+        if hasattr(self, 'mergin_api') and self.mergin_api.token:
+            self.dockwidget.merginResultsTextEdit.append(f"☁️ Création du projet '{project_name}' sur Mergin Maps...")
+            try:
+                namespace = self.mergin_api.username
+                if self.mergin_api.create_project(namespace, project_name):
+                    self.mergin_api.upload_file(namespace, project_name, gpkg_path, "mission_data.gpkg")
+                    self.dockwidget.merginResultsTextEdit.append(f"✅ Projet '{project_name}' prêt sur Mergin !")
+                else:
+                    self.dockwidget.merginResultsTextEdit.append("❌ Échec création projet Mergin.")
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"❌ Erreur API Mergin : {str(e)}")
+        else:
+            self.dockwidget.merginResultsTextEdit.append("⚠️ Mergin Maps non connecté. Projet local uniquement.")
+
+        self.dockwidget.missionProgressBar.setValue(100)
+        QMessageBox.information(self.iface.mainWindow(), "Déploiement Réussi",
+                                f"La mission '{project_name}' est prête.")
+
+    def auto_import_mission(self):
+        """Importation automatique au retour du terrain."""
+        self.dockwidget.merginResultsTextEdit.append("📥 Importation des données terrain...")
+        # Ici on chargerait le GPKG de retour
+        self.dockwidget.missionProgressBar.setValue(50)
+        self.load_project_from_mergin()
+        self.dockwidget.missionProgressBar.setValue(100)
+
+    def auto_validate_mission(self):
+        """Validation avec moteur de règles métier."""
+        if not self.mergin_validation_ready:
+            self.auto_import_mission()
+
+        # Déclencher le dialogue de validation
+        self.open_validation_form()
+
+    def auto_finalize_mission(self):
+        """Synchronisation finale."""
+        self.sync_validated_data_to_backend()
+        self.dockwidget.missionProgressBar.setValue(0)
 
     def push_project_data_to_backend(self, selected_mappings=None):
         """Pousse les données sélectionnées vers le backend API."""

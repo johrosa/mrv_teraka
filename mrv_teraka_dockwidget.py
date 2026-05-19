@@ -59,7 +59,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         # Mapping des nouveaux ComboBox
         self.endpointLineEdit = self.endpointComboBox.lineEdit()
-        self.merginEndpointLineEdit = self.merginEndpointComboBox.lineEdit()
 
         # Remplir les listes déroulantes depuis le mapping
         self.populate_table_lists()
@@ -93,8 +92,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.endpointComboBox.clear()
         self.endpointComboBox.addItems(tables)
 
-        self.merginEndpointComboBox.clear()
-        self.merginEndpointComboBox.addItems(tables)
 
     def populate_project_list(self):
         """Remplit la liste des projets existants."""
@@ -120,11 +117,11 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.processProjectButton.clicked.connect(self.plugin.analyze_and_process_project)
         self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
-        self.loadFromMerginButton.clicked.connect(self.plugin.load_project_from_mergin)
+        self.autoPrepareButton.clicked.connect(self.plugin.auto_deploy_mission)
+        self.autoImportButton.clicked.connect(self.plugin.auto_import_mission)
+        self.autoValidateButton.clicked.connect(self.plugin.auto_validate_mission)
+        self.autoSyncButton.clicked.connect(self.plugin.auto_finalize_mission)
         self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
-        self.refreshFromMerginButton.clicked.connect(self.plugin.refresh_data_via_mergin)
-        self.syncToBackendButton.clicked.connect(self.plugin.sync_validated_data_to_backend)
-        self.openValidationButton.clicked.connect(self.plugin.open_validation_form)
 
         # Bouton de déconnexion
         self.logout_button.clicked.connect(self.on_logout_clicked)
@@ -180,18 +177,13 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.compareButton.setEnabled(True)
         self.loadDbButton.setEnabled(True)
         self.processProjectButton.setEnabled(True)
-        self.prepareMerginButton.setEnabled(True)
 
-        # Boutons de flux Mergin
-        for attr in ('loadFromMerginButton', 'refreshFromApiButton', 'refreshFromMerginButton'):
-            if hasattr(self, attr):
-                getattr(self, attr).setEnabled(True)
-
-        # Ces boutons restent désactivés jusqu'à ce qu'une donnée soit prête
-        if hasattr(self, 'openValidationButton'):
-            self.openValidationButton.setEnabled(False)
-        if hasattr(self, 'syncToBackendButton'):
-            self.syncToBackendButton.setEnabled(False)
+        # Mission UI
+        self.autoPrepareButton.setEnabled(True)
+        self.autoImportButton.setEnabled(True)
+        self.autoValidateButton.setEnabled(True)
+        self.autoSyncButton.setEnabled(True)
+        self.refreshFromApiButton.setEnabled(True)
 
     def set_unauthenticated(self):
         """Affiche l'état déconnecté et désactive les contrôles."""
@@ -210,8 +202,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Désactiver tous les boutons d'action
         buttons = [
             'compareButton', 'loadDbButton', 'processProjectButton',
-            'prepareMerginButton', 'loadFromMerginButton', 'refreshFromApiButton',
-            'refreshFromMerginButton', 'syncToBackendButton', 'openValidationButton'
+            'autoPrepareButton', 'autoImportButton', 'autoValidateButton',
+            'autoSyncButton', 'refreshFromApiButton'
         ]
         for attr in buttons:
             if hasattr(self, attr):

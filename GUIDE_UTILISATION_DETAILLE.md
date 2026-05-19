@@ -9,36 +9,36 @@ Sécuriser et automatiser la collecte de données terrain pour garantir que seul
 
 ---
 
-## 🛠 Étape 1 : Préparation et Configuration (Bureau)
+## 🛠 Étape 1 : Initialisation Automatisée (Bureau)
 
-Avant de partir sur le terrain, vous devez configurer votre environnement QGIS.
+Avant de partir sur le terrain, vous devez configurer votre mission.
 
-1.  **Connexion :** Cliquez sur l'icône 🔐 dans la barre d'outils. Authentifiez-vous.
-    *   *⚠️ Erreur à éviter :* Utiliser une URL d'API incorrecte. Vérifiez que vous pointez sur le serveur de production ou de test selon votre mission.
-2.  **Sélection du Projet :** Dans le panneau "1. Sélection du Projet", choisissez un projet existant ou créez-en un nouveau en cliquant sur **Enregistrer**.
-    *   Un "Projet" regroupe toutes les tables nécessaires à une mission spécifique (ex: Inventaire Arbres Itasy).
-3.  **Filtrage par District :** Si vous travaillez sur une zone précise, saisissez le nom du district dans le champ **District** (ex: `Mandoto`). Cela filtrera les données téléchargées et les futures collectes.
-4.  **Mapping des couches :** Si vos couches locales n'ont pas les mêmes noms que l'API, utilisez le bouton **Associer les couches (Mapping)** pour lier manuellement chaque couche QGIS à un endpoint API.
+1.  **Connexion Unifiée :** Cliquez sur l'icône 🔐. Saisissez vos identifiants API **ET** vos identifiants Mergin Maps.
+    *   *Avantage :* Le plugin gérera automatiquement les transferts Cloud pour vous.
+2.  **Analyse Intelligente :** Cliquez sur **Traiter le Projet**. Le plugin analyse vos couches QGIS, suggère les correspondances API et vérifie la santé de vos données.
+3.  **Filtrage Spatial :** Saisissez le district cible. Toutes les données seront packagées automatiquement.
 
 ---
 
-## 📱 Étape 2 : Cycle de Collecte Terrain (Mergin Map)
+## 📱 Étape 2 : Cycle Automatisé des Missions
 
-Une fois le projet configuré, passez au panneau "3. Cycle Terrain".
+Passez au panneau "3. Cycle Automatisé des Missions".
 
-1.  **Préparation :** Cliquez sur **Préparer**. Le plugin exporte les données actuelles de la base (filtrées par district) vers un dossier local Mergin.
-2.  **Synchronisation Mergin :** Utilisez le plugin Mergin Map standard pour pousser ces données vers le cloud, puis téléchargez-les sur votre application mobile **Mergin Maps** (Input).
-3.  **Collecte :** Réalisez vos saisies sur le terrain.
-4.  **Retour de mission :** Synchronisez votre mobile vers le cloud, puis cliquez sur **Actualiser** (B) dans le plugin MrvTeraka pour récupérer les nouvelles saisies.
+1.  **Déploiement Terrain (1-clic) :** Cliquez sur **1. Déploiement Terrain**.
+    *   Le plugin crée un **GeoPackage (GPKG)** optimisé.
+    *   Il crée automatiquement le projet sur votre compte Mergin Maps Cloud.
+    *   Il uploade les données.
+2.  **Collecte :** Réalisez vos saisies sur votre mobile (Mergin Maps Input).
+3.  **Retour de Mission :** Cliquez sur **2. Retour de Mission**. Le plugin récupère les modifications du Cloud et les importe localement.
 
 ---
 
-## 🛡 Étape 3 : Validation des Données (Étape Critique)
+## 🛡 Étape 3 : Validation Métier Automatisée
 
-C'est l'étape la plus importante pour garantir la qualité.
-
-1.  **Importation :** Cliquez sur **Importer**. Le plugin charge les données collectées et détecte les différences avec la base de données originale.
-2.  **Ouverture du Formulaire :** Cliquez sur **Valider**. Une fenêtre s'ouvre.
+1.  **Lancement :** Cliquez sur **3. Validation Métier**.
+    *   Le **Moteur de Règles iTeraka** analyse chaque ligne.
+    *   Les erreurs (ex: diamètre invalide) sont surlignées automatiquement.
+2.  **Révision :** Une fenêtre s'ouvre.
     *   **Légende des couleurs :**
         *   🟢 **Vert :** Nouvel enregistrement.
         *   🟡 **Jaune :** Enregistrement existant modifié.
