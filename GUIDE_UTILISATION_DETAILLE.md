@@ -16,6 +16,7 @@ Avant de partir sur le terrain, vous devez configurer votre mission.
 1.  **Connexion Unifiée :** Cliquez sur l'icône 🔐. Saisissez vos identifiants API **ET** vos identifiants Mergin Maps.
     *   *Avantage :* Le plugin gérera automatiquement les transferts Cloud pour vous.
 2.  **Analyse Intelligente :** Cliquez sur **Traiter le Projet**. Le plugin analyse vos couches QGIS, suggère les correspondances API et vérifie la santé de vos données.
+    *   *Option Mise à jour :* Vous pouvez rafraîchir vos données locales à tout moment en sélectionnant l'option **Mise à jour / Rafraîchir**. Cela téléchargera les dernières modifications du serveur sans modifier votre projet.
 3.  **Filtrage Spatial :** Saisissez le district cible. Toutes les données seront packagées automatiquement.
 
 ---

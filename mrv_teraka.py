@@ -598,7 +598,7 @@ class MrvTeraka:
                                 self.tr(u"Projet '{0}' enregistré avec {1} couches.").format(name, len(tables)))
 
     def load_project_by_id(self, project_id):
-        """Charge toutes les couches associées à un projet."""
+        """Charge ou rafraîchit toutes les couches associées à un projet."""
         if not self.check_api_auth():
             return
 
@@ -614,11 +614,25 @@ class MrvTeraka:
             QMessageBox.warning(self.iface.mainWindow(), self.tr(u"Projet vide"), self.tr(u"Ce projet ne contient aucune table."))
             return
 
-        # Charger chaque table
-        errors = []
+        # Déterminer si on doit rafraîchir (si les couches sont déjà là)
         project = QgsProject.instance()
+        layers_to_refresh = {}
+        tables_to_load = []
 
         for table in tables:
+            existing_layers = [l for l in project.mapLayers().values() if l.customProperty('postgrest:endpoint') == table]
+            if existing_layers:
+                layers_to_refresh[existing_layers[0].id()] = table
+            else:
+                tables_to_load.append(table)
+
+        # 1. Rafraîchir les existantes
+        if layers_to_refresh:
+            self.refresh_layers_from_api(layers_to_refresh)
+
+        # 2. Charger les nouvelles
+        errors = []
+        for table in tables_to_load:
             try:
                 mapping = self.get_mapping_for_endpoint(table)
                 db_data = self.postgrest.select(table)
@@ -640,7 +654,7 @@ class MrvTeraka:
             self.show_message(self.tr(u"Chargement partiel"),
                                 self.tr(u"Erreur lors du chargement des tables : {0}").format(", ".join(errors)),
                                 icon=QMessageBox.Warning)
-        else:
+        elif tables_to_load:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet chargé"),
                                     self.tr(u"Le projet '{0}' a été chargé avec succès.").format(info.get('name')))
 
@@ -815,8 +829,62 @@ class MrvTeraka:
             action, selected_mappings = dialog.get_results()
             if action == "migrate":
                 self.push_project_data_to_backend(selected_mappings)
+            elif action == "refresh":
+                self.refresh_layers_from_api(selected_mappings)
             else:
                 self.auto_deploy_mission(selected_mappings)
+
+    def refresh_layers_from_api(self, selected_mappings):
+        """Met à jour les couches QGIS avec les dernières données du serveur."""
+        if not self.check_api_auth(): return
+
+        self.dockwidget.merginResultsTextEdit.append("🔄 Rafraîchissement des couches depuis l'API...")
+        district_filter = self.dockwidget.districtLineEdit.text().strip()
+
+        updated_count = 0
+        error_count = 0
+
+        for layer_id, endpoint in selected_mappings.items():
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if not layer: continue
+
+            try:
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                filters = {}
+                # Appliquer le filtre district si pertinent
+                if district_filter and 'district' in mapping.get('columns', []):
+                    filters['district'] = f'eq.{district_filter}'
+
+                # Télécharger nouvelles données
+                db_data = self.postgrest.select(endpoint, filters=filters)
+
+                # Créer une nouvelle couche temporaire
+                new_layer = create_vector_layer(db_data, layer.name(), mapping.get('geom_field', 'geom'))
+
+                if new_layer and new_layer.isValid():
+                    # Transférer les entités vers la couche existante (plus propre que de remplacer la couche)
+                    # ou remplacer la couche si c'est plus simple
+                    pr = layer.dataProvider()
+                    if pr:
+                        # On vide la couche locale
+                        layer.startEditing()
+                        layer.deleteFeatures([f.id() for f in layer.getFeatures()])
+                        # On ajoute les nouvelles entités
+                        layer.addFeatures(list(new_layer.getFeatures()))
+                        layer.commitChanges()
+                        updated_count += 1
+                else:
+                    error_count += 1
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"❌ Erreur {endpoint} : {str(e)}")
+                error_count += 1
+
+        msg = f"Mise à jour terminée : {updated_count} couches rafraîchies."
+        if error_count > 0:
+            msg += f" ({error_count} erreurs)"
+
+        self.dockwidget.merginResultsTextEdit.append(f"✅ {msg}")
+        QMessageBox.information(self.iface.mainWindow(), "Mise à jour", msg)
 
     def auto_deploy_mission(self, selected_mappings=None):
         """Déploiement terrain automatisé (GPKG + API Mergin)."""

@@ -41,8 +41,12 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.radio_workflow.setToolTip("Utilisez ceci pour préparer une mission terrain ou valider un retour de collecte.")
         self.radio_workflow.setChecked(True)
 
+        self.radio_refresh = QtWidgets.QRadioButton("Mise à jour / Rafraîchir (Télécharger les données de l'API vers QGIS)")
+        self.radio_refresh.setToolTip("Utilisez ceci pour mettre à jour vos couches locales avec le contenu actuel du serveur.")
+
         self.action_layout.addWidget(self.radio_migrate)
         self.action_layout.addWidget(self.radio_workflow)
+        self.action_layout.addWidget(self.radio_refresh)
         self.layout.addWidget(self.action_group)
 
         # Boutons
@@ -109,5 +113,11 @@ class ProjectActionDialog(QtWidgets.QDialog):
                 if endpoint != "-- Ignorer --":
                     selected_mappings[layer_id] = endpoint
 
-        action = "migrate" if self.radio_migrate.isChecked() else "workflow"
+        if self.radio_migrate.isChecked():
+            action = "migrate"
+        elif self.radio_refresh.isChecked():
+            action = "refresh"
+        else:
+            action = "workflow"
+
         return action, selected_mappings
