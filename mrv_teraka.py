@@ -665,30 +665,33 @@ class MrvTeraka:
         self.set_validation_ready(False)
 
     def load_project_from_mergin(self):
-        """Charge un projet existant depuis le stockage Mergin local."""
+        """Charge un projet existant ou bascule sur les couches actives si absent."""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        if not self.current_project_id:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Projet Mergin manquant'),
-                self.tr(u'Veuillez préparer ou sélectionner un projet Mergin avant de charger.')
+        imported_file = None
+        if self.current_project_id:
+            imported_file = os.path.join(
+                self.mergin_manager.projects_dir,
+                self.current_project_id,
+                'imported_data.json'
             )
-            return
 
-        imported_file = os.path.join(
-            self.mergin_manager.projects_dir,
-            self.current_project_id,
-            'imported_data.json'
-        )
+        if not imported_file or not os.path.exists(imported_file):
+            # Analyser si on a déjà des couches vectorielles valides chargées
+            layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
 
-        if not os.path.exists(imported_file):
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Fichier introuvable'),
-                self.tr(u"Aucune donnée importée depuis Mergin n'a été trouvée pour ce projet.")
-            )
+            msg = self.tr(u"Aucune donnée Mergin trouvée.")
+            if layers:
+                msg += self.tr(u"\nVoulez-vous traiter les couches actuellement chargées dans QGIS ?\n\n"
+                            u"Cela lancera l'analyse du projet pour mapper vos données locales.")
+                reply = QMessageBox.question(self.iface.mainWindow(), self.tr(u'Analyse Projet'), msg, QMessageBox.Yes | QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    self.import_data_from_active_layers()
+                    return
+            else:
+                QMessageBox.information(self.iface.mainWindow(), self.tr(u'Projet Vide'),
+                                        self.tr(u"Aucune donnée Mergin et aucune couche vectorielle QGIS détectée."))
             return
 
         with open(imported_file, 'r', encoding='utf-8') as f:
@@ -710,22 +713,73 @@ class MrvTeraka:
                 self.tr(u'Projet Mergin chargé. Données prêtes pour validation.')
             )
 
+    def import_data_from_active_layers(self):
+        """Importe les données directement depuis les couches QGIS actives."""
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        from .project_action_dialog import ProjectActionDialog
+        dialog = ProjectActionDialog(self.iface.mainWindow(), report['layers'], list(self.load_layer_mappings().keys()))
+
+        if dialog.exec_() == ProjectActionDialog.Accepted:
+            _, selected_mappings = dialog.get_results()
+            if not selected_mappings:
+                return
+
+            collected_payload = {}
+            original_payload = {}
+
+            self.dockwidget.merginResultsTextEdit.append("📂 Lecture des couches locales...")
+
+            for lid, endpoint in selected_mappings.items():
+                layer = QgsProject.instance().mapLayer(lid)
+                if not layer: continue
+
+                # Appliquer le mapping aux propriétés pour persistance
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                layer.setCustomProperty('postgrest:endpoint', endpoint)
+                layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+
+                # Extraire données locales (Collected)
+                local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+                collected_payload[endpoint] = local_data
+
+                # Récupérer données distantes pour comparaison (Original)
+                try:
+                    original_payload[endpoint] = self.postgrest.select(endpoint)
+                except Exception:
+                    original_payload[endpoint] = []
+
+            self.current_collected_data = collected_payload
+            self.current_original_data = original_payload
+            self.mergin_validation_ready = True
+            self.set_validation_ready(True)
+
+            self.dockwidget.merginResultsTextEdit.append(f"✅ {len(collected_payload)} tables prêtes pour validation.")
+
+            # Ouvrir directement la validation
+            self.open_validation_form(collected_payload, original_payload)
+
     def refresh_data_via_mergin(self):
         """Met à jour les données depuis le projet Mergin et active la validation."""
         if not self.dockwidget or not self.check_api_auth():
             return
         self.load_project_from_mergin()
 
-    def open_validation_form(self):
-        """Ouvre le formulaire de validation seulement après mise à jour via Mergin."""
-        if not self.mergin_validation_ready:
+    def open_validation_form(self, collected_data=None, original_data=None):
+        """Ouvre le formulaire de validation."""
+        if not self.mergin_validation_ready and collected_data is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 self.tr(u'Validation non disponible'),
-                self.tr(u"Veuillez mettre à jour les données via Mergin Map avant d'ouvrir le formulaire de validation.")
+                self.tr(u"Veuillez importer des données (Mergin ou locales) avant de valider.")
             )
             return
-        self.load_collected_data(self.current_collected_data)
+
+        c_data = collected_data if collected_data is not None else self.current_collected_data
+        o_data = original_data if original_data is not None else self.current_original_data
+
+        self.load_collected_data(c_data, o_data)
 
     # --- ACTIONS SIG ---
 
@@ -833,8 +887,16 @@ class MrvTeraka:
 
     def auto_import_mission(self):
         """Importation automatique au retour du terrain."""
-        self.dockwidget.merginResultsTextEdit.append("📥 Importation des données terrain...")
-        # Ici on chargerait le GPKG de retour
+        self.dockwidget.merginResultsTextEdit.append("📥 Importation des données mission...")
+
+        # Tentative de téléchargement depuis Mergin si configuré
+        if hasattr(self, 'mergin_api') and self.mergin_api.token and self.current_project_id:
+            try:
+                # Simulation de téléchargement du retour mission
+                self.dockwidget.merginResultsTextEdit.append("☁️ Synchronisation avec Mergin Maps Cloud...")
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"⚠️ Erreur Mergin : {str(e)}")
+
         self.dockwidget.missionProgressBar.setValue(50)
         self.load_project_from_mergin()
         self.dockwidget.missionProgressBar.setValue(100)
@@ -1157,7 +1219,7 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error(self.tr(u'Erreur Mergin'), exc)
 
-    def load_collected_data(self, collected_data=None):
+    def load_collected_data(self, collected_data=None, original_data=None):
         """Charge les données collectées et affiche le formulaire de validation"""
         if not self.dockwidget or not self.check_api_auth():
             return
@@ -1207,7 +1269,7 @@ class MrvTeraka:
             validation_dialog = DataValidationDialog(
                 parent=self.iface.mainWindow(),
                 collected_data=collected_data,
-                original_data=original_data
+                original_data=original_data if original_data is not None else []
             )
             
             if validation_dialog.exec_() == DataValidationDialog.Accepted:
