@@ -661,13 +661,13 @@ class MrvTeraka:
     def set_validation_ready(self, ready: bool):
         """Active ou désactive le bouton de validation."""
         self.mergin_validation_ready = ready
-        if self.dockwidget and hasattr(self.dockwidget, 'openValidationButton'):
-            self.dockwidget.openValidationButton.setEnabled(ready)
+        if self.dockwidget and hasattr(self.dockwidget, 'autoValidateButton'):
+            self.dockwidget.autoValidateButton.setEnabled(ready)
 
     def set_sync_ready(self, ready: bool):
         """Active ou désactive le bouton de synchronisation backend."""
-        if self.dockwidget and hasattr(self.dockwidget, 'syncToBackendButton'):
-            self.dockwidget.syncToBackendButton.setEnabled(ready)
+        if self.dockwidget and hasattr(self.dockwidget, 'autoSyncButton'):
+            self.dockwidget.autoSyncButton.setEnabled(ready)
 
     def refresh_data_via_api(self):
         """Recharge les couches à partir de l'API PostgREST."""

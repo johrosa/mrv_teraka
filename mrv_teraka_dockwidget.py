@@ -74,12 +74,11 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.loadDbButton.setToolTip("Charger les données de la table sélectionnée directement dans QGIS")
         self.processProjectButton.setToolTip("Analyser le projet pour décider d'une migration initiale ou d'un workflow terrain")
 
-        self.prepareMerginButton.setToolTip("Exporter les données de l'API pour créer un projet de collecte Mergin")
+        self.autoPrepareButton.setToolTip("Déployer la mission sur Mergin Maps Cloud (Création projet + Upload GPKG)")
+        self.autoImportButton.setToolTip("Récupérer les données depuis le terrain (Download depuis Mergin Cloud)")
+        self.autoValidateButton.setToolTip("Valider les données via le moteur de règles métier iTeraka")
+        self.autoSyncButton.setToolTip("Intégrer définitivement les données validées en base de données")
         self.refreshFromApiButton.setToolTip("Recharger les données depuis l'API PostgREST")
-        self.loadFromMerginButton.setToolTip("Charger les données collectées depuis le dossier local Mergin")
-        self.refreshFromMerginButton.setToolTip("Mettre à jour les données à partir du stockage Mergin")
-        self.openValidationButton.setToolTip("Ouvrir le formulaire de validation pour réviser les données collectées")
-        self.syncToBackendButton.setToolTip("Envoyer les modifications validées vers la base de données finale")
 
     def populate_table_lists(self):
         """Remplit les ComboBox avec les tables disponibles dans le mapping."""
@@ -115,7 +114,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
         self.loadDbButton.clicked.connect(self.plugin.load_database_data)
         self.processProjectButton.clicked.connect(self.plugin.analyze_and_process_project)
-        self.prepareMerginButton.clicked.connect(self.plugin.prepare_mergin_project)
 
         self.autoPrepareButton.clicked.connect(self.plugin.auto_deploy_mission)
         self.autoImportButton.clicked.connect(self.plugin.auto_import_mission)
@@ -171,7 +169,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.groupBoxDB.setEnabled(True)
         self.groupBoxMergin.setEnabled(True)
         self.endpointComboBox.setEnabled(True)
-        self.merginEndpointComboBox.setEnabled(True)
 
         # Activer les boutons d'action de base
         self.compareButton.setEnabled(True)
@@ -197,7 +194,6 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.groupBoxDB.setEnabled(False)
         self.groupBoxMergin.setEnabled(False)
         self.endpointComboBox.setEnabled(False)
-        self.merginEndpointComboBox.setEnabled(False)
 
         # Désactiver tous les boutons d'action
         buttons = [
