@@ -1204,95 +1204,13 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error("Erreur", exc)
 
-    def prepare_mergin_project(self, selected_mappings=None):
-        """Prépare un export des données DB pour ingestion dans un projet Mergin."""
-        if not self.dockwidget or not self.check_api_auth():
-            return
-
-        requested_endpoints = {}
-        if selected_mappings:
-            for endpoint in selected_mappings.values():
-                requested_endpoints[endpoint] = self.get_mapping_for_endpoint(endpoint)
-        else:
-            # Si un projet est déjà sélectionné, on exporte ses tables
-            info = None
-            if self.current_project_id:
-                info = self.mergin_manager.get_project_info(self.current_project_id)
-
-            if info:
-                tables = info.get('source_tables', [])
-                for table in tables:
-                    requested_endpoints[table] = self.get_mapping_for_endpoint(table)
-            else:
-                endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
-                requested_endpoints = self.get_requested_endpoints(endpoint)
-
-        if not requested_endpoints:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Erreur'),
-                self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
-            )
-            return
-
-        try:
-            district_filter = self.dockwidget.districtLineEdit.text().strip()
-            export_payload = {}
-            for layer_name, mapping in requested_endpoints.items():
-                endpoint_value = mapping['endpoint']
-                filters = {}
-                # Appliquer le filtre de district si spécifié et si la table possède cette colonne
-                if district_filter and 'district' in mapping.get('columns', []):
-                    filters['district'] = f'eq.{district_filter}'
-
-                export_payload[endpoint_value] = self.postgrest.select(endpoint_value, filters=filters)
-
-            if not self.current_project_id:
-                timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
-                project_name = 'mergin_'
-                if district_filter:
-                    project_name += f"{district_filter}_"
-                project_name += timestamp
-
-                project_description = f"Collecte terrain"
-                if district_filter:
-                    project_description += f" [District: {district_filter}]"
-                project_description += f" - {', '.join(requested_endpoints.keys())}"
-
-                self.current_project_id = self.mergin_manager.create_project(
-                    project_name,
-                    list(set([mapping['endpoint'] for mapping in requested_endpoints.values()])),
-                    project_description
-                )
-
-            self.mergin_manager.save_exported_data(self.current_project_id, export_payload)
-
-            output_file = os.path.join(self.plugin_dir, 'mergin_ready_data.json')
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(export_payload, f, ensure_ascii=False, indent=2)
-
-            endpoints_list = [mapping['endpoint'] for mapping in requested_endpoints.values()]
-            message = (
-                f"Données préparées pour Mergin\n"
-                f"Projet ID: {self.current_project_id}\n"
-                f"Endpoints exportés: {', '.join(endpoints_list)}\n"
-                f"Fichier: {output_file}"
-            )
-            self.dockwidget.merginResultsTextEdit.setPlainText(message)
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                self.tr(u'Préparation Mergin terminée'),
-                message,
-            )
-        except Exception as exc:
-            self.show_error(self.tr(u'Erreur Mergin'), exc)
 
     def load_collected_data(self, collected_data=None, original_data=None):
         """Charge les données collectées et affiche le formulaire de validation"""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
+        endpoint = self.dockwidget.endpointLineEdit.text()
         if not endpoint and collected_data is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -1386,7 +1304,7 @@ class MrvTeraka:
         else:
             # C'est une liste de données (mono-table)
             mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-                self.dockwidget.merginEndpointLineEdit.text().strip()
+                self.dockwidget.endpointLineEdit.text()
             )
             sync_payloads.append((mapping, self.current_validated_data))
 
