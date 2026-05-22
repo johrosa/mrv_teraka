@@ -435,6 +435,42 @@ class MrvTeraka:
             return False
         return True
 
+    def refresh_api_mappings(self, force_api=True):
+        """Force la mise à jour des mappings depuis l'API et les sauvegarde localement."""
+        if not self.postgrest:
+            return False
+
+        try:
+            schema = self.postgrest.fetch_schema()
+            if schema and 'definitions' in schema:
+                new_mappings = {}
+                for table_name, definition in schema['definitions'].items():
+                    geom_field = 'geom'
+                    props = definition.get('properties', {})
+                    for p_name, p_data in props.items():
+                        if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                            geom_field = p_name
+                            break
+
+                    new_mappings[table_name] = {
+                        'endpoint': table_name,
+                        'geom_field': geom_field,
+                        'pk_field': 'id',
+                        'columns': list(props.keys())
+                    }
+
+                # Sauvegarde locale pour persistance
+                self.layer_mappings = new_mappings
+                mapping_path = os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+                with open(mapping_path, 'w', encoding='utf-8') as f:
+                    json.dump({'mappings': new_mappings}, f, indent=4)
+
+                return True
+        except Exception as e:
+            print(f"Erreur refresh mappings: {e}")
+
+        return False
+
     def load_layer_mappings(self):
         """Charge les correspondances couche QGIS -> endpoint PostgREST, via API ou local."""
         if getattr(self, 'layer_mappings', None) is not None:

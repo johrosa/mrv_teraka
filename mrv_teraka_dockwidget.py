@@ -102,10 +102,33 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.autoValidateButton.clicked.connect(self.plugin.auto_validate_mission)
         self.autoSyncButton.clicked.connect(self.plugin.auto_finalize_mission)
 
+        # Configuration
+        self.refreshMappingsButton.clicked.connect(self.on_refresh_mappings_clicked)
+
         self.logout_button.clicked.connect(self.on_logout_clicked)
 
     def on_logout_clicked(self):
         self.logout_requested.emit()
+
+    def on_refresh_mappings_clicked(self):
+        """Action pour synchroniser les listes depuis l'API."""
+        if not self.plugin:
+            return
+
+        self.refreshMappingsButton.setEnabled(False)
+        self.refreshMappingsButton.setText("⏳ Synchronisation...")
+        QtWidgets.QApplication.processEvents()
+
+        success = self.plugin.refresh_api_mappings()
+
+        if success:
+            self.populate_table_lists()
+            QtWidgets.QMessageBox.information(self, "Succès", "Les listes de couches ont été mises à jour depuis l'API.")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Erreur", "Impossible de contacter l'API pour mettre à jour les listes.")
+
+        self.refreshMappingsButton.setEnabled(True)
+        self.refreshMappingsButton.setText("🔄 Synchroniser les Listes")
 
     def on_load_project_clicked(self):
         project_id = self.projectComboBox.currentData()
@@ -142,7 +165,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         buttons = [
             'loadDbButton', 'compareButton', 'refreshFromApiButton', 'processProjectButton',
-            'autoPrepareButton', 'autoImportButton', 'autoValidateButton', 'autoSyncButton'
+            'autoPrepareButton', 'autoImportButton', 'autoValidateButton', 'autoSyncButton',
+            'refreshMappingsButton'
         ]
         for btn in buttons:
             if hasattr(self, btn):
