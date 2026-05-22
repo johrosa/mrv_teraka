@@ -4,7 +4,7 @@ Formulaire de validation des données au retour du terrain
 Permet de vérifier, corriger et fusionner les données collectées avec Mergin
 """
 
-from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal, QVariant
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
@@ -440,7 +440,7 @@ class DataValidationDialog(QDialog):
             # Créer une feature virtuelle avec les champs nécessaires pour éviter KeyError
             fields = QgsFields()
             for key in item_data.keys():
-                fields.append(QgsField(key))
+                fields.append(QgsField(key, QVariant.String))
 
             feat = QgsFeature(fields)
             # On simule les champs pour l'expression
