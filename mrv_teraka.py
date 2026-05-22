@@ -933,10 +933,19 @@ class MrvTeraka:
         if not selected_mappings:
             analyzer = ProjectAnalyzer(self.load_layer_mappings())
             report = analyzer.analyze_active_project()
-            selected_mappings = {l['id']: l['mapping'] for l in report['layers'] if l['mapping']}
+
+            # Ouvrir le dialogue pour permettre l'ajustement des mappings avant déploiement
+            from .project_action_dialog import ProjectActionDialog
+            dialog = ProjectActionDialog(self.iface.mainWindow(), report['layers'], list(self.load_layer_mappings().keys()))
+            if dialog.exec_() == ProjectActionDialog.Accepted:
+                _, selected_mappings = dialog.get_results()
+            else:
+                self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
+                self.dockwidget.missionProgressBar.setValue(0)
+                return
 
         if not selected_mappings:
-            self.show_message("Erreur", "Aucune couche mappée trouvée. Utilisez 'Traiter le Projet' d'abord.")
+            self.show_message("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
             return
 
         # 2. Créer le projet dans le manager
@@ -952,6 +961,7 @@ class MrvTeraka:
 
         layers_to_export = {}
         for lid, ep in selected_mappings.items():
+            # Respecter le mapping par défaut pour le nom des couches dans le GPKG
             layers_to_export[ep] = QgsProject.instance().mapLayer(lid)
 
         success, err = export_to_geopackage(layers_to_export, gpkg_path)
@@ -990,28 +1000,61 @@ class MrvTeraka:
                                 f"La mission '{project_name}' est prête.")
 
     def auto_import_mission(self):
-        """Importation automatique au retour du terrain."""
-        self.dockwidget.merginResultsTextEdit.append("📥 Importation des données mission...")
+        """Importation et analyse automatique des données de terrain."""
+        self.dockwidget.merginResultsTextEdit.append("📥 Récupération des données terrain...")
 
-        # Tentative de téléchargement depuis Mergin si configuré
-        if hasattr(self, 'mergin_api') and self.mergin_api.token and self.current_project_id:
+        # Analyse du projet actif (mis à jour par le plugin Mergin officiel)
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        # Filtrer uniquement les couches qui sont mappées
+        mapped_layers = [l for l in report['layers'] if l['mapping']]
+
+        if not mapped_layers:
+            self.show_message("Importation", "Aucune couche mappée détectée dans le projet actif.")
+            return
+
+        self.dockwidget.missionProgressBar.setValue(30)
+        self.dockwidget.merginResultsTextEdit.append(f"🔍 Analyse de {len(mapped_layers)} couches mappées...")
+
+        collected_payload = {}
+        original_payload = {}
+
+        for l_info in mapped_layers:
+            layer = QgsProject.instance().mapLayer(l_info['id'])
+            endpoint = l_info['mapping']
+            mapping = self.get_mapping_for_endpoint(endpoint)
+
+            # Extraire les données locales (modifiées par le terrain)
+            local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+            collected_payload[endpoint] = local_data
+
+            # Récupérer les données originales de l'API pour comparaison
             try:
-                # Simulation de téléchargement du retour mission
-                self.dockwidget.merginResultsTextEdit.append("☁️ Synchronisation avec Mergin Maps Cloud...")
-            except Exception as e:
-                self.dockwidget.merginResultsTextEdit.append(f"⚠️ Erreur Mergin : {str(e)}")
+                original_payload[endpoint] = self.postgrest.select(endpoint)
+            except Exception:
+                original_payload[endpoint] = []
 
-        self.dockwidget.missionProgressBar.setValue(50)
-        self.load_project_from_mergin()
+        self.current_collected_data = collected_payload
+        self.current_original_data = original_payload
+        self.mergin_validation_ready = True
+        self.set_validation_ready(True)
+
         self.dockwidget.missionProgressBar.setValue(100)
+        self.dockwidget.merginResultsTextEdit.append(f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation.")
+
+        # Ouvrir automatiquement la validation
+        self.auto_validate_mission()
 
     def auto_validate_mission(self):
         """Validation avec moteur de règles métier."""
         if not self.mergin_validation_ready:
+            # Si on n'a pas encore fait "Récupérer", on le fait maintenant
             self.auto_import_mission()
+            return
 
-        # Déclencher le dialogue de validation
-        self.open_validation_form()
+        # Déclencher le dialogue de validation avec les données analysées
+        self.open_validation_form(self.current_collected_data, self.current_original_data)
 
     def auto_finalize_mission(self):
         """Synchronisation finale."""

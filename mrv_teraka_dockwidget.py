@@ -73,13 +73,30 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.endpointComboBox.addItems(tables)
 
     def populate_project_list(self):
-        """Remplit la liste des projets existants."""
+        """Remplit la liste des projets Mergin Maps détectés."""
         if not self.plugin or not self.plugin.mergin_manager:
             return
+
         self.projectComboBox.clear()
-        projects = self.plugin.mergin_manager.list_projects()
+
+        # Récupérer le chemin Mergin Maps depuis QSettings
+        settings = QSettings()
+        mergin_path = settings.value("Mergin/projectDir")
+
+        if not mergin_path:
+            # Fallback sur le dossier par défaut Mergin si non défini
+            home = os.path.expanduser("~")
+            mergin_path = os.path.join(home, "Mergin Projects")
+
+        projects = self.plugin.mergin_manager.list_external_mergin_projects(mergin_path)
+
+        if not projects:
+            self.projectComboBox.addItem("Aucun projet Mergin trouvé", None)
+            return
+
         for p in projects:
-            self.projectComboBox.addItem(p.get('name', 'Sans nom'), p.get('id'))
+            # On stocke le chemin du fichier .qgs/.qgz en data
+            self.projectComboBox.addItem(p.get('name'), p.get('project_file'))
 
     def setup_connections(self):
         """Connecte les signaux aux actions métier."""
@@ -131,18 +148,20 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.refreshMappingsButton.setText("🔄 Synchroniser les Listes")
 
     def on_load_project_clicked(self):
-        project_id = self.projectComboBox.currentData()
-        if not project_id:
-            name = self.projectComboBox.currentText()
-            projects = self.plugin.mergin_manager.list_projects()
-            for p in projects:
-                if p.get('name') == name:
-                    project_id = p.get('id')
-                    break
-        if project_id:
-            self.plugin.load_project_by_id(project_id)
+        """Ouvre le fichier projet QGIS sélectionné."""
+        project_file = self.projectComboBox.currentData()
+        if project_file and os.path.exists(project_file):
+            if QgsProject.instance().read(project_file):
+                self.plugin.iface.messageBar().pushMessage(
+                    "Succès", f"Projet chargé : {os.path.basename(project_file)}",
+                    level=0, duration=3
+                )
+                # Optionnel: Analyser le projet après ouverture
+                self.plugin.analyze_and_process_project()
+            else:
+                QtWidgets.QMessageBox.warning(self, "Erreur", "Impossible de lire le fichier projet QGIS.")
         else:
-            QtWidgets.QMessageBox.warning(self, "Projet introuvable", "Veuillez sélectionner un projet valide.")
+            QtWidgets.QMessageBox.warning(self, "Projet introuvable", "Veuillez sélectionner un projet Mergin valide.")
 
     def set_status_message(self, message, color="black"):
         self.status_label.setText(message)

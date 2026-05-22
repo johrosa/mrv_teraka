@@ -194,13 +194,39 @@ class MerginWorkflowManager:
             return info.get('source_tables', [])
         return []
 
-    def list_projects(self):
-        """Liste tous les projets Mergin"""
+    def list_external_mergin_projects(self, base_dir):
+        """
+        Liste les projets Mergin Maps officiels présents dans base_dir.
+        Un projet est identifié par un dossier contenant un fichier .qgs ou .qgz.
+        """
         projects = []
-        for project_id in os.listdir(self.projects_dir):
-            info = self.get_project_info(project_id)
-            if info:
-                projects.append(info)
+        if not base_dir or not os.path.exists(base_dir):
+            return projects
+
+        for item in os.listdir(base_dir):
+            item_path = os.path.join(base_dir, item)
+            if os.path.isdir(item_path):
+                # Chercher un fichier projet QGIS
+                qgis_files = [f for f in os.listdir(item_path) if f.endswith(('.qgs', '.qgz'))]
+                if qgis_files:
+                    projects.append({
+                        'id': item_path,
+                        'name': item,
+                        'project_file': os.path.join(item_path, qgis_files[0])
+                    })
+        return projects
+
+    def list_projects(self):
+        """Liste tous les projets Mergin (uniquement les nouveaux, selon consigne)"""
+        # La consigne demande d'ouvrir les projets du plugin Mergin Maps
+        # On garde cette méthode pour la compatibilité interne si besoin,
+        # mais on privilégiera list_external_mergin_projects dans l'UI.
+        projects = []
+        if os.path.exists(self.projects_dir):
+            for project_id in os.listdir(self.projects_dir):
+                info = self.get_project_info(project_id)
+                if info:
+                    projects.append(info)
         return projects
 
     def generate_workflow_report(self, project_id):
