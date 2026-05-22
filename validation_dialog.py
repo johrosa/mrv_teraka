@@ -12,7 +12,7 @@ from qgis.PyQt.QtWidgets import (
     QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout
 )
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField
+from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
 import json
 from .business_rules import BusinessRulesEngine
 
@@ -437,8 +437,12 @@ class DataValidationDialog(QDialog):
         for row in range(self.table_validation.rowCount()):
             item_data = self.collected_data[row]
 
-            # Créer une feature virtuelle
-            feat = QgsFeature()
+            # Créer une feature virtuelle avec les champs nécessaires pour éviter KeyError
+            fields = QgsFields()
+            for key in item_data.keys():
+                fields.append(QgsField(key))
+
+            feat = QgsFeature(fields)
             # On simule les champs pour l'expression
             for key, value in item_data.items():
                 feat.setAttribute(key, value)

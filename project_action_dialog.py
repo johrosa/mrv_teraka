@@ -84,8 +84,9 @@ class ProjectActionDialog(QtWidgets.QDialog):
             combo.setEditable(True)
             combo.addItems(["-- Ignorer --"] + self.endpoints)
 
-            if info['endpoint'] and info['endpoint'] in self.endpoints:
-                idx = combo.findText(info['endpoint'])
+            endpoint = info.get('mapping')
+            if endpoint and endpoint in self.endpoints:
+                idx = combo.findText(endpoint)
                 combo.setCurrentIndex(idx)
             else:
                 # Tentative de match
@@ -107,7 +108,7 @@ class ProjectActionDialog(QtWidgets.QDialog):
             container = self.table.cellWidget(i, 0)
             checkbox = container.findChild(QtWidgets.QCheckBox)
             if checkbox.isChecked():
-                layer_id = self.layer_info[i]['layer_id']
+                layer_id = self.layer_info[i]['id']
                 combo = self.table.cellWidget(i, 3)
                 endpoint = combo.currentText()
                 if endpoint != "-- Ignorer --":
