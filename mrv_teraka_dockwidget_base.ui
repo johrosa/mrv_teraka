@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Mrv Teraka</string>
+   <string>TERAKA</string>
   </property>
   <widget class="QWidget" name="dockWidgetContents">
    <layout class="QVBoxLayout" name="verticalLayoutMain">
@@ -30,8 +30,6 @@
     <property name="bottomMargin">
      <number>6</number>
     </property>
-
-    <!-- HEADER: Authentification (Compact) -->
     <item>
      <widget class="QFrame" name="headerFrame">
       <property name="frameShape">
@@ -102,8 +100,6 @@
       </layout>
      </widget>
     </item>
-
-    <!-- ETAPE 1: GESTION DE PROJET -->
     <item>
      <widget class="QGroupBox" name="groupBoxProject">
       <property name="title">
@@ -144,8 +140,6 @@
       </layout>
      </widget>
     </item>
-
-    <!-- ETAPE 2: OPERATIONS DONNEES -->
     <item>
      <widget class="QGroupBox" name="groupBoxDB">
       <property name="title">
@@ -257,8 +251,6 @@
       </layout>
      </widget>
     </item>
-
-    <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
     <item>
      <widget class="QGroupBox" name="groupBoxMergin">
       <property name="title">
@@ -286,7 +278,7 @@
          <property name="minimumSize">
           <size>
            <width>0</width>
-           <height>45</height>
+           <height>35</height>
           </size>
          </property>
          <property name="styleSheet">
@@ -332,7 +324,7 @@
          <property name="minimumSize">
           <size>
            <width>0</width>
-           <height>45</height>
+           <height>35</height>
           </size>
          </property>
          <property name="styleSheet">
@@ -362,7 +354,6 @@
       </layout>
      </widget>
     </item>
-
     <item>
      <spacer name="verticalSpacer">
       <property name="orientation">
