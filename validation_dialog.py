@@ -566,6 +566,17 @@ class DataValidationDialog(QDialog):
             summary += f" ... +{len(changes) - 3}"
         return summary
 
+    def accept(self):
+        """S'assure que les données sont marquées comme validées avant de fermer."""
+        if not self.validated_data:
+            # Si auto_merge n'a pas été appelé, on prend les données actuelles
+            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+                self.validated_data = self.full_collected_data
+            else:
+                self.validated_data = self.collected_data
+
+        super().accept()
+
     def auto_merge(self):
         """Fusion automatique des données pour toutes les tables."""
         reply = QMessageBox.question(
