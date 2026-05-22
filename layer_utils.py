@@ -208,8 +208,13 @@ def export_to_geopackage(layers_map, output_path):
         else:
             options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
 
-        error = QgsVectorFileWriter.writeAsVectorLayer(layer, output_path, options)
-        if error[0] != QgsVectorFileWriter.NoError:
-            return False, error[1]
+        error, error_msg = QgsVectorFileWriter.writeAsVectorFormatV3(
+            layer,
+            output_path,
+            QgsProject.instance().transformContext(),
+            options
+        )
+        if error != QgsVectorFileWriter.NoError:
+            return False, error_msg
 
     return True, "Export réussi"
