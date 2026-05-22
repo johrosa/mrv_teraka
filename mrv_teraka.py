@@ -435,6 +435,42 @@ class MrvTeraka:
             return False
         return True
 
+    def refresh_api_mappings(self, force_api=True):
+        """Force la mise à jour des mappings depuis l'API et les sauvegarde localement."""
+        if not self.postgrest:
+            return False
+
+        try:
+            schema = self.postgrest.fetch_schema()
+            if schema and 'definitions' in schema:
+                new_mappings = {}
+                for table_name, definition in schema['definitions'].items():
+                    geom_field = 'geom'
+                    props = definition.get('properties', {})
+                    for p_name, p_data in props.items():
+                        if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                            geom_field = p_name
+                            break
+
+                    new_mappings[table_name] = {
+                        'endpoint': table_name,
+                        'geom_field': geom_field,
+                        'pk_field': 'id',
+                        'columns': list(props.keys())
+                    }
+
+                # Sauvegarde locale pour persistance
+                self.layer_mappings = new_mappings
+                mapping_path = os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+                with open(mapping_path, 'w', encoding='utf-8') as f:
+                    json.dump({'mappings': new_mappings}, f, indent=4)
+
+                return True
+        except Exception as e:
+            print(f"Erreur refresh mappings: {e}")
+
+        return False
+
     def load_layer_mappings(self):
         """Charge les correspondances couche QGIS -> endpoint PostgREST, via API ou local."""
         if getattr(self, 'layer_mappings', None) is not None:
@@ -897,10 +933,19 @@ class MrvTeraka:
         if not selected_mappings:
             analyzer = ProjectAnalyzer(self.load_layer_mappings())
             report = analyzer.analyze_active_project()
-            selected_mappings = {l['id']: l['mapping'] for l in report['layers'] if l['mapping']}
+
+            # Ouvrir le dialogue pour permettre l'ajustement des mappings avant déploiement
+            from .project_action_dialog import ProjectActionDialog
+            dialog = ProjectActionDialog(self.iface.mainWindow(), report['layers'], list(self.load_layer_mappings().keys()))
+            if dialog.exec_() == ProjectActionDialog.Accepted:
+                _, selected_mappings = dialog.get_results()
+            else:
+                self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
+                self.dockwidget.missionProgressBar.setValue(0)
+                return
 
         if not selected_mappings:
-            self.show_message("Erreur", "Aucune couche mappée trouvée. Utilisez 'Traiter le Projet' d'abord.")
+            self.show_message("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
             return
 
         # 2. Créer le projet dans le manager
@@ -916,6 +961,7 @@ class MrvTeraka:
 
         layers_to_export = {}
         for lid, ep in selected_mappings.items():
+            # Respecter le mapping par défaut pour le nom des couches dans le GPKG
             layers_to_export[ep] = QgsProject.instance().mapLayer(lid)
 
         success, err = export_to_geopackage(layers_to_export, gpkg_path)
@@ -954,28 +1000,61 @@ class MrvTeraka:
                                 f"La mission '{project_name}' est prête.")
 
     def auto_import_mission(self):
-        """Importation automatique au retour du terrain."""
-        self.dockwidget.merginResultsTextEdit.append("📥 Importation des données mission...")
+        """Importation et analyse automatique des données de terrain."""
+        self.dockwidget.merginResultsTextEdit.append("📥 Récupération des données terrain...")
 
-        # Tentative de téléchargement depuis Mergin si configuré
-        if hasattr(self, 'mergin_api') and self.mergin_api.token and self.current_project_id:
+        # Analyse du projet actif (mis à jour par le plugin Mergin officiel)
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        # Filtrer uniquement les couches qui sont mappées
+        mapped_layers = [l for l in report['layers'] if l['mapping']]
+
+        if not mapped_layers:
+            self.show_message("Importation", "Aucune couche mappée détectée dans le projet actif.")
+            return
+
+        self.dockwidget.missionProgressBar.setValue(30)
+        self.dockwidget.merginResultsTextEdit.append(f"🔍 Analyse de {len(mapped_layers)} couches mappées...")
+
+        collected_payload = {}
+        original_payload = {}
+
+        for l_info in mapped_layers:
+            layer = QgsProject.instance().mapLayer(l_info['id'])
+            endpoint = l_info['mapping']
+            mapping = self.get_mapping_for_endpoint(endpoint)
+
+            # Extraire les données locales (modifiées par le terrain)
+            local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+            collected_payload[endpoint] = local_data
+
+            # Récupérer les données originales de l'API pour comparaison
             try:
-                # Simulation de téléchargement du retour mission
-                self.dockwidget.merginResultsTextEdit.append("☁️ Synchronisation avec Mergin Maps Cloud...")
-            except Exception as e:
-                self.dockwidget.merginResultsTextEdit.append(f"⚠️ Erreur Mergin : {str(e)}")
+                original_payload[endpoint] = self.postgrest.select(endpoint)
+            except Exception:
+                original_payload[endpoint] = []
 
-        self.dockwidget.missionProgressBar.setValue(50)
-        self.load_project_from_mergin()
+        self.current_collected_data = collected_payload
+        self.current_original_data = original_payload
+        self.mergin_validation_ready = True
+        self.set_validation_ready(True)
+
         self.dockwidget.missionProgressBar.setValue(100)
+        self.dockwidget.merginResultsTextEdit.append(f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation.")
+
+        # Ouvrir automatiquement la validation
+        self.auto_validate_mission()
 
     def auto_validate_mission(self):
         """Validation avec moteur de règles métier."""
         if not self.mergin_validation_ready:
+            # Si on n'a pas encore fait "Récupérer", on le fait maintenant
             self.auto_import_mission()
+            return
 
-        # Déclencher le dialogue de validation
-        self.open_validation_form()
+        # Déclencher le dialogue de validation avec les données analysées
+        self.open_validation_form(self.current_collected_data, self.current_original_data)
 
     def auto_finalize_mission(self):
         """Synchronisation finale."""
@@ -1204,95 +1283,13 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error("Erreur", exc)
 
-    def prepare_mergin_project(self, selected_mappings=None):
-        """Prépare un export des données DB pour ingestion dans un projet Mergin."""
-        if not self.dockwidget or not self.check_api_auth():
-            return
-
-        requested_endpoints = {}
-        if selected_mappings:
-            for endpoint in selected_mappings.values():
-                requested_endpoints[endpoint] = self.get_mapping_for_endpoint(endpoint)
-        else:
-            # Si un projet est déjà sélectionné, on exporte ses tables
-            info = None
-            if self.current_project_id:
-                info = self.mergin_manager.get_project_info(self.current_project_id)
-
-            if info:
-                tables = info.get('source_tables', [])
-                for table in tables:
-                    requested_endpoints[table] = self.get_mapping_for_endpoint(table)
-            else:
-                endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
-                requested_endpoints = self.get_requested_endpoints(endpoint)
-
-        if not requested_endpoints:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Erreur'),
-                self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
-            )
-            return
-
-        try:
-            district_filter = self.dockwidget.districtLineEdit.text().strip()
-            export_payload = {}
-            for layer_name, mapping in requested_endpoints.items():
-                endpoint_value = mapping['endpoint']
-                filters = {}
-                # Appliquer le filtre de district si spécifié et si la table possède cette colonne
-                if district_filter and 'district' in mapping.get('columns', []):
-                    filters['district'] = f'eq.{district_filter}'
-
-                export_payload[endpoint_value] = self.postgrest.select(endpoint_value, filters=filters)
-
-            if not self.current_project_id:
-                timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
-                project_name = 'mergin_'
-                if district_filter:
-                    project_name += f"{district_filter}_"
-                project_name += timestamp
-
-                project_description = f"Collecte terrain"
-                if district_filter:
-                    project_description += f" [District: {district_filter}]"
-                project_description += f" - {', '.join(requested_endpoints.keys())}"
-
-                self.current_project_id = self.mergin_manager.create_project(
-                    project_name,
-                    list(set([mapping['endpoint'] for mapping in requested_endpoints.values()])),
-                    project_description
-                )
-
-            self.mergin_manager.save_exported_data(self.current_project_id, export_payload)
-
-            output_file = os.path.join(self.plugin_dir, 'mergin_ready_data.json')
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(export_payload, f, ensure_ascii=False, indent=2)
-
-            endpoints_list = [mapping['endpoint'] for mapping in requested_endpoints.values()]
-            message = (
-                f"Données préparées pour Mergin\n"
-                f"Projet ID: {self.current_project_id}\n"
-                f"Endpoints exportés: {', '.join(endpoints_list)}\n"
-                f"Fichier: {output_file}"
-            )
-            self.dockwidget.merginResultsTextEdit.setPlainText(message)
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                self.tr(u'Préparation Mergin terminée'),
-                message,
-            )
-        except Exception as exc:
-            self.show_error(self.tr(u'Erreur Mergin'), exc)
 
     def load_collected_data(self, collected_data=None, original_data=None):
         """Charge les données collectées et affiche le formulaire de validation"""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
+        endpoint = self.dockwidget.endpointLineEdit.text()
         if not endpoint and collected_data is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -1386,7 +1383,7 @@ class MrvTeraka:
         else:
             # C'est une liste de données (mono-table)
             mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-                self.dockwidget.merginEndpointLineEdit.text().strip()
+                self.dockwidget.endpointLineEdit.text()
             )
             sync_payloads.append((mapping, self.current_validated_data))
 

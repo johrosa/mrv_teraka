@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.idea/
+.vscode/
+*.pytest_cache/
+.DS_Store
+mergin_workflows/projects/*
+mergin_workflows/backups/*
+!mergin_workflows/projects/.gitkeep
+!mergin_workflows/backups/.gitkeep

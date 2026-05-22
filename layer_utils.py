@@ -208,8 +208,32 @@ def export_to_geopackage(layers_map, output_path):
         else:
             options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
 
-        error = QgsVectorFileWriter.writeAsVectorLayer(layer, output_path, options)
-        if error[0] != QgsVectorFileWriter.NoError:
-            return False, error[1]
+        # Robust export: try V3 first (QGIS 3.10+), fallback to V2
+        if hasattr(QgsVectorFileWriter, 'writeAsVectorFormatV3'):
+            res = QgsVectorFileWriter.writeAsVectorFormatV3(
+                layer,
+                output_path,
+                QgsProject.instance().transformContext(),
+                options
+            )
+            error = res[0]
+            error_msg = res[1] if len(res) > 1 else "Erreur inconnue"
+        else:
+            # Fallback for older QGIS 3.x
+            error = QgsVectorFileWriter.writeAsVectorFormat(
+                layer,
+                output_path,
+                "UTF-8",
+                layer.crs(),
+                "GPKG",
+                False,
+                None,
+                options.layerName,
+                options.actionOnExistingFile
+            )
+            error_msg = "Erreur lors de l'export GeoPackage (V2)"
+
+        if error != QgsVectorFileWriter.NoError:
+            return False, error_msg
 
     return True, "Export réussi"

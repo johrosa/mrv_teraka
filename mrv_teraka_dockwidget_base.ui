@@ -31,6 +31,24 @@
      <number>6</number>
     </property>
 
+    <!-- MAIN TITLE -->
+    <item>
+     <widget class="QLabel" name="mainTitleLabel">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>40</height>
+       </size>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: bold; color: #2D5A27; qproperty-alignment: 'AlignCenter';</string>
+      </property>
+      <property name="text">
+       <string>MRV TERAKA</string>
+      </property>
+     </widget>
+    </item>
+
     <!-- HEADER: Authentification (Compact) -->
     <item>
      <widget class="QFrame" name="headerFrame">
@@ -103,213 +121,335 @@
      </widget>
     </item>
 
-    <!-- ETAPE 1: GESTION DE PROJET -->
     <item>
-     <widget class="QGroupBox" name="groupBoxProject">
-      <property name="title">
-       <string>1. Sélection du Projet</string>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>0</number>
       </property>
-      <layout class="QVBoxLayout" name="verticalLayoutProject">
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutProj">
-         <item>
-          <widget class="QComboBox" name="projectComboBox">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="editable">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="loadProjectButton">
-           <property name="text">
-            <string>Ouvrir</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="saveProjectButton">
-           <property name="text">
-            <string>Enregistrer</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </widget>
-    </item>
 
-    <!-- ETAPE 2: OPERATIONS DONNEES -->
-    <item>
-     <widget class="QGroupBox" name="groupBoxDB">
-      <property name="title">
-       <string>2. Gestion des Couches (API)</string>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayoutDB">
-       <item>
-        <widget class="QComboBox" name="endpointComboBox">
-         <property name="editable">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutDistrict">
-         <item>
-          <widget class="QLabel" name="labelDistrict">
-           <property name="text">
-            <string>District :</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="districtLineEdit">
-           <property name="toolTip">
-            <string>Filtre global par district pour le chargement et la préparation des données Mergin.</string>
-           </property>
-           <property name="placeholderText">
-            <string>Optionnel...</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <layout class="QGridLayout" name="gridLayoutDB">
-         <item row="0" column="0">
-          <widget class="QPushButton" name="loadDbButton">
-           <property name="text">
-            <string>Charger</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="QPushButton" name="compareButton">
-           <property name="text">
-            <string>Comparer</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QPushButton" name="processProjectButton">
-           <property name="styleSheet">
-            <string notr="true">font-weight: bold; color: darkblue;</string>
-           </property>
-           <property name="text">
-            <string>Traiter le Projet</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QPushButton" name="refreshFromApiButton">
-           <property name="text">
-            <string>Actualiser</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QTextEdit" name="comparisonResultsTextEdit">
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>80</height>
-          </size>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>Résultats des opérations...</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
+      <!-- TAB 1: WORKFLOW -->
+      <widget class="QWidget" name="workflowTab">
+       <attribute name="title">
+        <string>Missions</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayoutWorkflow">
 
-    <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
-    <item>
-     <widget class="QGroupBox" name="groupBoxMergin">
-      <property name="title">
-       <string>3. Cycle Automatisé des Missions</string>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayoutMergin">
-       <item>
-        <widget class="QProgressBar" name="missionProgressBar">
-         <property name="value">
-          <number>0</number>
-         </property>
-         <property name="textVisible">
-          <bool>true</bool>
-         </property>
-         <property name="format">
-          <string>Progression Mission : %p%</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QGridLayout" name="gridLayoutMission">
-         <item row="0" column="0">
-          <widget class="QPushButton" name="autoPrepareButton">
-           <property name="styleSheet">
-            <string notr="true">background-color: #e3f2fd;</string>
-           </property>
-           <property name="text">
-            <string>1. Déploiement Terrain</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="QPushButton" name="autoImportButton">
-           <property name="text">
-            <string>2. Retour de Mission</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QPushButton" name="autoValidateButton">
-           <property name="text">
-            <string>3. Validation Métier</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QPushButton" name="autoSyncButton">
-           <property name="styleSheet">
-            <string notr="true">background-color: #e8f5e9; font-weight: bold;</string>
-           </property>
-           <property name="text">
-            <string>4. Intégration Finale</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QTextEdit" name="merginResultsTextEdit">
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>120</height>
-          </size>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>Journal de mission...</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
+        <!-- ETAPE 1: GESTION DE PROJET -->
+        <item>
+         <widget class="QGroupBox" name="groupBoxProject">
+          <property name="title">
+           <string>📁 Projets de Suivi</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayoutProject">
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayoutProj">
+             <item>
+              <widget class="QComboBox" name="projectComboBox">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="editable">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="loadProjectButton">
+               <property name="text">
+                <string>Ouvrir</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="saveProjectButton">
+               <property name="text">
+                <string>Nouveau</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- ETAPE 2: OPERATIONS DONNEES -->
+        <item>
+         <widget class="QGroupBox" name="groupBoxDB">
+          <property name="title">
+           <string>🛠️ Outils de Données</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayoutDB">
+           <item>
+            <layout class="QHBoxLayout" name="layoutEndpoint">
+             <item>
+              <widget class="QLabel" name="labelEndpoint">
+               <property name="text">
+                <string>Couche :</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="endpointComboBox">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="editable">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayoutDistrict">
+             <item>
+              <widget class="QLabel" name="labelDistrict">
+               <property name="text">
+                <string>Secteur :</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="districtLineEdit">
+               <property name="toolTip">
+                <string>Filtre global par district ou secteur.</string>
+               </property>
+               <property name="placeholderText">
+                <string>Tout le pays...</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="layoutDbActions">
+             <item>
+              <widget class="QPushButton" name="loadDbButton">
+               <property name="text">
+                <string>Charger</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="compareButton">
+               <property name="text">
+                <string>Vérifier</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="refreshFromApiButton">
+               <property name="text">
+                <string>Actualiser</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QPushButton" name="processProjectButton">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>35</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">font-weight: bold; color: #2D5A27; border: 1px solid #2D5A27; border-radius: 4px;</string>
+             </property>
+             <property name="text">
+              <string>Analyser et Traiter le Projet</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTextEdit" name="comparisonResultsTextEdit">
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>60</height>
+              </size>
+             </property>
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+             <property name="placeholderText">
+              <string>Résultats de l'analyse...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
+        <item>
+         <widget class="QGroupBox" name="groupBoxMergin">
+          <property name="title">
+           <string>🌿 Cycle des Missions Teraka</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayoutMergin">
+           <item>
+            <widget class="QProgressBar" name="missionProgressBar">
+             <property name="styleSheet">
+              <string notr="true">QProgressBar { border: 1px solid grey; border-radius: 5px; text-align: center; } QProgressBar::chunk { background-color: #2D5A27; }</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="format">
+              <string>Progression : %p%</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="autoPrepareButton">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>45</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">background-color: #2D5A27; color: white; font-weight: bold; font-size: 13px; border-radius: 6px;</string>
+             </property>
+             <property name="text">
+              <string>1. Préparer Terrain (Mergin Maps)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayoutMid">
+             <item>
+              <widget class="QPushButton" name="autoImportButton">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>2. Récupérer Données</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="autoValidateButton">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>3. Valider Collecte</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QPushButton" name="autoSyncButton">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>45</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">background-color: #2D5A27; color: white; font-weight: bold; font-size: 13px; border-radius: 6px;</string>
+             </property>
+             <property name="text">
+              <string>4. Publier vers l'API Teraka</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTextEdit" name="merginResultsTextEdit">
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>100</height>
+              </size>
+             </property>
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+             <property name="placeholderText">
+              <string>Journal de mission...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- TAB 2: CONFIGURATION -->
+      <widget class="QWidget" name="configTab">
+       <attribute name="title">
+        <string>Réglages</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayoutConfig">
+        <item>
+         <widget class="QGroupBox" name="groupBoxMapping">
+          <property name="title">
+           <string>Synchronisation API</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayoutMapping">
+           <item>
+            <widget class="QLabel" name="labelSyncInfo">
+             <property name="text">
+              <string>Mettre à jour les listes de couches à partir du serveur :</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="refreshMappingsButton">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>🔄 Synchroniser les Listes</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <spacer name="configSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+
      </widget>
     </item>
 
