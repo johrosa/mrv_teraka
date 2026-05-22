@@ -30,8 +30,6 @@
     <property name="bottomMargin">
      <number>6</number>
     </property>
-
-    <!-- MAIN TITLE -->
     <item>
      <widget class="QLabel" name="mainTitleLabel">
       <property name="minimumSize">
@@ -48,8 +46,6 @@
       </property>
      </widget>
     </item>
-
-    <!-- HEADER: Authentification (Compact) -->
     <item>
      <widget class="QFrame" name="headerFrame">
       <property name="frameShape">
@@ -120,21 +116,16 @@
       </layout>
      </widget>
     </item>
-
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
        <number>0</number>
       </property>
-
-      <!-- TAB 1: WORKFLOW -->
       <widget class="QWidget" name="workflowTab">
        <attribute name="title">
         <string>Missions</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayoutWorkflow">
-
-        <!-- ETAPE 1: GESTION DE PROJET -->
         <item>
          <widget class="QGroupBox" name="groupBoxProject">
           <property name="title">
@@ -175,8 +166,6 @@
           </layout>
          </widget>
         </item>
-
-        <!-- ETAPE 2: OPERATIONS DONNEES -->
         <item>
          <widget class="QGroupBox" name="groupBoxDB">
           <property name="title">
@@ -288,8 +277,6 @@
           </layout>
          </widget>
         </item>
-
-        <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
         <item>
          <widget class="QGroupBox" name="groupBoxMergin">
           <property name="title">
@@ -317,7 +304,7 @@
              <property name="minimumSize">
               <size>
                <width>0</width>
-               <height>45</height>
+               <height>35</height>
               </size>
              </property>
              <property name="styleSheet">
@@ -363,7 +350,7 @@
              <property name="minimumSize">
               <size>
                <width>0</width>
-               <height>45</height>
+               <height>35</height>
               </size>
              </property>
              <property name="styleSheet">
@@ -395,8 +382,6 @@
         </item>
        </layout>
       </widget>
-
-      <!-- TAB 2: CONFIGURATION -->
       <widget class="QWidget" name="configTab">
        <attribute name="title">
         <string>Réglages</string>
@@ -447,25 +432,23 @@
           </property>
          </spacer>
         </item>
-        </layout>
-        </widget>
-       </widget>
-
-     </item>
-
-     <item>
-      <spacer name="verticalSpacer">
-       <property name="orientation">
-        <enum>Qt::Vertical</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>20</width>
-         <height>40</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+    <item>
+     <spacer name="verticalSpacer">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>20</width>
+        <height>40</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
    </layout>
   </widget>
  </widget>
