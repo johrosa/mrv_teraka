@@ -244,12 +244,11 @@
                </property>
               </widget>
              </item>
-              <item>
-               <widget class="QPushButton" name="refreshFromApiButton">
-                <property name="text">
-                 <string>Actualiser</string>
-                </property>
-               </widget>
+             <item>
+              <widget class="QPushButton" name="refreshFromApiButton">
+               <property name="text">
+                <string>Actualiser</string>
+               </property>
               </item>
             </layout>
            </item>
