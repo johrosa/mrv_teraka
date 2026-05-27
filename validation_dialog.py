@@ -614,7 +614,9 @@ class DataValidationDialog(QDialog):
             'data': self.collected_data
         }
         
-        filename = "/tmp/validation_report.json"
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        filename = os.path.join(temp_dir, "validation_report.json")
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
         
