@@ -593,6 +593,7 @@ class DataValidationDialog(QDialog):
 
             self.progress.setValue(100)
             QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
+            self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
