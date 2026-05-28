@@ -593,6 +593,7 @@ class DataValidationDialog(QDialog):
 
             self.progress.setValue(100)
             QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
+            self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
@@ -613,7 +614,9 @@ class DataValidationDialog(QDialog):
             'data': self.collected_data
         }
         
-        filename = "/tmp/validation_report.json"
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        filename = os.path.join(temp_dir, "validation_report.json")
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
         

@@ -184,7 +184,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         buttons = [
             'loadDbButton', 'compareButton', 'refreshFromApiButton', 'processProjectButton',
-            'autoPrepareButton', 'autoImportButton', 'autoValidateButton', 'autoSyncButton',
+            'autoPrepareButton', 'autoImportButton', 'autoValidateButton',
             'refreshMappingsButton'
         ]
         for btn in buttons:
