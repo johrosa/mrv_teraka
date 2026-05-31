@@ -19,6 +19,15 @@ from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsAppli
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
+# Importation d'un générateur de données synthétiques pour tests depuis le module du plugin.
+try:
+    from .synthetic_data_generator import create_synthetic_project_data
+except ImportError:
+    try:
+        from synthetic_data_generator import create_synthetic_project_data
+    except ImportError:
+        create_synthetic_project_data = None
+
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
 from .config_postgrest import load_layer_mapping, normalize_layer_name_to_endpoint
@@ -164,6 +173,30 @@ class MrvTeraka:
         if not text or not isinstance(text, str):
             return False
         return bool(re.search(r'<(?:!doctype|html|head|body|div|span|p|h[1-6]|br|strong|em|ul|ol|li|table|tr|td|th)', text, re.IGNORECASE))
+
+    def load_sample_data(self):
+        """Génère des couches de test synthétiques et les ajoute au projet QGIS."""
+        if create_synthetic_project_data is None:
+            self.show_message(
+                "Erreur",
+                "Le générateur de données de test n'est pas disponible."
+            )
+            return
+
+        try:
+            created_layers = create_synthetic_project_data()
+            if created_layers:
+                self.show_message(
+                    "Données de test créées",
+                    "Les couches de test suivantes ont été ajoutées :\n- " + "\n- ".join(created_layers)
+                )
+            else:
+                self.show_message(
+                    "Aucune couche créée",
+                    "Aucune couche de test n'a pu être générée."
+                )
+        except Exception as exc:
+            self.show_error("Erreur création données test", exc)
 
     def tr(self, message):
         return QCoreApplication.translate('MrvTeraka', message)

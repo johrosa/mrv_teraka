@@ -239,6 +239,13 @@
                </property>
               </widget>
              </item>
+             <item>
+              <widget class="QPushButton" name="loadSampleDataButton">
+               <property name="text">
+                <string>Données tests</string>
+               </property>
+              </widget>
+             </item>
             </layout>
            </item>
            <item>

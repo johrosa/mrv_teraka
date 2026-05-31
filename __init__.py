@@ -24,6 +24,8 @@
 """
 
 
+from .synthetic_data_generator import create_synthetic_project_data
+
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
     """Load MrvTeraka class from file MrvTeraka.
@@ -34,3 +36,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     #
     from .mrv_teraka import MrvTeraka
     return MrvTeraka(iface)
+
+__all__ = ['classFactory', 'create_synthetic_project_data']

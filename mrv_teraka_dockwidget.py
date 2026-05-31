@@ -56,6 +56,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.compareButton.setToolTip("Vérifier les différences avec la base centrale")
         self.loadDbButton.setToolTip("Importer les données de la couche choisie")
         self.refreshFromApiButton.setToolTip("Mettre à jour les données depuis le serveur")
+        self.loadSampleDataButton.setToolTip("Générer des couches de test synthétiques dans le projet")
         self.processProjectButton.setToolTip("Lancer l'analyse intelligente des couches du projet")
 
         self.autoPrepareButton.setToolTip("Déployer la mission sur Mergin Maps pour le terrain")
@@ -111,6 +112,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.loadDbButton.clicked.connect(self.plugin.load_database_data)
         self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
         self.refreshFromApiButton.clicked.connect(self.plugin.refresh_data_via_api)
+        self.loadSampleDataButton.clicked.connect(self.plugin.load_sample_data)
         self.processProjectButton.clicked.connect(self.plugin.analyze_and_process_project)
 
         # Cycle Mission
