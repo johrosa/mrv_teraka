@@ -80,8 +80,26 @@ def _create_memory_layer(layer_name, fields, geom_type=None, feature_count=5):
         fet.setAttributes(attrs)
 
         if geom_type:
-            x, y = _random_point()
-            geom = QgsGeometry.fromWkt(_make_point_wkt(x, y))
+            gtype = geom_type.lower()
+            geom = None
+            if 'point' in gtype:
+                x, y = _random_point()
+                geom = QgsGeometry.fromWkt(_make_point_wkt(x, y))
+            elif 'line' in gtype:
+                pts = [_random_point() for _ in range(2 + random.randint(0, 3))]
+                wkt = 'LINESTRING(' + ','.join(f"{x} {y}" for x, y in pts) + ')'
+                geom = QgsGeometry.fromWkt(wkt)
+            elif 'polygon' in gtype:
+                pts = [_random_point() for _ in range(3 + random.randint(0, 3))]
+                if pts[0] != pts[-1]:
+                    pts.append(pts[0])
+                wkt = 'POLYGON((' + ','.join(f"{x} {y}" for x, y in pts) + '))'
+                geom = QgsGeometry.fromWkt(wkt)
+            else:
+                # fallback to point
+                x, y = _random_point()
+                geom = QgsGeometry.fromWkt(_make_point_wkt(x, y))
+
             if geom and not geom.isNull():
                 fet.setGeometry(geom)
 
@@ -138,6 +156,59 @@ DEFAULT_ENDPOINTS = {
             ('uuid_membre_suivi', str),
             ('c_com', int),
             ('prenom', str),
+            ('nom', str),
+        ]
+    },
+    # Additional backend lookup tables required by dependencies
+    'membre': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_membre', str),
+            ('c_com', int),
+            ('nom_membre', str),
+        ]
+    },
+    'pg_infos': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_pg', str),
+            ('code_pg', str),
+            ('nom_pg', str),
+            ('c_com', int),
+        ]
+    },
+    'sol_couleurs': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_sol_couleur', str),
+            ('nom', str),
+        ]
+    },
+    'sol_types': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_sol_type', str),
+            ('nom', str),
+        ]
+    },
+    'topographies': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_topo', str),
+            ('nom', str),
+        ]
+    },
+    'users': {
+        'geom_type': None,
+        'fields': [
+            ('id', int),
+            ('uuid_user', str),
+            ('email', str),
             ('nom', str),
         ]
     },

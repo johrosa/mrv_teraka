@@ -24,7 +24,13 @@
 """
 
 
-from .synthetic_data_generator import create_synthetic_project_data
+try:
+    from .synthetic_data_generator import create_synthetic_project_data
+except Exception:  # pragma: no cover - allow import outside QGIS
+    def create_synthetic_project_data():
+        raise RuntimeError(
+            "create_synthetic_project_data is unavailable: import and run this inside QGIS where qgis.core is available or import mrv_teraka.synthetic_data_generator directly."
+        )
 
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
