@@ -48,9 +48,6 @@
     </item>
     <item>
      <widget class="QFrame" name="headerFrame">
-      <property name="frameShape">
-       <enum>QFrame::Shape::StyledPanel</enum>
-      </property>
       <layout class="QHBoxLayout" name="horizontalLayoutHeader">
        <property name="spacing">
         <number>4</number>
@@ -89,7 +86,7 @@
        <item>
         <spacer name="headerSpacer">
          <property name="orientation">
-          <enum>Qt::Orientation::Horizontal</enum>
+          <enum>Qt.Horizontal</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -427,9 +424,9 @@
         </item>
         <item>
          <spacer name="configSpacer">
-          <property name="orientation">
-           <enum>Qt::Orientation::Vertical</enum>
-          </property>
+                 <property name="orientation">
+                     <enum>Qt.Vertical</enum>
+                    </property>
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
