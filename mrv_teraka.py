@@ -6,8 +6,10 @@
  ***************************************************************************/
 """
 import json
+import os
 import os.path
 import re
+import shutil
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt, QVariant
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit
@@ -86,6 +88,16 @@ class MrvTeraka:
         # Initialisation du répertoire et de la langue
         self.plugin_dir = os.path.dirname(__file__)
         self.default_project_file = os.path.join(self.plugin_dir, 'Q_v17_7_7_ITASY2026_WP.qgz')
+
+        if ConfigManager is not None:
+            try:
+                accessible_project_file = ConfigManager.get_user_default_project_path()
+                if os.path.exists(self.default_project_file) and not os.path.exists(accessible_project_file):
+                    shutil.copy2(self.default_project_file, accessible_project_file)
+                if os.path.exists(accessible_project_file):
+                    self.default_project_file = accessible_project_file
+            except Exception:
+                pass
         
         # Initialiser le gestionnaire Mergin Workflow
         self.mergin_manager = MerginWorkflowManager(self.plugin_dir)

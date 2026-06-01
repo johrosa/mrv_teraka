@@ -51,6 +51,10 @@ class ConfigManager:
                 Windows: %LOCALAPPDATA%/Teraka/
                 Linux/Mac: ~/.config/Teraka/
         """
+        # Allow explicit override
+        if os.getenv('TERAKA_CONFIG_DIR'):
+            return os.path.expanduser(os.getenv('TERAKA_CONFIG_DIR'))
+
         if sys.platform == 'win32':
             # Windows: Use LOCALAPPDATA (not hidden AppData\Roaming)
             base = os.getenv('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local'))
@@ -75,6 +79,12 @@ class ConfigManager:
         projects_dir = os.path.join(config_dir, 'projects')
         os.makedirs(projects_dir, exist_ok=True)
         return projects_dir
+    
+    @staticmethod
+    def get_user_default_project_path():
+        """Returns the path for the accessible default QGIS project file."""
+        projects_dir = ConfigManager.get_projects_dir()
+        return os.path.join(projects_dir, 'Q_v17_7_7_ITASY2026_WP.qgz')
     
     @staticmethod
     def get_exports_dir():
