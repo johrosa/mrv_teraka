@@ -32,6 +32,14 @@ except Exception:  # pragma: no cover - allow import outside QGIS
             "create_synthetic_project_data is unavailable: import and run this inside QGIS where qgis.core is available or import mrv_teraka.synthetic_data_generator directly."
         )
 
+try:
+    from .config_manager import ConfigManager, get_config_dir, get_api_url, get_postgrest_url
+except Exception:  # pragma: no cover
+    ConfigManager = None
+    get_config_dir = None
+    get_api_url = None
+    get_postgrest_url = None
+
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
     """Load MrvTeraka class from file MrvTeraka.
@@ -43,4 +51,12 @@ def classFactory(iface):  # pylint: disable=invalid-name
     from .mrv_teraka import MrvTeraka
     return MrvTeraka(iface)
 
-__all__ = ['classFactory', 'create_synthetic_project_data']
+__all__ = [
+    'classFactory',
+    'create_synthetic_project_data',
+    'ConfigManager',
+    'get_config_dir',
+    'get_api_url',
+    'get_postgrest_url'
+]
+

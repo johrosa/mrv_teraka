@@ -28,6 +28,12 @@ except ImportError:
     except ImportError:
         create_synthetic_project_data = None
 
+# Importation du gestionnaire de configuration centralisé
+try:
+    from .config_manager import ConfigManager
+except ImportError:
+    ConfigManager = None
+
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
 from .config_postgrest import load_layer_mapping, normalize_layer_name_to_endpoint
@@ -47,9 +53,16 @@ class MrvTeraka:
     def __init__(self, iface):
         self.iface = iface
 
-        # Configuration de l'API - On utilise l'Enum du client
+        # Configuration de l'API - Load from ConfigManager or use default
         self.postgrest_mode = PostgRESTMode.DJANGO
-        self.api_base_url = 'http://localhost:8000'  # Port par défaut Django
+        
+        # Initialize ConfigManager (creates config dir if needed)
+        if ConfigManager:
+            ConfigManager.create_config_template()
+            self.api_base_url = ConfigManager.get_api_url()
+        else:
+            # Fallback if ConfigManager not available
+            self.api_base_url = 'http://localhost:8000'
 
         # Instances du client API et gestionnaire de jeton
         self.postgrest = None

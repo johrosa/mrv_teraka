@@ -12,6 +12,12 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, QSettings
 from qgis.PyQt.QtGui import QIcon, QPixmap
 
+# Try to import ConfigManager for default URLs
+try:
+    from .config_manager import ConfigManager
+except ImportError:
+    ConfigManager = None
+
 
 class AuthDialog(QDialog):
     """Formulaire d'authentification avec options avancées"""
@@ -27,6 +33,15 @@ class AuthDialog(QDialog):
         super().__init__(parent)
         self.api_modes = api_modes or {}
         self.token = None
+        
+        # Get default API URL from config
+        self.default_api_url = 'http://localhost:8000'
+        if ConfigManager:
+            try:
+                self.default_api_url = ConfigManager.get_api_url()
+            except Exception:
+                pass  # Use hardcoded default if config fails
+        
         self.setup_ui()
         self.load_saved_settings()
     
@@ -60,8 +75,8 @@ class AuthDialog(QDialog):
         l_url.setMinimumWidth(120)
         url_layout.addWidget(l_url)
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("http://localhost:8000")
-        self.url_input.setText("http://localhost:8000")
+        self.url_input.setPlaceholderText(self.default_api_url)
+        self.url_input.setText(self.default_api_url)
         url_layout.addWidget(self.url_input)
         layout.addLayout(url_layout)
         
@@ -150,7 +165,7 @@ class AuthDialog(QDialog):
         settings = QSettings('iTeraka', 'MrvTeraka')
         
         saved_username = settings.value('auth/username', '')
-        saved_url = settings.value('auth/url', 'http://localhost:8000')
+        saved_url = settings.value('auth/url', self.default_api_url)
         remember = settings.value('auth/remember', False, type=bool)
         
         self.url_input.setText(saved_url)
