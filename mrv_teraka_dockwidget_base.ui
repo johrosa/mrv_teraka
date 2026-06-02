@@ -30,8 +30,6 @@
     <property name="bottomMargin">
      <number>6</number>
     </property>
-
-    <!-- MAIN TITLE -->
     <item>
      <widget class="QLabel" name="mainTitleLabel">
       <property name="minimumSize">
@@ -48,8 +46,6 @@
       </property>
      </widget>
     </item>
-
-    <!-- HEADER: Authentification (Compact) -->
     <item>
      <widget class="QFrame" name="headerFrame">
       <property name="frameShape">
@@ -120,21 +116,16 @@
       </layout>
      </widget>
     </item>
-
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
        <number>0</number>
       </property>
-
-      <!-- TAB 1: WORKFLOW -->
       <widget class="QWidget" name="workflowTab">
        <attribute name="title">
         <string>Missions</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayoutWorkflow">
-
-        <!-- ETAPE 1: GESTION DE PROJET -->
         <item>
          <widget class="QGroupBox" name="groupBoxProject">
           <property name="title">
@@ -175,8 +166,6 @@
           </layout>
          </widget>
         </item>
-
-        <!-- ETAPE 2: OPERATIONS DONNEES -->
         <item>
          <widget class="QGroupBox" name="groupBoxDB">
           <property name="title">
@@ -217,12 +206,12 @@
               </widget>
              </item>
              <item>
-              <widget class="QLineEdit" name="districtLineEdit">
+              <widget class="QComboBox" name="districtLineEdit">
                <property name="toolTip">
                 <string>Filtre global par district ou secteur.</string>
                </property>
-               <property name="placeholderText">
-                <string>Tout le pays...</string>
+               <property name="editable">
+                <bool>true</bool>
                </property>
               </widget>
              </item>
@@ -265,7 +254,7 @@
               <string notr="true">font-weight: bold; color: #2D5A27; border: 1px solid #2D5A27; border-radius: 4px;</string>
              </property>
              <property name="text">
-              <string>Analyser et Traiter le Projet</string>
+              <string>Assistant Projet</string>
              </property>
             </widget>
            </item>
@@ -288,8 +277,6 @@
           </layout>
          </widget>
         </item>
-
-        <!-- ETAPE 3: AUTOMATISATION & MISSIONS -->
         <item>
          <widget class="QGroupBox" name="groupBoxMergin">
           <property name="title">
@@ -297,27 +284,11 @@
           </property>
           <layout class="QVBoxLayout" name="verticalLayoutMergin">
            <item>
-            <widget class="QProgressBar" name="missionProgressBar">
-             <property name="styleSheet">
-              <string notr="true">QProgressBar { border: 1px solid grey; border-radius: 5px; text-align: center; } QProgressBar::chunk { background-color: #2D5A27; }</string>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-             <property name="textVisible">
-              <bool>true</bool>
-             </property>
-             <property name="format">
-              <string>Progression : %p%</string>
-             </property>
-            </widget>
-           </item>
-           <item>
             <widget class="QPushButton" name="autoPrepareButton">
              <property name="minimumSize">
               <size>
                <width>0</width>
-               <height>45</height>
+               <height>35</height>
               </size>
              </property>
              <property name="styleSheet">
@@ -335,7 +306,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>40</height>
+                 <height>35</height>
                 </size>
                </property>
                <property name="text">
@@ -348,7 +319,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>40</height>
+                 <height>35</height>
                 </size>
                </property>
                <property name="text">
@@ -363,7 +334,7 @@
              <property name="minimumSize">
               <size>
                <width>0</width>
-               <height>45</height>
+               <height>35</height>
               </size>
              </property>
              <property name="styleSheet">
@@ -371,6 +342,22 @@
              </property>
              <property name="text">
               <string>4. Publier vers l'API Teraka</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QProgressBar" name="missionProgressBar">
+             <property name="styleSheet">
+              <string notr="true">QProgressBar { border: 1px solid grey; border-radius: 5px; text-align: center; } QProgressBar::chunk { background-color: #2D5A27; }</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="format">
+              <string>Progression : %p%</string>
              </property>
             </widget>
            </item>
@@ -395,8 +382,6 @@
         </item>
        </layout>
       </widget>
-
-      <!-- TAB 2: CONFIGURATION -->
       <widget class="QWidget" name="configTab">
        <attribute name="title">
         <string>Réglages</string>
@@ -449,10 +434,8 @@
         </item>
        </layout>
       </widget>
-
      </widget>
     </item>
-
     <item>
      <spacer name="verticalSpacer">
       <property name="orientation">

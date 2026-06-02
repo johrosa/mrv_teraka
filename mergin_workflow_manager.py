@@ -77,8 +77,10 @@ class MerginWorkflowManager:
         project_path = os.path.join(self.projects_dir, project_id)
         target_path = os.path.join(project_path, 'mission_data.gpkg')
 
-        if os.path.abspath(gpkg_path) != os.path.abspath(target_path):
-            shutil.copy(gpkg_path, target_path)
+        source_path = os.path.normcase(os.path.abspath(gpkg_path))
+        destination_path = os.path.normcase(os.path.abspath(target_path))
+        if source_path != destination_path:
+            shutil.copy(source_path, destination_path)
 
         self.update_stage(project_id, 2)  # Export
 

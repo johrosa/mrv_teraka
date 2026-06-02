@@ -15,6 +15,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget, QGroupBox, QSpacerItem, QSizePolicy
 )
 from qgis.PyQt.QtGui import QColor, QIcon
+from qgis.core import QgsProject
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'mrv_teraka_dockwidget_base.ui'))
@@ -45,18 +46,23 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Remplir les listes
         self.populate_table_lists()
         self.populate_project_list()
+        self.populate_sector_list()
 
         # Style et Ergonomie
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
         self.logout_button.setToolTip("Quitter la session en cours")
 
-        self.districtLineEdit.setPlaceholderText("Filtrer par secteur (ex: Mandoto)")
+        self.districtLineEdit.setEditable(True)
+        self.districtLineEdit.setToolTip("Filtrer par secteur/district pour les chargements et rafraîchissements API")
+        if self.districtLineEdit.lineEdit():
+            self.districtLineEdit.lineEdit().setPlaceholderText("Tout le pays...")
 
         # Tooltips métier
         self.compareButton.setToolTip("Vérifier les différences avec la base centrale")
         self.loadDbButton.setToolTip("Importer les données de la couche choisie")
         self.refreshFromApiButton.setToolTip("Mettre à jour les données depuis le serveur")
-        self.processProjectButton.setToolTip("Lancer l'analyse intelligente des couches du projet")
+        self.processProjectButton.setText("Assistant Projet")
+        self.processProjectButton.setToolTip("Diagnostiquer les couches, confirmer les mappings et choisir une action")
 
         self.autoPrepareButton.setToolTip("Déployer la mission sur Mergin Maps pour le terrain")
         self.autoImportButton.setToolTip("Récupérer les collectes effectuées sur mobile")
@@ -79,6 +85,13 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.projectComboBox.clear()
 
+        if getattr(self.plugin, 'mergin_bridge', None):
+            projects = self.plugin.mergin_bridge.list_local_projects()
+            if projects:
+                for p in projects:
+                    self.projectComboBox.addItem(p.get('name'), p.get('project_file'))
+                return
+
         # Récupérer le chemin Mergin Maps depuis QSettings
         settings = QSettings()
         mergin_path = settings.value("Mergin/projectDir")
@@ -97,6 +110,31 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         for p in projects:
             # On stocke le chemin du fichier .qgs/.qgz en data
             self.projectComboBox.addItem(p.get('name'), p.get('project_file'))
+
+    def populate_sector_list(self):
+        """Remplit la liste des secteurs/districts disponibles depuis l'API."""
+        current = self.districtLineEdit.currentText().strip()
+        self.districtLineEdit.blockSignals(True)
+        self.districtLineEdit.clear()
+        self.districtLineEdit.addItem("Tout le pays", "")
+
+        sectors = []
+        if self.plugin and getattr(self.plugin, 'postgrest', None):
+            sectors = self.plugin.fetch_sector_values()
+
+        for sector in sectors:
+            self.districtLineEdit.addItem(sector, sector)
+
+        if current:
+            idx = self.districtLineEdit.findText(current)
+            if idx >= 0:
+                self.districtLineEdit.setCurrentIndex(idx)
+            else:
+                self.districtLineEdit.setEditText(current)
+        else:
+            self.districtLineEdit.setCurrentIndex(0)
+
+        self.districtLineEdit.blockSignals(False)
 
     def setup_connections(self):
         """Connecte les signaux aux actions métier."""
@@ -140,7 +178,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         if success:
             self.populate_table_lists()
-            QtWidgets.QMessageBox.information(self, "Succès", "Les listes de couches ont été mises à jour depuis l'API.")
+            self.populate_sector_list()
+            QtWidgets.QMessageBox.information(self, "Succès", "Les listes de couches et secteurs ont été mises à jour depuis l'API.")
         else:
             QtWidgets.QMessageBox.warning(self, "Erreur", "Impossible de contacter l'API pour mettre à jour les listes.")
 
