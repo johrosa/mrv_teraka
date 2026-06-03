@@ -850,8 +850,8 @@ class MrvTeraka:
             else:
                 message = self.tr(
                     u"Projet local cree dans :\n{0}\n\n"
-                    u"Le plugin officiel Mergin Maps n'est pas connecte, donc le projet n'a pas encore ete publie."
-                ).format(project_dir)
+                    u"ℹ️ {1}. Le projet n'a pas encore ete publie."
+                ).format(project_dir, self.mergin_bridge.connection_label())
         except Exception as exc:
             self.show_error(self.tr(u"Erreur creation projet Mergin"), exc)
             return
