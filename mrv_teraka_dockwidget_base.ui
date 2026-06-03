@@ -38,6 +38,9 @@
         <height>40</height>
        </size>
       </property>
+      <property name="autoFillBackground">
+       <bool>false</bool>
+      </property>
       <property name="styleSheet">
        <string notr="true">font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: bold; color: #2D5A27; qproperty-alignment: 'AlignCenter';</string>
       </property>

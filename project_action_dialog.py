@@ -44,9 +44,13 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.radio_refresh = QtWidgets.QRadioButton("Mise à jour / Rafraîchir (Télécharger les données de l'API vers QGIS)")
         self.radio_refresh.setToolTip("Utilisez ceci pour mettre à jour vos couches locales avec le contenu actuel du serveur.")
 
+        self.radio_update_mapping = QtWidgets.QRadioButton("Mettre à jour le mapping local")
+        self.radio_update_mapping.setToolTip("Enregistre les correspondances choisies pour l'utilisateur actuel dans layer_table_mapping.json.")
+
         self.action_layout.addWidget(self.radio_migrate)
         self.action_layout.addWidget(self.radio_workflow)
         self.action_layout.addWidget(self.radio_refresh)
+        self.action_layout.addWidget(self.radio_update_mapping)
         self.layout.addWidget(self.action_group)
 
         # Boutons
@@ -118,6 +122,8 @@ class ProjectActionDialog(QtWidgets.QDialog):
             action = "migrate"
         elif self.radio_refresh.isChecked():
             action = "refresh"
+        elif self.radio_update_mapping.isChecked():
+            action = "update_mapping"
         else:
             action = "workflow"
 

@@ -481,6 +481,26 @@ class MrvTeraka:
 
         return False
 
+    def local_mapping_path(self):
+        return os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+
+    def load_local_mapping_content(self):
+        mapping_path = self.local_mapping_path()
+        if not os.path.exists(mapping_path):
+            return {'mappings': {}}
+
+        try:
+            with open(mapping_path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+        except Exception:
+            return {'mappings': {}}
+
+        if not isinstance(content, dict):
+            return {'mappings': {}}
+        if not isinstance(content.get('mappings'), dict):
+            content['mappings'] = {}
+        return content
+
     def load_layer_mappings(self):
         """Charge les correspondances couche QGIS -> endpoint PostgREST, via API ou local."""
         if getattr(self, 'layer_mappings', None) is not None:
@@ -507,6 +527,7 @@ class MrvTeraka:
                             'pk_field': 'id', # PostgREST standard
                             'columns': list(props.keys())
                         }
+                    mappings.update(load_layer_mapping(self.plugin_dir))
                     self.layer_mappings = mappings
                     return mappings
             except Exception:
@@ -529,6 +550,72 @@ class MrvTeraka:
             'pk_field': 'id',
             'columns': [] # Inconnu par défaut
         }
+
+    def update_local_layer_mapping(self, selected_mappings):
+        """Sauvegarde les mappings choisis dans le fichier local du plugin."""
+        if not selected_mappings:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.tr(u'Mapping'),
+                self.tr(u'Aucune couche sélectionnée pour la mise à jour du mapping.')
+            )
+            return False
+
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            self.tr(u'Confirmer la mise à jour du mapping'),
+            self.tr(
+                u'Les correspondances sélectionnées vont remplacer ou ajouter le mapping local '
+                u'pour les couches du projet actuel.\n\nContinuer ?'
+            ),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return False
+
+        content = self.load_local_mapping_content()
+        mappings = content['mappings']
+        updated_count = 0
+
+        for layer_id, endpoint in selected_mappings.items():
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if not layer or not endpoint:
+                continue
+
+            mapping = dict(self.get_mapping_for_endpoint(endpoint))
+            mapping['endpoint'] = endpoint
+            layer_name = layer.name()
+            mappings[layer_name] = mapping
+
+            layer.setCustomProperty('postgrest:endpoint', endpoint)
+            layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+            layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+            updated_count += 1
+
+        if updated_count == 0:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.tr(u'Mapping'),
+                self.tr(u'Aucun mapping valide à enregistrer.')
+            )
+            return False
+
+        with open(self.local_mapping_path(), 'w', encoding='utf-8') as f:
+            json.dump(content, f, indent=4, ensure_ascii=False)
+
+        self.layer_mappings = None
+        self.load_layer_mappings()
+
+        QMessageBox.information(
+            self.iface.mainWindow(),
+            self.tr(u'Mapping mis à jour'),
+            self.tr(u'{0} correspondance(s) enregistrée(s) dans le mapping local.').format(updated_count)
+        )
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                self.tr(u'✅ {0} mapping(s) local(aux) mis à jour.').format(updated_count)
+            )
+        return True
 
     def get_project_layer_endpoints(self):
         """Retourne les endpoints API pour chaque couche vectorielle active du projet."""
@@ -1070,6 +1157,8 @@ class MrvTeraka:
             self.push_project_data_to_backend(selected_mappings)
         elif action == "refresh":
             self.refresh_layers_from_api(selected_mappings)
+        elif action == "update_mapping":
+            self.update_local_layer_mapping(selected_mappings)
         else:
             self.auto_deploy_mission(selected_mappings)
 
