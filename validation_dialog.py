@@ -4,7 +4,7 @@ Formulaire de validation des données au retour du terrain
 Permet de vérifier, corriger et fusionner les données collectées avec Mergin
 """
 
-from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal, QVariant
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
@@ -12,8 +12,9 @@ from qgis.PyQt.QtWidgets import (
     QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout
 )
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.core import QgsProject, QgsVectorLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
 import json
+from .business_rules import BusinessRulesEngine
 
 
 class DataValidationDialog(QDialog):
@@ -23,8 +24,23 @@ class DataValidationDialog(QDialog):
     
     def __init__(self, parent=None, collected_data=None, original_data=None):
         super().__init__(parent)
-        self.collected_data = collected_data or []
-        self.original_data = original_data or []
+
+        # Gérer les données multi-tables ou mono-table
+        self.full_collected_data = collected_data or {}
+        self.full_original_data = original_data or {}
+
+        # S'assurer que c'est un dictionnaire pour le multi-table
+        if isinstance(self.full_collected_data, list):
+            self.full_collected_data = {'default': self.full_collected_data}
+        if isinstance(self.full_original_data, list):
+            self.full_original_data = {'default': self.full_original_data}
+
+        # Table active
+        self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
+
+        self.collected_data = self.full_collected_data.get(self.current_table, [])
+        self.original_data = self.full_original_data.get(self.current_table, [])
+
         self.validated_data = []
         self.setWindowTitle("Validation des Données Collectées")
         self.setGeometry(100, 100, 1000, 600)
@@ -34,6 +50,17 @@ class DataValidationDialog(QDialog):
         """Initialise l'interface"""
         layout = QVBoxLayout()
         
+        # --- Sélecteur de table (pour multi-table) ---
+        if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+            table_selector_layout = QHBoxLayout()
+            table_selector_layout.addWidget(QLabel("<b>Table à valider :</b>"))
+            self.table_selector = QComboBox()
+            self.table_selector.addItems(sorted(self.full_collected_data.keys()))
+            self.table_selector.currentTextChanged.connect(self.switch_table)
+            table_selector_layout.addWidget(self.table_selector)
+            table_selector_layout.addStretch()
+            layout.addLayout(table_selector_layout)
+
         # --- Titre et Description ---
         title = QLabel("Validation des Données Collectées au Terrain")
         title_font = QFont()
@@ -103,12 +130,33 @@ class DataValidationDialog(QDialog):
         
         self.setLayout(layout)
         self.populate_data()
+
+    def switch_table(self, table_name):
+        """Change la table active et rafraîchit l'UI."""
+        self.current_table = table_name
+        self.collected_data = self.full_collected_data.get(table_name, [])
+        self.original_data = self.full_original_data.get(table_name, [])
+
+        # Rafraîchir toutes les vues
+        self.populate_data()
+        self.tabs.setCurrentIndex(0) # Revenir au résumé
     
     def create_overview_tab(self):
         """Onglet vue d'ensemble"""
-        widget = QGroupBox("Résumé des Données")
+        widget = QGroupBox("Résumé et Contrôle Qualité")
         layout = QFormLayout()
         
+        # Règles de validation
+        self.rules_edit = QTextEdit()
+        self.rules_edit.setPlaceholderText("Saisir une expression QGIS par ligne (ex: diameter > 0)")
+        self.rules_edit.setMaximumHeight(80)
+        self.rules_edit.setToolTip("Une expression QGIS par ligne. Les lignes invalides seront marquées en orange.")
+        layout.addRow("Règles métier :", self.rules_edit)
+
+        self.btn_run_rules = QPushButton("🚀 Lancer vérification")
+        self.btn_run_rules.clicked.connect(self.run_validation_rules)
+        layout.addRow("", self.btn_run_rules)
+
         # Statistiques
         total_collected = len(self.collected_data)
         total_original = len(self.original_data)
@@ -345,7 +393,18 @@ class DataValidationDialog(QDialog):
         table.resizeColumnsToContents()
     
     def populate_data(self):
-        """Remplit les tables avec les données"""
+        """Remplit les tables avec les données de la table active."""
+        # Vider les onglets
+        self.table_collected.setRowCount(0)
+        self.table_before.setRowCount(0)
+        self.combo_records.clear()
+
+        # Recréer la table de validation car sa structure peut changer
+        self.table_validation.setRowCount(0)
+        self.table_validation.setRowCount(len(self.collected_data))
+        for row, item in enumerate(self.collected_data):
+            self._fill_validation_row(self.table_validation, row, item)
+
         # Remplir les onglets
         self.populate_table_from_data(self.table_collected, self.collected_data)
         self.populate_table_from_data(self.table_before, self.original_data)
@@ -370,6 +429,49 @@ class DataValidationDialog(QDialog):
         recs.append("✓ Résoudre les doublons potentiels")
         
         self.recommendation.setText("\n".join(recs))
+
+    def run_validation_rules(self):
+        """Exécute les règles métier automatisées sur les données collectées."""
+        invalid_count = 0
+
+        for row in range(self.table_validation.rowCount()):
+            item_data = self.collected_data[row]
+
+            # Créer une feature virtuelle avec les champs nécessaires pour éviter KeyError
+            fields = QgsFields()
+            for key in item_data.keys():
+                fields.append(QgsField(key, QVariant.String))
+
+            feat = QgsFeature(fields)
+            # On simule les champs pour l'expression
+            for key, value in item_data.items():
+                feat.setAttribute(key, value)
+
+            # Utiliser le moteur de règles
+            errors = BusinessRulesEngine.validate_feature(self.current_table, feat)
+
+            if errors:
+                invalid_count += 1
+                error_msgs = [e['message'] for e in errors]
+
+                # Marquer en orange et ajouter le commentaire d'erreur
+                for col in range(self.table_validation.columnCount()):
+                    tbl_item = self.table_validation.item(row, col)
+                    if tbl_item:
+                        tbl_item.setBackground(QColor(255, 165, 0, 150))
+
+                # Mettre à jour le champ commentaire
+                comment_widget = self.table_validation.cellWidget(row, 5)
+                if isinstance(comment_widget, QLineEdit):
+                    comment_widget.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
+
+        if invalid_count > 0:
+            QMessageBox.warning(self, "Contrôle Qualité Automatisé",
+                                f"{invalid_count} enregistrements présentent des anomalies métier.")
+            self.tabs.setCurrentIndex(3)
+        else:
+            QMessageBox.information(self, "Contrôle Qualité Automatisé",
+                                    "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
         """Affiche la comparaison avant/après pour un enregistrement"""
@@ -464,18 +566,34 @@ class DataValidationDialog(QDialog):
             summary += f" ... +{len(changes) - 3}"
         return summary
 
+    def accept(self):
+        """S'assure que les données sont marquées comme validées avant de fermer."""
+        if not self.validated_data:
+            # Si auto_merge n'a pas été appelé, on prend les données actuelles
+            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+                self.validated_data = self.full_collected_data
+            else:
+                self.validated_data = self.collected_data
+
+        super().accept()
+
     def auto_merge(self):
-        """Fusion automatique des données"""
+        """Fusion automatique des données pour toutes les tables."""
         reply = QMessageBox.question(
             self, "Fusion Automatique",
-            "Fusionner automatiquement toutes les données?\n"
+            "Fusionner automatiquement toutes les données de TOUTES les tables ?\n"
             "Les nouveaux enregistrements seront ajoutés."
         )
         
         if reply == QMessageBox.Yes:
-            self.validated_data = self.collected_data
+            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
+                self.validated_data = self.full_collected_data
+            else:
+                self.validated_data = self.collected_data
+
             self.progress.setValue(100)
             QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
+            self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
@@ -496,7 +614,9 @@ class DataValidationDialog(QDialog):
             'data': self.collected_data
         }
         
-        filename = "/tmp/validation_report.json"
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        filename = os.path.join(temp_dir, "validation_report.json")
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
         

@@ -7,7 +7,8 @@ import json
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsVectorLayer, QgsField, QgsFeature,
-    QgsGeometry, QgsCoordinateReferenceSystem
+    QgsGeometry, QgsCoordinateReferenceSystem, QgsJsonUtils,
+    QgsVectorFileWriter, QgsProject
 )
 
 def is_geojson(data):
@@ -101,13 +102,18 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
     crs = default_crs
     geom_type = "Point"
 
+    is_spatial = False
     if actual_geom_key:
         geom_val = _extract_geometry(sample.get(actual_geom_key))
         if geom_val:
             crs = _detect_crs(geom_val, default_crs)
             geom_type = _detect_geom_type(geom_val)
+            is_spatial = True
 
-    uri = f"{geom_type}?crs={crs}"
+    if is_spatial:
+        uri = f"{geom_type}?crs={crs}"
+    else:
+        uri = "NoGeometry"
     layer = QgsVectorLayer(uri, layer_name, "memory")
     if not layer.isValid():
         return None
@@ -134,7 +140,19 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
         if actual_geom_key:
             geom_obj = _extract_geometry(item.get(actual_geom_key))
             if geom_obj:
-                geom = QgsGeometry.fromGeoJson(json.dumps(geom_obj))
+                try:
+                    # QGIS 3.x >= 3.10 has QgsGeometry.fromGeoJson
+                    # But some versions might differ or we use OGR as backup
+                    geom = QgsGeometry.fromGeoJson(json.dumps(geom_obj))
+                except AttributeError:
+                    # Fallback OGR/WKT for very specific environments
+                    from osgeo import ogr
+                    ogr_geom = ogr.CreateGeometryFromJson(json.dumps(geom_obj))
+                    if ogr_geom:
+                        geom = QgsGeometry.fromWkt(ogr_geom.ExportToWkt())
+                    else:
+                        geom = None
+
                 if geom and not geom.isNull():
                     fet.setGeometry(geom)
 
@@ -143,3 +161,79 @@ def create_vector_layer(data, layer_name, geom_field='geom', default_crs='EPSG:4
     pr.addFeatures(features)
     layer.updateExtents()
     return layer
+
+def layer_to_list_of_dicts(layer, geom_field='geom'):
+    """
+    Convertit une couche QGIS en liste de dictionnaires pour insertion API.
+
+    Args:
+        layer: QgsVectorLayer source.
+        geom_field: Nom du champ de géométrie attendu par le backend.
+
+    Returns:
+        list: Liste de dictionnaires (attributs + géométrie GeoJSON).
+    """
+    data_list = []
+    for feature in layer.getFeatures():
+        # Export des attributs en JSON
+        attrs_json = QgsJsonUtils.exportAttributes(feature)
+        item = json.loads(attrs_json)
+
+        # Ajout de la géométrie si elle existe
+        if layer.isSpatial() and feature.hasGeometry():
+            geom = feature.geometry()
+            if not geom.isNull():
+                item[geom_field] = json.loads(geom.asJson())
+
+        data_list.append(item)
+    return data_list
+
+def export_to_geopackage(layers_map, output_path):
+    """
+    Exporte une collection de couches vers un GeoPackage.
+
+    Args:
+        layers_map: Dict {layer_name: QgsVectorLayer}
+        output_path: Chemin du fichier .gpkg
+    """
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GPKG"
+
+    first = True
+    for name, layer in layers_map.items():
+        options.layerName = name
+        if first:
+            options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
+            first = False
+        else:
+            options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
+
+        # Robust export: try V3 first (QGIS 3.10+), fallback to V2
+        if hasattr(QgsVectorFileWriter, 'writeAsVectorFormatV3'):
+            res = QgsVectorFileWriter.writeAsVectorFormatV3(
+                layer,
+                output_path,
+                QgsProject.instance().transformContext(),
+                options
+            )
+            error = res[0]
+            error_msg = res[1] if len(res) > 1 else "Erreur inconnue"
+        else:
+            # Fallback for older QGIS 3.x
+            error = QgsVectorFileWriter.writeAsVectorFormat(
+                layer,
+                output_path,
+                "UTF-8",
+                layer.crs(),
+                "GPKG",
+                False,
+                None,
+                options.layerName,
+                options.actionOnExistingFile
+            )
+            error_msg = "Erreur lors de l'export GeoPackage (V2)"
+
+        if error != QgsVectorFileWriter.NoError:
+            return False, error_msg
+
+    return True, "Export réussi"

@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "D:/asa/Teraka/teraka_plateform_project/backend_django"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"python-envs.defaultEnvManager": "ms-python.python:conda",
+		"python-envs.defaultPackageManager": "ms-python.python:conda",
+		"liveServer.settings.multiRootWorkspaceName": "backend_django"
+	}
+}

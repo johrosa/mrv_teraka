@@ -24,6 +24,16 @@
 """
 
 
+# attempt to export helper for easier console imports; guarded when qgis not available
+try:
+    from .synthetic_data_generator import create_synthetic_project_data
+except Exception:  # pragma: no cover
+    def create_synthetic_project_data():
+        raise RuntimeError(
+            "create_synthetic_project_data is unavailable outside QGIS; import mrv_teraka.synthetic_data_generator inside QGIS instead."
+        )
+
+
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
     """Load MrvTeraka class from file MrvTeraka.
@@ -31,6 +41,8 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :param iface: A QGIS interface instance.
     :type iface: QgsInterface
     """
-    #
     from .mrv_teraka import MrvTeraka
     return MrvTeraka(iface)
+
+
+__all__ = ['classFactory', 'create_synthetic_project_data']

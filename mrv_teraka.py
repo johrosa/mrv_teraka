@@ -15,9 +15,9 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit
 # Initialisation des ressources Qt
 from .resources import *
 
-from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
-from .layer_utils import is_geojson, create_vector_layer
+from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
 # Importation du client PostgREST et gestionnaire d'authentification
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
@@ -26,6 +26,11 @@ from .auth_dialog import AuthDialog
 from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
 from .validation_dialog import DataValidationDialog
+from .connection_checker import ConnectionChecker
+from .project_analyzer import ProjectAnalyzer
+from .business_rules import BusinessRulesEngine
+from .mergin_api_client import MerginAPIClient
+from .mergin_plugin_bridge import MerginPluginBridge
 
 
 class MrvTeraka:
@@ -46,7 +51,12 @@ class MrvTeraka:
         
         # Managers pour le workflow Mergin
         self.mergin_manager = None
+        self.mergin_bridge = MerginPluginBridge()
         self.current_project_id = None
+
+        # Initialisation du checker de connexion
+        self.conn_checker = ConnectionChecker(interval=60)
+        self.conn_checker.connection_status_changed.connect(self.on_connection_status_changed)
         self.mergin_validation_ready = False
         self.current_collected_data = None
         self.current_original_data = None
@@ -194,12 +204,19 @@ class MrvTeraka:
         
         # Charger le jeton sauvegardé à l'initialisation
         self.load_saved_token()
+
+        # Lancer le thread de vérification
+        self.conn_checker.start()
         # Ne pas ouvrir automatiquement le projet par défaut en développement
         if self.auto_open_default_project:
             self.open_default_qgis_project()
 
     def unload(self):
         """Supprime le plugin de l'interface QGIS."""
+        # Arrêter le checker
+        if hasattr(self, 'conn_checker'):
+            self.conn_checker.stop()
+
         for action in self.actions:
             self.iface.removePluginMenu(self.tr(u'&MRV Teraka'), action)
             self.iface.removeToolBarIcon(action)
@@ -254,21 +271,46 @@ class MrvTeraka:
             self.postgrest = PostgREST(self.api_base_url, mode=self.postgrest_mode)
             self.postgrest.set_auth_token(token)
             
+            # Authentification Mergin Maps optionnelle.
+            # Priorite au plugin officiel Mergin Maps deja connecte dans QGIS.
+            if self.mergin_bridge.is_connected():
+                if self.dockwidget:
+                    self.dockwidget.merginResultsTextEdit.append(
+                        "✓ {}".format(self.mergin_bridge.connection_label())
+                    )
+            elif credentials.get('mergin_username') and credentials.get('mergin_password'):
+                self.mergin_api = MerginAPIClient()
+                if self.mergin_api.login(credentials['mergin_username'], credentials['mergin_password']):
+                    if self.dockwidget:
+                        self.dockwidget.merginResultsTextEdit.append(f"✓ Connecté à Mergin Maps : {credentials['mergin_username']}")
+                else:
+                    if self.dockwidget:
+                        self.dockwidget.merginResultsTextEdit.append("⚠️ Échec connexion Mergin Maps. Automatisation restreinte.")
+
             # Sauvegarde du jeton et des informations
             self.token_manager.save_token(token, self.api_base_url, self.postgrest_mode.value)
             self.current_username = username
             
+            # Mettre à jour le checker
+            self.conn_checker.set_client(self.postgrest)
+
             # Sauvegarder aussi les identifiants si demandé
             if credentials['remember']:
                 settings = QSettings('iTeraka', 'MrvTeraka')
                 settings.setValue('auth/last_username', username)
+                if credentials.get('mergin_username'):
+                    settings.setValue('auth/mergin_username', credentials['mergin_username'])
             else:
                 settings = QSettings('iTeraka', 'MrvTeraka')
                 settings.remove('auth/last_username')
+                settings.remove('auth/mergin_username')
             
             # Mettre à jour l'interface
             self.update_auth_ui()
             
+            # Relancer une vérification immédiate
+            self.conn_checker.set_client(self.postgrest)
+
             if self.dockwidget:
                 self.dockwidget.set_authenticated(username, self.api_base_url)
             
@@ -293,10 +335,14 @@ class MrvTeraka:
             self.postgrest.set_auth_token(token)
             self.api_base_url = api_url
 
+            # Mettre à jour le checker
+            self.conn_checker.set_client(self.postgrest)
+
             if not self.postgrest.verify_token():
                 self.token_manager.clear_token()
                 self.postgrest = None
                 self.current_username = None
+                self.conn_checker.set_client(None)
                 return
             
             # Charger le dernier username
@@ -325,37 +371,62 @@ class MrvTeraka:
     def update_auth_ui(self):
         """Met à jour l'interface pour afficher l'état connecté"""
         if self.auth_action:
+            try:
+                self.auth_action.triggered.disconnect()
+            except Exception:
+                pass
             self.auth_action.setText(self.tr(u'Déconnecter'))
-            self.auth_action.triggered.disconnect()
             self.auth_action.triggered.connect(self.logout)
         
         if self.dockwidget:
+            # S'assurer que les infos sont à jour avant d'activer les boutons
+            username = self.current_username or "Utilisateur"
+            url = self.api_base_url or "API"
+            self.dockwidget.set_authenticated(username, url)
+
+    def on_connection_status_changed(self, is_connected, message):
+        """Réagit aux changements de statut de connexion détectés en arrière-plan."""
+        if not is_connected and self.postgrest:
+            # On a perdu la connexion ou le token a expiré
+            if self.dockwidget:
+                self.dockwidget.set_status_message(f"⚠️ {message}", color="orange")
+        elif is_connected and self.dockwidget:
             self.dockwidget.set_authenticated(self.current_username, self.api_base_url)
 
-    def logout(self):
+    def logout(self, confirm=True):
         """Déconnecte l'utilisateur et supprime le jeton"""
-        reply = QMessageBox.question(
-            self.iface.mainWindow(),
-            self.tr(u'Confirmation'),
-            self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?'),
-            QMessageBox.Yes | QMessageBox.No
-        )
+        if confirm:
+            reply = QMessageBox.question(
+                self.iface.mainWindow(),
+                self.tr(u'Confirmation'),
+                self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?'),
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
         
-        if reply == QMessageBox.Yes:
-            # Supprimer le jeton
-            self.token_manager.clear_token()
-            self.postgrest = None
-            self.current_username = None
-            
-            # Réinitialiser l'interface
-            if self.auth_action:
-                self.auth_action.setText(self.tr(u'Connexion'))
+        # Supprimer le jeton
+        self.token_manager.clear_token()
+        self.postgrest = None
+        self.current_username = None
+
+        # Mettre à jour le checker
+        if hasattr(self, 'conn_checker'):
+            self.conn_checker.set_client(None)
+
+        # Réinitialiser l'interface
+        if self.auth_action:
+            try:
                 self.auth_action.triggered.disconnect()
-                self.auth_action.triggered.connect(self.show_auth_dialog)
-            
-            if self.dockwidget:
-                self.dockwidget.set_unauthenticated()
-            
+            except Exception:
+                pass
+            self.auth_action.setText(self.tr(u'Connexion'))
+            self.auth_action.triggered.connect(self.show_auth_dialog)
+
+        if self.dockwidget:
+            self.dockwidget.set_unauthenticated()
+
+        if confirm:
             QMessageBox.information(
                 self.iface.mainWindow(),
                 self.tr(u'Déconnexion'),
@@ -374,10 +445,96 @@ class MrvTeraka:
             return False
         return True
 
+    def refresh_api_mappings(self, force_api=True):
+        """Force la mise à jour des mappings depuis l'API et les sauvegarde localement."""
+        if not self.postgrest:
+            return False
+
+        try:
+            schema = self.postgrest.fetch_schema()
+            if schema and 'definitions' in schema:
+                new_mappings = {}
+                for table_name, definition in schema['definitions'].items():
+                    geom_field = 'geom'
+                    props = definition.get('properties', {})
+                    for p_name, p_data in props.items():
+                        if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                            geom_field = p_name
+                            break
+
+                    new_mappings[table_name] = {
+                        'endpoint': table_name,
+                        'geom_field': geom_field,
+                        'pk_field': 'id',
+                        'columns': list(props.keys())
+                    }
+
+                # Sauvegarde locale pour persistance
+                self.layer_mappings = new_mappings
+                mapping_path = os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+                with open(mapping_path, 'w', encoding='utf-8') as f:
+                    json.dump({'mappings': new_mappings}, f, indent=4)
+
+                return True
+        except Exception as e:
+            print(f"Erreur refresh mappings: {e}")
+
+        return False
+
+    def local_mapping_path(self):
+        return os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+
+    def load_local_mapping_content(self):
+        mapping_path = self.local_mapping_path()
+        if not os.path.exists(mapping_path):
+            return {'mappings': {}}
+
+        try:
+            with open(mapping_path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+        except Exception:
+            return {'mappings': {}}
+
+        if not isinstance(content, dict):
+            return {'mappings': {}}
+        if not isinstance(content.get('mappings'), dict):
+            content['mappings'] = {}
+        return content
+
     def load_layer_mappings(self):
-        """Charge les correspondances couche QGIS -> endpoint PostgREST."""
-        if getattr(self, 'layer_mappings', None) is None:
-            self.layer_mappings = load_layer_mapping(self.plugin_dir)
+        """Charge les correspondances couche QGIS -> endpoint PostgREST, via API ou local."""
+        if getattr(self, 'layer_mappings', None) is not None:
+            return self.layer_mappings
+
+        # Tentative via API
+        if self.postgrest:
+            try:
+                schema = self.postgrest.fetch_schema()
+                if schema and 'definitions' in schema:
+                    mappings = {}
+                    for table_name, definition in schema['definitions'].items():
+                        # Chercher les champs géométrie dans les propriétés
+                        geom_field = 'geom'
+                        props = definition.get('properties', {})
+                        for p_name, p_data in props.items():
+                            if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                                geom_field = p_name
+                                break
+
+                        mappings[table_name] = {
+                            'endpoint': table_name,
+                            'geom_field': geom_field,
+                            'pk_field': 'id', # PostgREST standard
+                            'columns': list(props.keys())
+                        }
+                    mappings.update(load_layer_mapping(self.plugin_dir))
+                    self.layer_mappings = mappings
+                    return mappings
+            except Exception:
+                pass
+
+        # Fallback sur le mapping local statique
+        self.layer_mappings = load_layer_mapping(self.plugin_dir)
         return self.layer_mappings
 
     def get_layer_mapping(self, layer_name):
@@ -385,11 +542,80 @@ class MrvTeraka:
         mappings = self.load_layer_mappings()
         if layer_name in mappings and mappings[layer_name].get('endpoint'):
             return mappings[layer_name]
+
+        # Mapping par défaut dynamique
         return {
             'endpoint': normalize_layer_name_to_endpoint(layer_name),
             'geom_field': 'geom',
-            'pk_field': 'id'
+            'pk_field': 'id',
+            'columns': [] # Inconnu par défaut
         }
+
+    def update_local_layer_mapping(self, selected_mappings):
+        """Sauvegarde les mappings choisis dans le fichier local du plugin."""
+        if not selected_mappings:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.tr(u'Mapping'),
+                self.tr(u'Aucune couche sélectionnée pour la mise à jour du mapping.')
+            )
+            return False
+
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            self.tr(u'Confirmer la mise à jour du mapping'),
+            self.tr(
+                u'Les correspondances sélectionnées vont remplacer ou ajouter le mapping local '
+                u'pour les couches du projet actuel.\n\nContinuer ?'
+            ),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return False
+
+        content = self.load_local_mapping_content()
+        mappings = content['mappings']
+        updated_count = 0
+
+        for layer_id, endpoint in selected_mappings.items():
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if not layer or not endpoint:
+                continue
+
+            mapping = dict(self.get_mapping_for_endpoint(endpoint))
+            mapping['endpoint'] = endpoint
+            layer_name = layer.name()
+            mappings[layer_name] = mapping
+
+            layer.setCustomProperty('postgrest:endpoint', endpoint)
+            layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+            layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+            updated_count += 1
+
+        if updated_count == 0:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.tr(u'Mapping'),
+                self.tr(u'Aucun mapping valide à enregistrer.')
+            )
+            return False
+
+        with open(self.local_mapping_path(), 'w', encoding='utf-8') as f:
+            json.dump(content, f, indent=4, ensure_ascii=False)
+
+        self.layer_mappings = None
+        self.load_layer_mappings()
+
+        QMessageBox.information(
+            self.iface.mainWindow(),
+            self.tr(u'Mapping mis à jour'),
+            self.tr(u'{0} correspondance(s) enregistrée(s) dans le mapping local.').format(updated_count)
+        )
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                self.tr(u'✅ {0} mapping(s) local(aux) mis à jour.').format(updated_count)
+            )
+        return True
 
     def get_project_layer_endpoints(self):
         """Retourne les endpoints API pour chaque couche vectorielle active du projet."""
@@ -422,10 +648,13 @@ class MrvTeraka:
         project = QgsProject.instance()
         new_layers = []
         errors = []
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
 
         for layer_name, mapping in project_endpoints.items():
             try:
-                db_data = self.postgrest.select(mapping['endpoint'])
+                filters = self.build_sector_filters(mapping, commune_context)
+                db_data = self.postgrest.select(mapping['endpoint'], filters=filters)
                 layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field', 'geom'))
                 if layer and layer.isValid():
                     layer.setCustomProperty('postgrest:endpoint', mapping['endpoint'])
@@ -454,7 +683,7 @@ class MrvTeraka:
     def get_requested_endpoints(self, text_endpoint):
         """Retourne la liste des endpoints à charger ou comparer."""
         if text_endpoint:
-            return {text_endpoint: {'endpoint': text_endpoint, 'geom_field': 'geom', 'pk_field': 'id'}}
+            return {text_endpoint: self.get_mapping_for_endpoint(text_endpoint)}
         endpoint_map = self.get_project_layer_endpoints()
         return endpoint_map if endpoint_map else {}
 
@@ -463,22 +692,253 @@ class MrvTeraka:
         if not endpoint:
             return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
 
+        # Chercher d'abord dans les mappings chargés explicitement
+        mappings = self.load_layer_mappings()
+        for m_name, m_data in mappings.items():
+            if m_data.get('endpoint') == endpoint:
+                return m_data
+
+        # Fallback sur les couches du projet
         for mapping in self.get_project_layer_endpoints().values():
             if mapping.get('endpoint') == endpoint:
                 return mapping
 
         return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
 
+    def get_sector_filter_value(self):
+        """Retourne la valeur choisie dans le filtre secteur/district."""
+        if not self.dockwidget or not hasattr(self.dockwidget, 'districtLineEdit'):
+            return ""
+
+        widget = self.dockwidget.districtLineEdit
+        if hasattr(widget, 'currentData'):
+            value = widget.currentData()
+            if value:
+                return str(value).strip()
+        if hasattr(widget, 'currentText'):
+            text = widget.currentText()
+        else:
+            text = widget.text()
+
+        text = (text or "").strip()
+        return "" if text.lower() == "tout le pays" else text
+
+    def sector_filter_column(self, mapping):
+        """Trouve la colonne de filtre secteur/district disponible pour une table."""
+        columns = mapping.get('columns', []) if mapping else []
+        for candidate in ('secteur', 'district', 'nom_secteur', 'nom_district', 'commune'):
+            if candidate in columns:
+                return candidate
+        return None
+
+    def build_commune_filters(self):
+        """Construit la liste des codes communes pour le secteur courant."""
+        sector = self.get_sector_filter_value()
+        if not sector or not self.postgrest:
+            return None
+
+        communes_mapping = self.get_mapping_for_endpoint('communes')
+        column = self.sector_filter_column(communes_mapping)
+        if not column:
+            return None
+
+        try:
+            rows = self.postgrest.select(
+                'communes',
+                select='c_com',
+                filters={column: f'eq.{sector}'},
+                auto_paginate=True
+            )
+        except Exception:
+            return None
+
+        c_com_values = []
+        for row in rows:
+            c_com = row.get('c_com') if isinstance(row, dict) else None
+            if c_com not in (None, ""):
+                c_com_values.append(str(c_com))
+
+        return {
+            'sector': sector,
+            'c_com_values': c_com_values,
+        }
+
+    def build_sector_filters(self, mapping, commune_context=None):
+        """Construit les filtres PostgREST lies au secteur courant via c_com."""
+        sector = self.get_sector_filter_value()
+        if not sector:
+            return {}
+
+        endpoint = mapping.get('endpoint') if mapping else None
+        if endpoint == 'communes':
+            column = self.sector_filter_column(mapping)
+            return {column: f'eq.{sector}'} if column else {}
+
+        # Every business table has c_com, so keep filtering server-side even for spatial layers.
+        c_com_values = (commune_context or {}).get('c_com_values', [])
+        return {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else {'c_com': 'in.(-1)'}
+
+    def fetch_sector_values(self):
+        """Recupere les valeurs distinctes de secteur/district depuis les tables API."""
+        if not self.postgrest:
+            return []
+
+        values = set()
+        mappings = self.load_layer_mappings()
+        for endpoint, mapping in mappings.items():
+            column = self.sector_filter_column(mapping)
+            if not column:
+                continue
+            try:
+                rows = self.postgrest.select(
+                    mapping.get('endpoint', endpoint),
+                    select=column,
+                    order=f"{column}.asc",
+                    limit=5000,
+                    auto_paginate=False
+                )
+            except Exception:
+                continue
+
+            for row in rows:
+                value = row.get(column) if isinstance(row, dict) else None
+                if value not in (None, ""):
+                    values.add(str(value))
+
+        return sorted(values, key=lambda v: v.lower())
+
+    def save_current_project_configuration(self):
+        """Cree un vrai projet Mergin Maps local a partir du projet QGIS courant."""
+        if not self.check_api_auth():
+            return
+
+        name, ok = QInputDialog.getText(self.iface.mainWindow(), self.tr(u"Nouveau Projet Mergin"), self.tr(u"Nom du projet :"))
+        if not ok or not name:
+            return
+
+        endpoints = self.get_project_layer_endpoints()
+        if not endpoints:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u"Erreur"), self.tr(u"Aucune couche mappée trouvée dans le projet."))
+            return
+
+        tables = list(set([m['endpoint'] for m in endpoints.values()]))
+        project_dir = None
+        project_file = None
+        full_mergin_name = None
+
+        try:
+            project_dir, safe_name = self.mergin_bridge.new_project_dir(name)
+            project_file = os.path.join(project_dir, "{}.qgz".format(safe_name))
+
+            project = QgsProject.instance()
+            if not project.write(project_file):
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    self.tr(u"Erreur"),
+                    self.tr(u"Impossible d'ecrire le projet QGIS dans le dossier Mergin.")
+                )
+                return
+
+            project_id = self.mergin_manager.create_project(safe_name, tables)
+            self.current_project_id = project_id
+
+            if self.mergin_bridge.is_connected():
+                full_mergin_name = self.mergin_bridge.create_project_and_push(safe_name, project_dir)
+                message = self.tr(
+                    u"Projet Mergin '{0}' cree et envoye avec {1} couches."
+                ).format(full_mergin_name, len(tables))
+            else:
+                message = self.tr(
+                    u"Projet local cree dans :\n{0}\n\n"
+                    u"Le plugin officiel Mergin Maps n'est pas connecte, donc le projet n'a pas encore ete publie."
+                ).format(project_dir)
+        except Exception as exc:
+            self.show_error(self.tr(u"Erreur creation projet Mergin"), exc)
+            return
+
+        if self.dockwidget:
+            self.dockwidget.populate_project_list()
+            # Sélectionner le nouveau projet
+            idx = self.dockwidget.projectComboBox.findData(project_file)
+            if idx >= 0:
+                self.dockwidget.projectComboBox.setCurrentIndex(idx)
+
+        QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet Mergin cree"), message)
+
+    def load_project_by_id(self, project_id):
+        """Charge ou rafraîchit toutes les couches associées à un projet."""
+        if not self.check_api_auth():
+            return
+
+        info = self.mergin_manager.get_project_info(project_id)
+        if not info:
+            QMessageBox.critical(self.iface.mainWindow(), self.tr(u"Erreur"), self.tr(u"Informations du projet introuvables."))
+            return
+
+        self.current_project_id = project_id
+        tables = info.get('source_tables', [])
+
+        if not tables:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u"Projet vide"), self.tr(u"Ce projet ne contient aucune table."))
+            return
+
+        # Déterminer si on doit rafraîchir (si les couches sont déjà là)
+        project = QgsProject.instance()
+        layers_to_refresh = {}
+        tables_to_load = []
+
+        for table in tables:
+            existing_layers = [l for l in project.mapLayers().values() if l.customProperty('postgrest:endpoint') == table]
+            if existing_layers:
+                layers_to_refresh[existing_layers[0].id()] = table
+            else:
+                tables_to_load.append(table)
+
+        # 1. Rafraîchir les existantes
+        if layers_to_refresh:
+            self.refresh_layers_from_api(layers_to_refresh)
+
+        # 2. Charger les nouvelles
+        errors = []
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
+        for table in tables_to_load:
+            try:
+                mapping = self.get_mapping_for_endpoint(table)
+                filters = self.build_sector_filters(mapping, commune_context)
+                db_data = self.postgrest.select(table, filters=filters)
+                display_name = f"{table} (API)"
+                geom_field = mapping.get('geom_field', 'geom')
+
+                layer = create_vector_layer(db_data, display_name, geom_field)
+                if layer and layer.isValid():
+                    layer.setCustomProperty('postgrest:endpoint', table)
+                    layer.setCustomProperty('postgrest:geom_field', geom_field)
+                    layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+                    project.addMapLayer(layer)
+                else:
+                    errors.append(table)
+            except Exception as e:
+                errors.append(f"{table} ({str(e)})")
+
+        if errors:
+            self.show_message(self.tr(u"Chargement partiel"),
+                                self.tr(u"Erreur lors du chargement des tables : {0}").format(", ".join(errors)),
+                                icon=QMessageBox.Warning)
+        elif tables_to_load:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet chargé"),
+                                    self.tr(u"Le projet '{0}' a été chargé avec succès.").format(info.get('name')))
+
     def set_validation_ready(self, ready: bool):
         """Active ou désactive le bouton de validation."""
         self.mergin_validation_ready = ready
-        if self.dockwidget and hasattr(self.dockwidget, 'openValidationButton'):
-            self.dockwidget.openValidationButton.setEnabled(ready)
+        if self.dockwidget and hasattr(self.dockwidget, 'autoValidateButton'):
+            self.dockwidget.autoValidateButton.setEnabled(ready)
 
     def set_sync_ready(self, ready: bool):
         """Active ou désactive le bouton de synchronisation backend."""
-        if self.dockwidget and hasattr(self.dockwidget, 'syncToBackendButton'):
-            self.dockwidget.syncToBackendButton.setEnabled(ready)
+        if self.dockwidget and hasattr(self.dockwidget, 'autoSyncButton'):
+            self.dockwidget.autoSyncButton.setEnabled(ready)
 
     def refresh_data_via_api(self):
         """Recharge les couches à partir de l'API PostgREST."""
@@ -490,30 +950,33 @@ class MrvTeraka:
         self.set_validation_ready(False)
 
     def load_project_from_mergin(self):
-        """Charge un projet existant depuis le stockage Mergin local."""
+        """Charge un projet existant ou bascule sur les couches actives si absent."""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        if not self.current_project_id:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Projet Mergin manquant'),
-                self.tr(u'Veuillez préparer ou sélectionner un projet Mergin avant de charger.')
+        imported_file = None
+        if self.current_project_id:
+            imported_file = os.path.join(
+                self.mergin_manager.projects_dir,
+                self.current_project_id,
+                'imported_data.json'
             )
-            return
 
-        imported_file = os.path.join(
-            self.mergin_manager.projects_dir,
-            self.current_project_id,
-            'imported_data.json'
-        )
+        if not imported_file or not os.path.exists(imported_file):
+            # Analyser si on a déjà des couches vectorielles valides chargées
+            layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
 
-        if not os.path.exists(imported_file):
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Fichier introuvable'),
-                self.tr(u"Aucune donnée importée depuis Mergin n'a été trouvée pour ce projet.")
-            )
+            msg = self.tr(u"Aucune donnée Mergin trouvée.")
+            if layers:
+                msg += self.tr(u"\nVoulez-vous traiter les couches actuellement chargées dans QGIS ?\n\n"
+                            u"Cela lancera l'analyse du projet pour mapper vos données locales.")
+                reply = QMessageBox.question(self.iface.mainWindow(), self.tr(u'Analyse Projet'), msg, QMessageBox.Yes | QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    self.import_data_from_active_layers()
+                    return
+            else:
+                QMessageBox.information(self.iface.mainWindow(), self.tr(u'Projet Vide'),
+                                        self.tr(u"Aucune donnée Mergin et aucune couche vectorielle QGIS détectée."))
             return
 
         with open(imported_file, 'r', encoding='utf-8') as f:
@@ -535,24 +998,716 @@ class MrvTeraka:
                 self.tr(u'Projet Mergin chargé. Données prêtes pour validation.')
             )
 
+    def import_data_from_active_layers(self):
+        """Importe les données directement depuis les couches QGIS actives."""
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        from .project_action_dialog import ProjectActionDialog
+        dialog = ProjectActionDialog(self.iface.mainWindow(), report['layers'], list(self.load_layer_mappings().keys()))
+
+        if dialog.exec_() == ProjectActionDialog.Accepted:
+            _, selected_mappings = dialog.get_results()
+            if not selected_mappings:
+                return
+
+            collected_payload = {}
+            original_payload = {}
+            district_filter = self.get_sector_filter_value()
+            commune_context = self.build_commune_filters() if district_filter else None
+
+            self.dockwidget.merginResultsTextEdit.append("📂 Lecture des couches locales...")
+
+            for lid, endpoint in selected_mappings.items():
+                layer = QgsProject.instance().mapLayer(lid)
+                if not layer: continue
+
+                # Appliquer le mapping aux propriétés pour persistance
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                layer.setCustomProperty('postgrest:endpoint', endpoint)
+                layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+
+                # Extraire données locales (Collected)
+                local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+                collected_payload[endpoint] = local_data
+
+                # Récupérer données distantes pour comparaison (Original)
+                try:
+                    filters = self.build_sector_filters(mapping, commune_context)
+                    original_payload[endpoint] = self.postgrest.select(endpoint, filters=filters)
+                except Exception:
+                    original_payload[endpoint] = []
+
+            self.current_collected_data = collected_payload
+            self.current_original_data = original_payload
+            self.mergin_validation_ready = True
+            self.set_validation_ready(True)
+
+            self.dockwidget.merginResultsTextEdit.append(f"✅ {len(collected_payload)} tables prêtes pour validation.")
+
+            # Ouvrir directement la validation
+            self.open_validation_form(collected_payload, original_payload)
+
     def refresh_data_via_mergin(self):
         """Met à jour les données depuis le projet Mergin et active la validation."""
         if not self.dockwidget or not self.check_api_auth():
             return
         self.load_project_from_mergin()
 
-    def open_validation_form(self):
-        """Ouvre le formulaire de validation seulement après mise à jour via Mergin."""
-        if not self.mergin_validation_ready:
+    def open_validation_form(self, collected_data=None, original_data=None):
+        """Ouvre le formulaire de validation."""
+        if not self.mergin_validation_ready and collected_data is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 self.tr(u'Validation non disponible'),
-                self.tr(u"Veuillez mettre à jour les données via Mergin Map avant d'ouvrir le formulaire de validation.")
+                self.tr(u"Veuillez importer des données (Mergin ou locales) avant de valider.")
             )
             return
-        self.load_collected_data(self.current_collected_data)
+
+        c_data = collected_data if collected_data is not None else self.current_collected_data
+        o_data = original_data if original_data is not None else self.current_original_data
+
+        self.load_collected_data(c_data, o_data)
 
     # --- ACTIONS SIG ---
+
+    def analyze_project_layers(self, apply_suggestions=False):
+        """Analyse les couches QGIS et applique optionnellement les mappings suggeres."""
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        updated_count = 0
+        if apply_suggestions:
+            for l_info in report['layers']:
+                if l_info['status'] != 'suggested':
+                    continue
+                layer = QgsProject.instance().mapLayer(l_info['id'])
+                if layer:
+                    mapping = self.get_mapping_for_endpoint(l_info['mapping'])
+                    layer.setCustomProperty('postgrest:endpoint', l_info['mapping'])
+                    layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                    updated_count += 1
+
+        return report, updated_count
+
+    def mapped_layers_from_report(self, report, include_suggestions=False):
+        """Retourne les mappings utilisables sous la forme {layer_id: endpoint}."""
+        selected_mappings = {}
+        for l_info in report.get('layers', []):
+            if not l_info.get('mapping'):
+                continue
+            if not include_suggestions and l_info.get('status') != 'mapped':
+                continue
+            selected_mappings[l_info['id']] = l_info['mapping']
+        return selected_mappings
+
+    def confirm_project_mappings(self, report=None):
+        """Ouvre le dialogue commun de confirmation des mappings/actions."""
+        if report is None:
+            report, _ = self.analyze_project_layers()
+
+        from .project_action_dialog import ProjectActionDialog
+        dialog = ProjectActionDialog(
+            self.iface.mainWindow(),
+            report['layers'],
+            list(self.load_layer_mappings().keys())
+        )
+        if dialog.exec_() != ProjectActionDialog.Accepted:
+            return None, None
+        return dialog.get_results()
+
+    def get_or_confirm_terrain_mappings(self, selected_mappings=None):
+        """
+        Retourne les mappings pour le raccourci terrain.
+
+        Le chemin direct reutilise les mappings deja poses sur les couches. Si
+        aucun mapping persistant n'existe, il ouvre le dialogue de confirmation.
+        """
+        if selected_mappings:
+            return selected_mappings
+
+        report, _ = self.analyze_project_layers()
+        selected_mappings = self.mapped_layers_from_report(report, include_suggestions=False)
+        if selected_mappings:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"✅ {len(selected_mappings)} couches déjà mappées réutilisées."
+            )
+            return selected_mappings
+
+        _, selected_mappings = self.confirm_project_mappings(report)
+        return selected_mappings
+
+    def analyze_and_process_project(self):
+        """Assistant projet: diagnostic, mapping, puis choix d'action."""
+        if not self.check_api_auth():
+            return
+
+        report, updated_count = self.analyze_project_layers(apply_suggestions=True)
+
+        msg = f"Analyse terminée : {len(report['layers'])} couches détectées.\n"
+        if updated_count > 0:
+            msg += f"{updated_count} mappings automatiques appliqués."
+
+        self.dockwidget.merginResultsTextEdit.setPlainText(msg)
+
+        action, selected_mappings = self.confirm_project_mappings(report)
+        if action is None:
+            return
+        if action == "migrate":
+            self.push_project_data_to_backend(selected_mappings)
+        elif action == "refresh":
+            self.refresh_layers_from_api(selected_mappings)
+        elif action == "update_mapping":
+            self.update_local_layer_mapping(selected_mappings)
+        else:
+            self.auto_deploy_mission(selected_mappings)
+
+    def refresh_layers_from_api(self, selected_mappings):
+        """Met à jour les couches QGIS avec les dernières données du serveur."""
+        if not self.check_api_auth(): return
+
+        self.dockwidget.merginResultsTextEdit.append("🔄 Rafraîchissement des couches depuis l'API...")
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
+
+        updated_count = 0
+        error_count = 0
+
+        for layer_id, endpoint in selected_mappings.items():
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if not layer: continue
+
+            try:
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                filters = self.build_sector_filters(mapping, commune_context)
+
+                # Télécharger nouvelles données
+                db_data = self.postgrest.select(endpoint, filters=filters)
+
+                if not db_data:
+                    layer.startEditing()
+                    layer.deleteFeatures([f.id() for f in layer.getFeatures()])
+                    layer.commitChanges()
+                    updated_count += 1
+                    continue
+
+                # Créer une nouvelle couche temporaire
+                new_layer = create_vector_layer(db_data, layer.name(), mapping.get('geom_field', 'geom'))
+
+                if new_layer and new_layer.isValid():
+                    # Transférer les entités vers la couche existante (plus propre que de remplacer la couche)
+                    # ou remplacer la couche si c'est plus simple
+                    pr = layer.dataProvider()
+                    if pr:
+                        # On vide la couche locale
+                        layer.startEditing()
+                        layer.deleteFeatures([f.id() for f in layer.getFeatures()])
+                        # On ajoute les nouvelles entités
+                        layer.addFeatures(list(new_layer.getFeatures()))
+                        layer.commitChanges()
+                        updated_count += 1
+                else:
+                    error_count += 1
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"❌ Erreur {endpoint} : {str(e)}")
+                error_count += 1
+
+        msg = f"Mise à jour terminée : {updated_count} couches rafraîchies."
+        if error_count > 0:
+            msg += f" ({error_count} erreurs)"
+
+        self.dockwidget.merginResultsTextEdit.append(f"✅ {msg}")
+        QMessageBox.information(self.iface.mainWindow(), "Mise à jour", msg)
+
+    def auto_deploy_mission(self, selected_mappings=None):
+        """Déploiement terrain automatisé (GPKG + API Mergin)."""
+        if not self.check_api_auth(): return
+
+        self.dockwidget.missionProgressBar.setValue(10)
+        self.dockwidget.merginResultsTextEdit.append("🚀 Début du déploiement automatisé...")
+
+        # 1. Recuperer les mappings sans repasser par l'assistant si possible.
+        selected_mappings = self.get_or_confirm_terrain_mappings(selected_mappings)
+        if selected_mappings is None:
+            self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
+            self.dockwidget.missionProgressBar.setValue(0)
+            return
+
+        if not selected_mappings:
+            self.show_message("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
+            return
+
+        # 2. Créer le projet dans le manager
+        timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+        district = self.get_sector_filter_value()
+        district_slug = self.mergin_bridge.safe_project_name(district) if district else ""
+        project_name = f"mission_{district_slug}_{timestamp}" if district_slug else f"mission_{timestamp}"
+        project_id = self.mergin_manager.create_project(project_name, list(selected_mappings.values()))
+        self.current_project_id = project_id
+
+        # 3. Préparation du GPKG
+        from .layer_utils import export_to_geopackage
+        project_dir = os.path.join(self.mergin_manager.projects_dir, project_id)
+        gpkg_path = os.path.join(project_dir, f"mission_data.gpkg")
+
+        layer_specs = self.build_mission_layer_specs(selected_mappings)
+        layers_to_export = {
+            gpkg_name: spec['layer']
+            for gpkg_name, spec in layer_specs.items()
+        }
+
+        success, err = export_to_geopackage(layers_to_export, gpkg_path)
+        if not success:
+            self.show_error("Erreur Export GPKG", err)
+            return
+
+        self.mergin_manager.save_exported_gpkg(project_id, gpkg_path)
+
+        project_file = self.create_mergin_mission_project(
+            project_name,
+            project_dir,
+            gpkg_path,
+            layer_specs
+        )
+        if not project_file:
+            return
+
+        # Snapshot JSON pour la validation future
+        snapshot_data = {}
+        for spec in layer_specs.values():
+            ep = spec.get('endpoint')
+            if not ep:
+                continue
+            layer = spec['layer']
+            snapshot_data[ep] = layer_to_list_of_dicts(layer)
+        self.mergin_manager.save_exported_data(project_id, snapshot_data)
+
+        self.dockwidget.missionProgressBar.setValue(50)
+        self.dockwidget.merginResultsTextEdit.append(
+            f"📦 Projet QGIS + GeoPackage créés : {len(layers_to_export)} couches."
+        )
+
+        # 4. Synchronisation Mergin Maps reelle.
+        # Utilise d'abord l'instance officielle Mergin Maps chargee dans QGIS.
+        if self.mergin_bridge.is_connected():
+            self.dockwidget.merginResultsTextEdit.append(
+                f"☁️ Création du projet '{project_name}' via le plugin Mergin Maps connecté..."
+            )
+            try:
+                full_project_name = self.mergin_bridge.create_project_and_push(project_name, project_dir)
+                self.dockwidget.merginResultsTextEdit.append(
+                    f"✅ Projet '{full_project_name}' prêt sur Mergin Maps !"
+                )
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"❌ Erreur plugin Mergin Maps : {str(e)}")
+        elif hasattr(self, 'mergin_api') and self.mergin_api.token:
+            self.dockwidget.merginResultsTextEdit.append(f"☁️ Création du projet '{project_name}' sur Mergin Maps...")
+            try:
+                namespace = self.mergin_api.username
+                if self.mergin_api.create_project(namespace, project_name):
+                    self.mergin_api.upload_file(namespace, project_name, gpkg_path, "mission_data.gpkg")
+                    self.mergin_api.upload_file(namespace, project_name, project_file, os.path.basename(project_file))
+                    self.dockwidget.merginResultsTextEdit.append(f"✅ Projet '{project_name}' prêt sur Mergin !")
+                else:
+                    self.dockwidget.merginResultsTextEdit.append("❌ Échec création projet Mergin.")
+            except Exception as e:
+                self.dockwidget.merginResultsTextEdit.append(f"❌ Erreur API Mergin : {str(e)}")
+        else:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"⚠️ {self.mergin_bridge.connection_label()}. Projet local uniquement."
+            )
+
+        self.dockwidget.missionProgressBar.setValue(100)
+        QMessageBox.information(self.iface.mainWindow(), "Déploiement Réussi",
+                                f"La mission '{project_name}' est prête.")
+
+    def build_mission_layer_specs(self, selected_mappings):
+        """Prepare les couches mission, y compris les couches support non mappees."""
+        project = QgsProject.instance()
+        layer_specs = {}
+        used_names = set()
+        selected_layer_ids = set(selected_mappings.keys())
+
+        for lid, endpoint in selected_mappings.items():
+            layer = project.mapLayer(lid)
+            if not layer:
+                continue
+            gpkg_name = self.unique_gpkg_layer_name(endpoint, used_names)
+            layer_specs[gpkg_name] = {
+                'layer': layer,
+                'endpoint': endpoint,
+                'mapped': True,
+            }
+
+        for layer in project.mapLayers().values():
+            if layer.type() != QgsMapLayer.VectorLayer:
+                continue
+            if layer.id() in selected_layer_ids:
+                continue
+            if not layer.isValid():
+                continue
+            gpkg_name = self.unique_gpkg_layer_name(layer.name(), used_names)
+            layer_specs[gpkg_name] = {
+                'layer': layer,
+                'endpoint': None,
+                'mapped': False,
+            }
+
+        support_count = sum(1 for spec in layer_specs.values() if not spec.get('mapped'))
+        if support_count and self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"🔗 {support_count} couches support non mappées conservées pour les formulaires."
+            )
+
+        return layer_specs
+
+    def unique_gpkg_layer_name(self, name, used_names):
+        """Retourne un nom de couche GeoPackage unique et compatible Mergin."""
+        base_name = self.mergin_bridge.safe_project_name(name)
+        candidate = base_name
+        suffix = 2
+        while candidate.lower() in used_names:
+            candidate = "{}_{}".format(base_name, suffix)
+            suffix += 1
+        used_names.add(candidate.lower())
+        return candidate
+
+    def create_mergin_mission_project(self, project_name, project_dir, gpkg_path, layer_specs):
+        """Ecrit le projet QGIS utilise par Mergin Maps dans le dossier mission."""
+        project_file = os.path.join(project_dir, f"{project_name}.qgz")
+        mission_project = QgsProject()
+        current_project = QgsProject.instance()
+        mission_project.setCrs(current_project.crs())
+        mission_project.setTitle(project_name)
+
+        errors = []
+        target_layers_by_source_id = {}
+        for gpkg_name, spec in layer_specs.items():
+            source_layer = spec['layer']
+            uri = "{}|layername={}".format(gpkg_path, gpkg_name)
+            layer = QgsVectorLayer(uri, source_layer.name(), "ogr")
+            if not layer.isValid():
+                errors.append(gpkg_name)
+                continue
+
+            endpoint = spec.get('endpoint')
+            if endpoint:
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                layer.setCustomProperty('postgrest:endpoint', endpoint)
+                layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+            self.copy_layer_style(source_layer, layer)
+            self.copy_layer_form(source_layer, layer)
+            mission_project.addMapLayer(layer, False)
+            target_layers_by_source_id[source_layer.id()] = layer
+
+        self.remap_form_layer_references(target_layers_by_source_id)
+        self.copy_layer_tree_structure(current_project, mission_project, target_layers_by_source_id)
+
+        if errors:
+            self.show_message(
+                "Erreur Projet QGIS",
+                "Impossible de créer les couches du projet Mergin : {}".format(", ".join(errors))
+            )
+            return None
+
+        if not mission_project.write(project_file):
+            self.show_message(
+                "Erreur Projet QGIS",
+                "Impossible d'écrire le projet QGIS dans le dossier Mergin."
+            )
+            return None
+
+        return project_file
+
+    def copy_layer_style(self, source_layer, target_layer):
+        """Copie la symbologie et les reglages visuels vers la couche mission."""
+        try:
+            style = QgsMapLayerStyle()
+            style.readFromLayer(source_layer)
+            style.writeToLayer(target_layer)
+        except Exception:
+            try:
+                renderer = source_layer.renderer()
+                if renderer:
+                    target_layer.setRenderer(renderer.clone())
+                labeling = source_layer.labeling()
+                if labeling:
+                    target_layer.setLabeling(labeling.clone())
+                    target_layer.setLabelsEnabled(source_layer.labelsEnabled())
+                target_layer.setOpacity(source_layer.opacity())
+            except Exception:
+                pass
+
+    def copy_layer_form(self, source_layer, target_layer):
+        """Copie la configuration de formulaire utile dans Mergin Maps."""
+        try:
+            target_layer.setEditFormConfig(source_layer.editFormConfig())
+        except Exception:
+            pass
+
+        try:
+            for idx in range(source_layer.fields().count()):
+                target_layer.setEditorWidgetSetup(idx, source_layer.editorWidgetSetup(idx))
+        except Exception:
+            pass
+
+    def remap_form_layer_references(self, target_layers_by_source_id):
+        """Remplace les anciennes references de couche dans les widgets de formulaire."""
+        layer_id_map = {
+            source_id: target_layer.id()
+            for source_id, target_layer in target_layers_by_source_id.items()
+        }
+        if not layer_id_map:
+            return
+
+        def remap_value(value):
+            if isinstance(value, str):
+                return layer_id_map.get(value, value)
+            if isinstance(value, list):
+                return [remap_value(item) for item in value]
+            if isinstance(value, tuple):
+                return tuple(remap_value(item) for item in value)
+            if isinstance(value, dict):
+                return {key: remap_value(item) for key, item in value.items()}
+            return value
+
+        for target_layer in target_layers_by_source_id.values():
+            for idx in range(target_layer.fields().count()):
+                try:
+                    setup = target_layer.editorWidgetSetup(idx)
+                    config = dict(setup.config())
+                    remapped_config = remap_value(config)
+                    if remapped_config != config:
+                        target_layer.setEditorWidgetSetup(
+                            idx,
+                            QgsEditorWidgetSetup(setup.type(), remapped_config)
+                        )
+                except Exception:
+                    continue
+
+    def copy_layer_tree_structure(self, source_project, target_project, target_layers_by_source_id):
+        """Recree les groupes et l'ordre des couches exportees dans le projet mission."""
+        target_root = target_project.layerTreeRoot()
+        source_root = source_project.layerTreeRoot()
+        added_layer_ids = set()
+
+        def set_visibility(source_node, target_node):
+            try:
+                target_node.setItemVisibilityChecked(source_node.itemVisibilityChecked())
+            except Exception:
+                pass
+            try:
+                target_node.setExpanded(source_node.isExpanded())
+            except Exception:
+                pass
+
+        def copy_children(source_group, target_group):
+            for source_node in source_group.children():
+                if hasattr(source_node, "layerId"):
+                    target_layer = target_layers_by_source_id.get(source_node.layerId())
+                    if not target_layer:
+                        continue
+                    target_node = target_group.addLayer(target_layer)
+                    set_visibility(source_node, target_node)
+                    added_layer_ids.add(target_layer.id())
+                    continue
+
+                if not hasattr(source_node, "children"):
+                    continue
+
+                child_count_before = len(added_layer_ids)
+                target_child_group = target_group.addGroup(source_node.name())
+                set_visibility(source_node, target_child_group)
+                copy_children(source_node, target_child_group)
+                if len(added_layer_ids) == child_count_before:
+                    target_group.removeChildNode(target_child_group)
+
+        copy_children(source_root, target_root)
+
+        for target_layer in target_layers_by_source_id.values():
+            if target_layer.id() not in added_layer_ids:
+                target_root.addLayer(target_layer)
+
+    def auto_import_mission(self):
+        """Importation et analyse automatique des données de terrain."""
+        self.dockwidget.merginResultsTextEdit.append("📥 Récupération des données terrain...")
+
+        # Analyse du projet actif (mis à jour par le plugin Mergin officiel)
+        analyzer = ProjectAnalyzer(self.load_layer_mappings())
+        report = analyzer.analyze_active_project()
+
+        # Filtrer uniquement les couches qui sont mappées
+        mapped_layers = [l for l in report['layers'] if l['mapping']]
+
+        if not mapped_layers:
+            self.show_message("Importation", "Aucune couche mappée détectée dans le projet actif.")
+            return
+
+        self.dockwidget.missionProgressBar.setValue(30)
+        self.dockwidget.merginResultsTextEdit.append(f"🔍 Analyse de {len(mapped_layers)} couches mappées...")
+
+        collected_payload = {}
+        original_payload = {}
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
+
+        for l_info in mapped_layers:
+            layer = QgsProject.instance().mapLayer(l_info['id'])
+            endpoint = l_info['mapping']
+            mapping = self.get_mapping_for_endpoint(endpoint)
+
+            # Extraire les données locales (modifiées par le terrain)
+            local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+            collected_payload[endpoint] = local_data
+
+            # Récupérer les données originales de l'API pour comparaison
+            try:
+                filters = self.build_sector_filters(mapping, commune_context)
+                original_payload[endpoint] = self.postgrest.select(endpoint, filters=filters)
+            except Exception:
+                original_payload[endpoint] = []
+
+        self.current_collected_data = collected_payload
+        self.current_original_data = original_payload
+        self.mergin_validation_ready = True
+        self.set_validation_ready(True)
+
+        self.dockwidget.missionProgressBar.setValue(100)
+        self.dockwidget.merginResultsTextEdit.append(f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation.")
+
+        # Ouvrir automatiquement la validation
+        self.auto_validate_mission()
+
+    def auto_validate_mission(self):
+        """Validation avec moteur de règles métier."""
+        if not self.mergin_validation_ready:
+            # Si on n'a pas encore fait "Récupérer", on le fait maintenant
+            self.auto_import_mission()
+            return
+
+        # Déclencher le dialogue de validation avec les données analysées
+        self.open_validation_form(self.current_collected_data, self.current_original_data)
+
+    def auto_finalize_mission(self):
+        """Synchronisation finale."""
+        self.sync_validated_data_to_backend()
+        self.dockwidget.missionProgressBar.setValue(0)
+
+    def push_project_data_to_backend(self, selected_mappings=None):
+        """Pousse les données sélectionnées vers le backend API."""
+        if not self.check_api_auth():
+            return
+
+        # Si appelé depuis le dialogue, on a déjà le mapping
+        project_endpoints = {}
+        if selected_mappings:
+            for layer_id, endpoint in selected_mappings.items():
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer:
+                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+        else:
+            # Fallback legacy
+            for layer in QgsProject.instance().mapLayers().values():
+                if layer.type() != QgsMapLayer.VectorLayer:
+                    continue
+                endpoint = layer.customProperty('postgrest:endpoint')
+                if endpoint:
+                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+
+        if not project_endpoints:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
+                                  self.tr(u"Aucune couche mappée n'a été trouvée dans le projet."))
+            return
+
+        reply = QMessageBox.question(
+            self.iface.mainWindow(), self.tr(u'Confirmer la migration'),
+            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n\n"
+                  u"La migration utilisera la logique 'Upsert' : les enregistrements existants seront mis à jour "
+                  u"et les nouveaux seront créés.").format(count=len(project_endpoints)),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Préparer les données pour la tâche
+        project = QgsProject.instance()
+        migration_data = []
+        for layer_name, mapping in project_endpoints.items():
+            layers = project.mapLayersByName(layer_name)
+            if not layers:
+                continue
+
+            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+            if not raw_data:
+                continue
+
+            # Filtrage des colonnes : ne garder que celles qui existent dans l'API
+            # Utile pour les couches issues de jointures
+            api_columns = mapping.get('columns', [])
+            if api_columns:
+                filtered_data = []
+                geom_field = mapping.get('geom_field', 'geom')
+                for row in raw_data:
+                    filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
+                    filtered_data.append(filtered_row)
+                data_to_push = filtered_data
+            else:
+                data_to_push = raw_data
+
+            migration_data.append((layer_name, mapping['endpoint'], data_to_push))
+
+        if not migration_data:
+            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
+            return
+
+        # Créer et lancer la tâche asynchrone
+        task = QgsTask.fromFunction(
+            self.tr(u'Migration des données MrvTeraka'),
+            self._do_migration_task,
+            migration_data=migration_data,
+            on_finished=self._on_migration_finished
+        )
+        QgsApplication.taskManager().addTask(task)
+
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours en arrière-plan..."))
+
+    def _do_migration_task(self, task, migration_data):
+        """Exécution de la migration dans un thread séparé."""
+        results = []
+        errors_count = 0
+        total = len(migration_data)
+
+        for i, (layer_name, endpoint, data) in enumerate(migration_data):
+            if task.isCanceled():
+                return {'results': results, 'status': 'canceled'}
+
+            try:
+                self.postgrest.insert(endpoint, data, upsert=True)
+                results.append(f"✅ {layer_name} : {len(data)} enregistrements migrés")
+            except Exception as e:
+                results.append(f"❌ {layer_name} : {str(e)}")
+                errors_count += 1
+
+            task.setProgress((i + 1) / total * 100)
+
+        return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
+
+    def _on_migration_finished(self, result):
+        """Callback appelé à la fin de la tâche de migration."""
+        if not result or result.get('status') == 'canceled':
+            self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
+            return
+
+        report = "\n".join(result['results'])
+        if self.dockwidget:
+            self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
+
+        if result['errors_count'] > 0:
+            QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
+        else:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
 
     def load_database_data(self):
         """Charge des données depuis l'API vers QGIS."""
@@ -560,6 +1715,8 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -573,9 +1730,20 @@ class MrvTeraka:
         try:
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
-                db_data = self.postgrest.select(endpoint_value)
+
+                filters = self.build_sector_filters(mapping, commune_context)
+
+                db_data = self.postgrest.select(endpoint_value, filters=filters)
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
+
+                if not db_data:
+                    # Gérer table vide
+                    layer = create_vector_layer([{'id': ''}], display_name, geom_field)
+                    if layer:
+                        layer.setCustomProperty('postgrest:endpoint', endpoint_value)
+                        QgsProject.instance().addMapLayer(layer)
+                    continue
 
                 if is_geojson(db_data):
                     import tempfile
@@ -613,6 +1781,8 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
+        district_filter = self.get_sector_filter_value()
+        commune_context = self.build_commune_filters() if district_filter else None
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -625,9 +1795,15 @@ class MrvTeraka:
 
         try:
             report = [f"Statut : Connecté à {self.api_base_url}"]
+            if district_filter:
+                report.append(f"Filtre Secteur : {district_filter}")
+
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
-                count = len(self.postgrest.select(endpoint_value, select="id"))
+
+                filters = self.build_sector_filters(mapping, commune_context)
+
+                count = len(self.postgrest.select(endpoint_value, select="id", filters=filters))
                 report.append(f"{layer_name} -> {endpoint_value} : {count} enregistrements")
 
             qgis_layers = [l.name() for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
@@ -637,63 +1813,13 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error("Erreur", exc)
 
-    def prepare_mergin_project(self):
-        """Prépare un export des données DB pour ingestion dans un projet Mergin."""
-        if not self.dockwidget or not self.check_api_auth():
-            return
 
-        endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
-        requested_endpoints = self.get_requested_endpoints(endpoint)
-        if not requested_endpoints:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Erreur'),
-                self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
-            )
-            return
-
-        try:
-            export_payload = {}
-            for layer_name, mapping in requested_endpoints.items():
-                endpoint_value = mapping['endpoint']
-                export_payload[endpoint_value] = self.postgrest.select(endpoint_value)
-
-            project_name = 'mergin_' + __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
-            project_description = f"Collecte terrain - {', '.join(requested_endpoints.keys())}"
-            self.current_project_id = self.mergin_manager.create_project(
-                project_name,
-                ','.join([mapping['endpoint'] for mapping in requested_endpoints.values()]),
-                project_description
-            )
-
-            self.mergin_manager.save_exported_data(self.current_project_id, export_payload)
-
-            output_file = os.path.join(self.plugin_dir, 'mergin_ready_data.json')
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(export_payload, f, ensure_ascii=False, indent=2)
-
-            endpoints_list = [mapping['endpoint'] for mapping in requested_endpoints.values()]
-            message = (
-                f"Données préparées pour Mergin\n"
-                f"Projet ID: {self.current_project_id}\n"
-                f"Endpoints exportés: {', '.join(endpoints_list)}\n"
-                f"Fichier: {output_file}"
-            )
-            self.dockwidget.merginResultsTextEdit.setPlainText(message)
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                self.tr(u'Préparation Mergin terminée'),
-                message,
-            )
-        except Exception as exc:
-            self.show_error(self.tr(u'Erreur Mergin'), exc)
-
-    def load_collected_data(self, collected_data=None):
+    def load_collected_data(self, collected_data=None, original_data=None):
         """Charge les données collectées et affiche le formulaire de validation"""
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.merginEndpointLineEdit.text().strip()
+        endpoint = self.dockwidget.endpointLineEdit.text()
         if not endpoint and collected_data is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -705,7 +1831,10 @@ class MrvTeraka:
         try:
             if collected_data is None:
                 mapping = self.get_mapping_for_endpoint(endpoint)
-                collected_data = self.postgrest.select(mapping['endpoint'])
+                district_filter = self.get_sector_filter_value()
+                commune_context = self.build_commune_filters() if district_filter else None
+                filters = self.build_sector_filters(mapping, commune_context)
+                collected_data = self.postgrest.select(mapping['endpoint'], filters=filters)
                 self.current_data_mapping = mapping
             else:
                 if isinstance(collected_data, dict) and len(collected_data) == 1:
@@ -738,7 +1867,7 @@ class MrvTeraka:
             validation_dialog = DataValidationDialog(
                 parent=self.iface.mainWindow(),
                 collected_data=collected_data,
-                original_data=original_data
+                original_data=original_data if original_data is not None else []
             )
             
             if validation_dialog.exec_() == DataValidationDialog.Accepted:
@@ -778,20 +1907,24 @@ class MrvTeraka:
             )
             return
 
-        mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-            self.dockwidget.merginEndpointLineEdit.text().strip()
-        )
-
-        if not mapping or not mapping.get('endpoint'):
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                self.tr(u'Endpoint introuvable'),
-                self.tr(u'Impossible de déterminer l\'endpoint API pour la synchronisation.')
+        # Gérer les données multi-tables ou mono-table
+        sync_payloads = []
+        if isinstance(self.current_validated_data, dict) and not is_geojson(self.current_validated_data):
+            # C'est un dictionnaire {endpoint: [data]}
+            for endpoint, data in self.current_validated_data.items():
+                sync_payloads.append((self.get_mapping_for_endpoint(endpoint), data))
+        else:
+            # C'est une liste de données (mono-table)
+            mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
+                self.dockwidget.endpointLineEdit.text()
             )
-            return
+            sync_payloads.append((mapping, self.current_validated_data))
 
         try:
-            original_data = []
+            all_merge_results = []
+
+            # Charger les données originales complètes si possible
+            full_original_data = {}
             if self.current_project_id:
                 metadata_file = os.path.join(
                     self.mergin_manager.projects_dir,
@@ -800,16 +1933,32 @@ class MrvTeraka:
                 )
                 if os.path.exists(metadata_file):
                     with open(metadata_file, 'r', encoding='utf-8') as f:
-                        original_data = json.load(f)
+                        full_original_data = json.load(f)
 
-            if not original_data:
-                original_data = self.postgrest.select(mapping['endpoint'])
+            for mapping, validated_data in sync_payloads:
+                endpoint = mapping.get('endpoint')
+                if not endpoint:
+                    continue
 
-            merge_results = self.merge_validated_data(mapping, original_data, self.current_validated_data)
-            if merge_results and self.current_project_id:
+                original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else None
+                if not original_data:
+                    c_com_values = sorted({
+                        str(row.get('c_com'))
+                        for row in validated_data
+                        if isinstance(row, dict) and row.get('c_com') not in (None, "")
+                    })
+                    filters = {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else None
+                    original_data = self.postgrest.select(endpoint, filters=filters)
+
+                merge_results = self.merge_validated_data(mapping, original_data, validated_data)
+                if merge_results:
+                    all_merge_results.append(merge_results)
+
+            if all_merge_results and self.current_project_id:
+                total_actions = sum(len(r.get('actions', [])) for r in all_merge_results)
                 self.mergin_manager.sync_to_api(self.current_project_id, {
                     'status': 'synced',
-                    'merged_actions': len(merge_results.get('actions', [])),
+                    'merged_actions': total_actions,
                     'timestamp': str(__import__('datetime').datetime.now())
                 })
                 self.set_sync_ready(False)

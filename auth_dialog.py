@@ -94,6 +94,26 @@ class AuthDialog(QDialog):
         show_pass_layout.addWidget(self.show_password_check)
         layout.addLayout(show_pass_layout)
         
+        # Mergin Maps Credentials
+        layout.addWidget(QLabel("<hr>"))
+        mergin_title = QLabel("Identifiants Mergin Maps (pour automatisation)")
+        mergin_title.setStyleSheet("font-weight: bold; color: #2c3e50;")
+        layout.addWidget(mergin_title)
+
+        mergin_user_layout = QHBoxLayout()
+        mergin_user_layout.addWidget(QLabel("Utilisateur Mergin:"))
+        self.mergin_user_input = QLineEdit()
+        self.mergin_user_input.setPlaceholderText("Utilisateur Mergin")
+        mergin_user_layout.addWidget(self.mergin_user_input)
+        layout.addLayout(mergin_user_layout)
+
+        mergin_pass_layout = QHBoxLayout()
+        mergin_pass_layout.addWidget(QLabel("Mot de passe Mergin:"))
+        self.mergin_pass_input = QLineEdit()
+        self.mergin_pass_input.setEchoMode(QLineEdit.Password)
+        mergin_pass_layout.addWidget(self.mergin_pass_input)
+        layout.addLayout(mergin_pass_layout)
+
         # Options de stockage
         self.remember_check = QCheckBox("Mémoriser les identifiants")
         layout.addWidget(self.remember_check)
@@ -135,8 +155,10 @@ class AuthDialog(QDialog):
         
         self.url_input.setText(saved_url)
         
-        if remember and saved_username:
-            self.username_input.setText(saved_username)
+        if remember:
+            if saved_username:
+                self.username_input.setText(saved_username)
+            self.mergin_user_input.setText(settings.value('auth/mergin_username', ''))
             self.remember_check.setChecked(True)
     
     def save_settings(self):
@@ -146,9 +168,11 @@ class AuthDialog(QDialog):
         if self.remember_check.isChecked():
             settings.setValue('auth/username', self.username_input.text())
             settings.setValue('auth/url', self.url_input.text())
+            settings.setValue('auth/mergin_username', self.mergin_user_input.text())
             settings.setValue('auth/remember', True)
         else:
             settings.remove('auth/username')
+            settings.remove('auth/mergin_username')
             settings.remove('auth/remember')
         
         settings.setValue('auth/url', self.url_input.text())
@@ -159,6 +183,8 @@ class AuthDialog(QDialog):
             'username': self.username_input.text().strip(),
             'password': self.password_input.text(),
             'url': self.url_input.text().strip(),
+            'mergin_username': self.mergin_user_input.text().strip(),
+            'mergin_password': self.mergin_pass_input.text(),
             'mode': self.mode_combo.currentText() if hasattr(self, 'mode_combo') else None,
             'remember': self.remember_check.isChecked()
         }
