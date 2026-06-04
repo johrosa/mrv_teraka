@@ -1599,7 +1599,6 @@ class MrvTeraka:
         if not self.check_api_auth():
             return
 
-        # Si appelé depuis le dialogue, on a déjà le mapping
         project_endpoints = {}
         if selected_mappings:
             for layer_id, endpoint in selected_mappings.items():
@@ -1607,7 +1606,6 @@ class MrvTeraka:
                 if layer:
                     project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
         else:
-            # Fallback legacy
             for layer in QgsProject.instance().mapLayers().values():
                 if layer.type() != QgsMapLayer.VectorLayer:
                     continue
@@ -1630,7 +1628,6 @@ class MrvTeraka:
         if reply != QMessageBox.Yes:
             return
 
-        # Préparer les données pour la tâche
         project = QgsProject.instance()
         migration_data = []
         for layer_name, mapping in project_endpoints.items():
@@ -1642,8 +1639,6 @@ class MrvTeraka:
             if not raw_data:
                 continue
 
-            # Filtrage des colonnes : ne garder que celles qui existent dans l'API
-            # Utile pour les couches issues de jointures
             api_columns = mapping.get('columns', [])
             if api_columns:
                 filtered_data = []
@@ -1661,20 +1656,25 @@ class MrvTeraka:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
             return
 
-        # Créer et lancer la tâche asynchrone
-        task = QgsTask.fromFunction(
+        # --- SOLUTION ANCRAGE MEMOIRE ---
+        # On stocke la tâche dans self pour empêcher le Garbage Collector de la supprimer
+        self.active_migration_task = QgsTask.fromFunction(
             self.tr(u'Migration des données MrvTeraka'),
             self._do_migration_task,
             migration_data=migration_data,
+            # Extraction des paramètres réseau requis pour éviter de passer l'objet 'self' entier au thread
+            postgrest_client=self.postgrest, 
             on_finished=self._on_migration_finished
         )
-        QgsApplication.taskManager().addTask(task)
+        
+        QgsApplication.taskManager().addTask(self.active_migration_task)
 
         if self.dockwidget:
             self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours en arrière-plan..."))
 
-    def _do_migration_task(self, task, migration_data):
-        """Exécution de la migration dans un thread séparé."""
+    @staticmethod
+    def _do_migration_task(task, migration_data, postgrest_client):
+        """Exécution de la migration dans un thread isolé (Static Method pour la sécurité)."""
         results = []
         errors_count = 0
         total = len(migration_data)
@@ -1684,7 +1684,8 @@ class MrvTeraka:
                 return {'results': results, 'status': 'canceled'}
 
             try:
-                self.postgrest.insert(endpoint, data, upsert=True)
+                # Utilisation du client découplé passé en paramètre
+                postgrest_client.insert(endpoint, data, upsert=True)
                 results.append(f"✅ {layer_name} : {len(data)} enregistrements migrés")
             except Exception as e:
                 results.append(f"❌ {layer_name} : {str(e)}")
@@ -1694,15 +1695,28 @@ class MrvTeraka:
 
         return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
 
-    def _on_migration_finished(self, result):
-        """Callback appelé à la fin de la tâche de migration."""
+    def _on_migration_finished(self, exception, result=None):
+        """Callback thread-safe exécuté sur le thread principal QGIS."""
+        # Nettoyage de la référence de la tâche
+        self.active_migration_task = None
+
+        # Gestion d'un plantage critique dans le thread
+        if exception:
+            QMessageBox.critical(
+                self.iface.mainWindow(), 
+                self.tr(u'Erreur critique'), 
+                self.tr(u"La tâche a échoué violemment : {0}").format(str(exception))
+            )
+            return
+
         if not result or result.get('status') == 'canceled':
             self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
             return
 
         report = "\n".join(result['results'])
         if self.dockwidget:
-            self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
+            # Correction ici : votre code initial pointait sur un widget différent en haut et en bas
+            self.dockwidget.merginResultsTextEdit.setPlainText(report)
 
         if result['errors_count'] > 0:
             QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
