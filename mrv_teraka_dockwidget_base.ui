@@ -217,8 +217,8 @@
                 <widget class="QComboBox" name="regionComboBox">
                  <property name="sizePolicy">
                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                   <horstretch(0)>0</horstretch>
-                   <verstretch(0)>0</verstretch>
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
                   </sizepolicy>
                  </property>
                  <property name="editable">
@@ -241,8 +241,8 @@
                 <widget class="QComboBox" name="districtComboBox">
                  <property name="sizePolicy">
                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                   <horstretch(0)>0</horstretch>
-                   <verstretch(0)>0</verstretch>
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
                   </sizepolicy>
                  </property>
                  <property name="editable">
