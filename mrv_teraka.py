@@ -10,7 +10,7 @@ import os.path
 import re
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt, QVariant
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit, QListWidgetItem
 
 # Initialisation des ressources Qt
 from .resources import *
@@ -648,8 +648,8 @@ class MrvTeraka:
         project = QgsProject.instance()
         new_layers = []
         errors = []
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
 
         for layer_name, mapping in project_endpoints.items():
             try:
@@ -705,23 +705,32 @@ class MrvTeraka:
 
         return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
 
+    def get_selected_commune_codes(self):
+        """Récupère les codes c_com sélectionnés dans le widget de liste."""
+        if not self.dockwidget or not hasattr(self.dockwidget, 'communesListWidget'):
+            return []
+
+        codes = []
+        for i in range(self.dockwidget.communesListWidget.count()):
+            item = self.dockwidget.communesListWidget.item(i)
+            if item.checkState() == Qt.Checked:
+                code = item.data(Qt.UserRole)
+                if code:
+                    codes.append(str(code))
+        return codes
+
     def get_sector_filter_value(self):
-        """Retourne la valeur choisie dans le filtre secteur/district."""
-        if not self.dockwidget or not hasattr(self.dockwidget, 'districtLineEdit'):
+        """Retourne la valeur choisie dans le filtre district (Secteur)."""
+        if not self.dockwidget:
             return ""
 
-        widget = self.dockwidget.districtLineEdit
-        if hasattr(widget, 'currentData'):
-            value = widget.currentData()
-            if value:
-                return str(value).strip()
-        if hasattr(widget, 'currentText'):
-            text = widget.currentText()
-        else:
-            text = widget.text()
+        # Nouvelle interface: districtComboBox
+        if hasattr(self.dockwidget, 'districtComboBox'):
+            text = self.dockwidget.districtComboBox.currentText()
+            return text.strip() if text else ""
 
-        text = (text or "").strip()
-        return "" if text.lower() == "tout le pays" else text
+
+        return ""
 
     def sector_filter_column(self, mapping):
         """Trouve la colonne de filtre secteur/district disponible pour une table."""
@@ -732,31 +741,26 @@ class MrvTeraka:
         return None
 
     def build_commune_filters(self):
-        """Construit la liste des codes communes pour le secteur courant."""
+        """Construit la liste des codes communes sélectionnés."""
+        c_com_values = self.get_selected_commune_codes()
         sector = self.get_sector_filter_value()
-        if not sector or not self.postgrest:
-            return None
 
-        communes_mapping = self.get_mapping_for_endpoint('communes')
-        column = self.sector_filter_column(communes_mapping)
-        if not column:
-            return None
-
-        try:
-            rows = self.postgrest.select(
-                'communes',
-                select='c_com',
-                filters={column: f'eq.{sector}'},
-                auto_paginate=True
-            )
-        except Exception:
-            return None
-
-        c_com_values = []
-        for row in rows:
-            c_com = row.get('c_com') if isinstance(row, dict) else None
-            if c_com not in (None, ""):
-                c_com_values.append(str(c_com))
+        if not c_com_values:
+            # Si aucune commune n'est sélectionnée, mais qu'un district l'est, on récupère toutes les communes du district
+            if sector and self.postgrest:
+                communes_mapping = self.get_mapping_for_endpoint('communes')
+                column = self.sector_filter_column(communes_mapping)
+                if column:
+                    try:
+                        rows = self.postgrest.select(
+                            'communes',
+                            select='c_com',
+                            filters={column: f'eq.{sector}'},
+                            auto_paginate=True
+                        )
+                        c_com_values = [str(r.get('c_com')) for r in rows if r.get('c_com')]
+                    except Exception:
+                        pass
 
         return {
             'sector': sector,
@@ -764,48 +768,67 @@ class MrvTeraka:
         }
 
     def build_sector_filters(self, mapping, commune_context=None):
-        """Construit les filtres PostgREST lies au secteur courant via c_com."""
-        sector = self.get_sector_filter_value()
-        if not sector:
+        """Construit les filtres PostgREST liés aux communes sélectionnées via c_com."""
+        endpoint = mapping.get('endpoint') if mapping else None
+        c_com_values = (commune_context or {}).get('c_com_values', [])
+
+        if endpoint == 'communes':
+            if c_com_values:
+                return {'c_com': 'in.({})'.format(','.join(c_com_values))}
+
+            sector = self.get_sector_filter_value()
+            if sector:
+                column = self.sector_filter_column(mapping)
+                return {column: f'eq.{sector}'} if column else {}
             return {}
 
-        endpoint = mapping.get('endpoint') if mapping else None
-        if endpoint == 'communes':
-            column = self.sector_filter_column(mapping)
-            return {column: f'eq.{sector}'} if column else {}
+        # Tables métier: filtre par c_com
+        if c_com_values:
+            return {'c_com': 'in.({})'.format(','.join(c_com_values))}
 
-        # Every business table has c_com, so keep filtering server-side even for spatial layers.
-        c_com_values = (commune_context or {}).get('c_com_values', [])
-        return {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else {'c_com': 'in.(-1)'}
+        return {'c_com': 'in.(-1)'}
+
+    def fetch_unique_regions(self):
+        """Récupère les régions uniques depuis la table communes."""
+        if not self.postgrest:
+            return []
+        try:
+            rows = self.postgrest.select('communes', select='region', order='region.asc', auto_paginate=True)
+            regions = sorted(list(set(r.get('region') for r in rows if r.get('region'))))
+            return regions
+        except Exception as e:
+            print(f"Erreur fetch regions: {e}")
+            return []
+
+    def fetch_unique_districts(self, region_name=None):
+        """Récupère les districts uniques, optionnellement filtrés par région."""
+        if not self.postgrest:
+            return []
+        filters = {'region': f'eq.{region_name}'} if region_name else None
+        try:
+            rows = self.postgrest.select('communes', select='district', filters=filters, order='district.asc', auto_paginate=True)
+            districts = sorted(list(set(d.get('district') for d in rows if d.get('district'))))
+            return districts
+        except Exception as e:
+            print(f"Erreur fetch districts: {e}")
+            return []
+
+    def fetch_communes_by_district(self, district_name=None):
+        """Récupère les noms et codes des communes pour un district donné."""
+        if not self.postgrest:
+            return []
+        filters = {'district': f'eq.{district_name}'} if district_name else None
+        try:
+            rows = self.postgrest.select('communes', select='commune,c_com', filters=filters, order='commune.asc', auto_paginate=True)
+            # Retourne une liste de tuples (nom, code)
+            return [(r.get('commune'), r.get('c_com')) for r in rows if r.get('commune') and r.get('c_com')]
+        except Exception as e:
+            print(f"Erreur fetch communes: {e}")
+            return []
 
     def fetch_sector_values(self):
         """Recupere les valeurs distinctes de secteur/district depuis les tables API."""
-        if not self.postgrest:
-            return []
-
-        values = set()
-        mappings = self.load_layer_mappings()
-        for endpoint, mapping in mappings.items():
-            column = self.sector_filter_column(mapping)
-            if not column:
-                continue
-            try:
-                rows = self.postgrest.select(
-                    mapping.get('endpoint', endpoint),
-                    select=column,
-                    order=f"{column}.asc",
-                    limit=5000,
-                    auto_paginate=False
-                )
-            except Exception:
-                continue
-
-            for row in rows:
-                value = row.get(column) if isinstance(row, dict) else None
-                if value not in (None, ""):
-                    values.add(str(value))
-
-        return sorted(values, key=lambda v: v.lower())
+        return self.fetch_unique_districts()
 
     def save_current_project_configuration(self):
         """Cree un vrai projet Mergin Maps local a partir du projet QGIS courant."""
@@ -900,8 +923,8 @@ class MrvTeraka:
 
         # 2. Charger les nouvelles
         errors = []
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
         for table in tables_to_load:
             try:
                 mapping = self.get_mapping_for_endpoint(table)
@@ -1013,8 +1036,8 @@ class MrvTeraka:
 
             collected_payload = {}
             original_payload = {}
-            district_filter = self.get_sector_filter_value()
-            commune_context = self.build_commune_filters() if district_filter else None
+
+            commune_context = self.build_commune_filters()
 
             self.dockwidget.merginResultsTextEdit.append("📂 Lecture des couches locales...")
 
@@ -1167,8 +1190,8 @@ class MrvTeraka:
         if not self.check_api_auth(): return
 
         self.dockwidget.merginResultsTextEdit.append("🔄 Rafraîchissement des couches depuis l'API...")
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
 
         updated_count = 0
         error_count = 0
@@ -1549,8 +1572,8 @@ class MrvTeraka:
 
         collected_payload = {}
         original_payload = {}
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
 
         for l_info in mapped_layers:
             layer = QgsProject.instance().mapLayer(l_info['id'])
@@ -1715,8 +1738,8 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -1781,8 +1804,8 @@ class MrvTeraka:
             return
 
         endpoint = self.dockwidget.endpointLineEdit.text().strip()
-        district_filter = self.get_sector_filter_value()
-        commune_context = self.build_commune_filters() if district_filter else None
+
+        commune_context = self.build_commune_filters()
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
@@ -1795,8 +1818,14 @@ class MrvTeraka:
 
         try:
             report = [f"Statut : Connecté à {self.api_base_url}"]
-            if district_filter:
-                report.append(f"Filtre Secteur : {district_filter}")
+
+            sector = self.get_sector_filter_value()
+            if sector:
+                report.append(f"Filtre Secteur : {sector}")
+
+            commune_codes = self.get_selected_commune_codes()
+            if commune_codes:
+                report.append(f"Communes sélectionnées : {len(commune_codes)}")
 
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
@@ -1831,8 +1860,8 @@ class MrvTeraka:
         try:
             if collected_data is None:
                 mapping = self.get_mapping_for_endpoint(endpoint)
-                district_filter = self.get_sector_filter_value()
-                commune_context = self.build_commune_filters() if district_filter else None
+
+                commune_context = self.build_commune_filters()
                 filters = self.build_sector_filters(mapping, commune_context)
                 collected_data = self.postgrest.select(mapping['endpoint'], filters=filters)
                 self.current_data_mapping = mapping
