@@ -9,11 +9,12 @@ from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
     QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QProgressBar,
-    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout
+    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout, QWidget
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
 import json
+import os
 from .business_rules import BusinessRulesEngine
 
 
@@ -37,6 +38,7 @@ class DataValidationDialog(QDialog):
 
         # Table active
         self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
+        self.current_record_index = -1
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -129,6 +131,7 @@ class DataValidationDialog(QDialog):
         layout.addLayout(button_layout)
         
         self.setLayout(layout)
+        self.table_diff.itemChanged.connect(self.on_diff_item_changed)
         self.populate_data()
 
     def switch_table(self, table_name):
@@ -136,6 +139,9 @@ class DataValidationDialog(QDialog):
         self.current_table = table_name
         self.collected_data = self.full_collected_data.get(table_name, [])
         self.original_data = self.full_original_data.get(table_name, [])
+        self.current_record_index = -1
+        if hasattr(self, 'table_diff'):
+            self.table_diff.setRowCount(0)
 
         # Rafraîchir toutes les vues
         self.populate_data()
@@ -197,7 +203,7 @@ class DataValidationDialog(QDialog):
         return widget
     
     def create_comparison_tab(self):
-        """Onglet comparaison avant/après"""
+        """Onglet comparaison et résolution de conflits"""
         layout = QVBoxLayout()
         
         # Contrôles de comparaison
@@ -215,32 +221,15 @@ class DataValidationDialog(QDialog):
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
         
-        # Tables de comparaison
-        tables_layout = QHBoxLayout()
-        
-        # Avant
-        layout_before = QVBoxLayout()
-        l_before = QLabel("⬅️ Original (Base)")
-        l_before.setStyleSheet("color: #d32f2f; font-weight: bold; font-size: 11px;")
-        layout_before.addWidget(l_before)
-        self.table_before = QTableWidget()
-        self.table_before.setAlternatingRowColors(True)
-        layout_before.addWidget(self.table_before)
-        
-        # Après
-        layout_after = QVBoxLayout()
-        l_after = QLabel("➡️ Collecté (Terrain)")
-        l_after.setStyleSheet("color: #388e3c; font-weight: bold; font-size: 11px;")
-        layout_after.addWidget(l_after)
-        self.table_after = QTableWidget()
-        self.table_after.setAlternatingRowColors(True)
-        layout_after.addWidget(self.table_after)
-        
-        tables_layout.addLayout(layout_before)
-        tables_layout.addLayout(layout_after)
-        layout.addLayout(tables_layout)
-        
-        widget = QGroupBox("Comparaison Avant/Après")
+        # Table de résolution unique
+        self.table_diff = QTableWidget()
+        self.table_diff.setAlternatingRowColors(True)
+        self.table_diff.setColumnCount(4)
+        self.table_diff.setHorizontalHeaderLabels(["Champ", "Base", "Terrain", "Valeur finale"])
+        self.table_diff.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.table_diff)
+
+        widget = QGroupBox("Résolution des Conflits")
         widget.setLayout(layout)
         return widget
     
@@ -396,7 +385,8 @@ class DataValidationDialog(QDialog):
         """Remplit les tables avec les données de la table active."""
         # Vider les onglets
         self.table_collected.setRowCount(0)
-        self.table_before.setRowCount(0)
+        if hasattr(self, 'table_diff'):
+            self.table_diff.setRowCount(0)
         self.combo_records.clear()
 
         # Recréer la table de validation car sa structure peut changer
@@ -474,67 +464,78 @@ class DataValidationDialog(QDialog):
                                     "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
-        """Affiche la comparaison avant/après pour un enregistrement"""
-        if 0 <= index < len(self.collected_data):
-            collected_item = self.collected_data[index]
-            original_item = self.original_data[index] if index < len(self.original_data) else {}
+        """Affiche la comparaison avec sélection interactive de la valeur finale"""
+        if index < 0 or index >= len(self.collected_data):
+            return
 
-            # Récupérer tous les champs (before + after)
-            all_keys = set(list(collected_item.keys()) + list(original_item.keys()))
-            all_keys = sorted(list(all_keys))
+        self.current_record_index = index
+        self.table_diff.blockSignals(True)
+        self.table_diff.setRowCount(0)
 
-            # Configuration des tableaux
-            self.table_before.setColumnCount(2)
-            self.table_before.setHorizontalHeaderLabels(["Champ", "Valeur"])
-            self.table_before.setRowCount(len(all_keys))
+        collected_item = self.collected_data[index]
+        original_item = self.original_data[index] if index < len(self.original_data) else {}
 
-            self.table_after.setColumnCount(2)
-            self.table_after.setHorizontalHeaderLabels(["Champ", "Valeur"])
-            self.table_after.setRowCount(len(all_keys))
+        all_keys = sorted(list(set(list(collected_item.keys()) + list(original_item.keys()))))
+        self.table_diff.setRowCount(len(all_keys))
 
-            # Remplir les tableaux avec détection des changements
-            for row, key in enumerate(all_keys):
-                original_value = original_item.get(key, "[absent]")
-                collected_value = collected_item.get(key, "[absent]")
+        for row, key in enumerate(all_keys):
+            orig_val = original_item.get(key, "[absent]")
+            coll_val = collected_item.get(key, "[absent]")
 
-                # Formater les valeurs
-                original_str = str(original_value) if not isinstance(original_value, (dict, list)) else json.dumps(original_value)[:100]
-                collected_str = str(collected_value) if not isinstance(collected_value, (dict, list)) else json.dumps(collected_value)[:100]
+            self.table_diff.setItem(row, 0, QTableWidgetItem(key))
 
-                # Table AVANT (original)
-                label_item_before = QTableWidgetItem(key)
-                value_item_before = QTableWidgetItem(original_str)
-                self.table_before.setItem(row, 0, label_item_before)
-                self.table_before.setItem(row, 1, value_item_before)
+            # Case à cocher pour BASE
+            base_item = QTableWidgetItem(str(orig_val))
+            base_item.setFlags(base_item.flags() | Qt.ItemIsUserCheckable)
+            base_item.setCheckState(Qt.Unchecked)
+            self.table_diff.setItem(row, 1, base_item)
 
-                # Table APRÈS (collecté)
-                label_item_after = QTableWidgetItem(key)
-                value_item_after = QTableWidgetItem(collected_str)
-                self.table_after.setItem(row, 0, label_item_after)
-                self.table_after.setItem(row, 1, value_item_after)
+            # Case à cocher pour TERRAIN (par défaut)
+            coll_item = QTableWidgetItem(str(coll_val))
+            coll_item.setFlags(coll_item.flags() | Qt.ItemIsUserCheckable)
+            coll_item.setCheckState(Qt.Checked)
+            self.table_diff.setItem(row, 2, coll_item)
 
-                # Colorer si changement détecté
-                if original_value != collected_value:
-                    # Colorer les deux tables
-                    before_color = QColor(255, 200, 200)  # Rose clair
-                    after_color = QColor(200, 255, 200)   # Vert clair
+            # Valeur finale (Éditable)
+            final_item = QTableWidgetItem(str(coll_val))
+            final_item.setFlags(final_item.flags() | Qt.ItemIsEditable)
+            if orig_val != coll_val:
+                final_item.setBackground(QColor(255, 255, 200)) # Highlight
+            self.table_diff.setItem(row, 3, final_item)
 
-                    value_item_before.setBackground(before_color)
-                    value_item_after.setBackground(after_color)
-                    label_item_before.setBackground(before_color)
-                    label_item_after.setBackground(after_color)
+        self.table_diff.blockSignals(False)
 
-                    # Font bold pour les modifications
-                    font = label_item_before.font()
-                    font.setBold(True)
-                    label_item_before.setFont(font)
-                    label_item_after.setFont(font)
-                    value_item_before.setFont(font)
-                    value_item_after.setFont(font)
+    def on_diff_item_changed(self, item):
+        """Met à jour les données quand la valeur finale ou une checkbox est modifiée"""
+        if self.current_record_index == -1:
+            return
 
-            # Redimensionner les colonnes
-            self.table_before.resizeColumnsToContents()
-            self.table_after.resizeColumnsToContents()
+        row = item.row()
+        col = item.column()
+        field_name = self.table_diff.item(row, 0).text()
+
+        # Logique des cases à cocher (Colonnes 1: Base, 2: Terrain)
+        if col in [1, 2]:
+            if item.checkState() == Qt.Checked:
+                self.table_diff.blockSignals(True)
+                # Décocher l'autre colonne
+                other_col = 2 if col == 1 else 1
+                self.table_diff.item(row, other_col).setCheckState(Qt.Unchecked)
+
+                # Mettre à jour la valeur finale
+                chosen_val = item.text()
+                self.table_diff.item(row, 3).setText(chosen_val)
+                # Synchroniser avec les données collectées
+                self.collected_data[self.current_record_index][field_name] = chosen_val
+                print(f"DEBUG: Choix pour {field_name} -> {chosen_val}")
+                self.table_diff.blockSignals(False)
+            return
+
+        # Mise à jour manuelle de la valeur finale (Colonne 3)
+        if col == 3:
+            new_value = item.text()
+            print(f"DEBUG: Mise à jour {field_name} = {new_value}")
+            self.collected_data[self.current_record_index][field_name] = new_value
 
     def detect_changes(self, item, index):
         """Détecte les changements par rapport à l'original"""
