@@ -1,16 +1,30 @@
 # -*- coding: utf-8 -*-
-from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
+"""
+Moteur de règles métier pour le plugin MrvTeraka.
+"""
+from qgis.core import (
+    QgsExpression,
+    QgsExpressionContext,
+    QgsExpressionContextUtils
+)
 
 class BusinessRulesEngine:
     """Moteur de règles métier automatisé pour les tables iTeraka."""
 
+    # Cache pour les expressions compilées afin d'améliorer les performances
+    # lors de validations massives.
+    _EXPRESSION_CACHE = {}
+
     RULES = {
         'arbre_gps': [
-            {'name': 'Diamètre positif', 'expr': '"dbh" > 0', 'severity': 'error'},
-            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'}
+            {'name': 'Diamètre positif', 'expr': '"dbh" > 0',
+             'severity': 'error'},
+            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50',
+             'severity': 'warning'}
         ],
         'communes': [
-            {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'}
+            {'name': 'Nom présent', 'expr': 'length("nom") > 0',
+             'severity': 'error'}
         ]
         # On peut étendre pour les 97 tables
     }
@@ -26,7 +40,17 @@ class BusinessRulesEngine:
         context.setFeature(feature)
 
         for rule in rules:
-            exp = QgsExpression(rule['expr'])
+            expr_string = rule['expr']
+
+            # Utilisation du cache pour éviter de recompiler l'expression
+            # Performance: La compilation d'une QgsExpression est coûteuse
+            # dans une boucle sur des milliers d'entités.
+            if expr_string not in BusinessRulesEngine._EXPRESSION_CACHE:
+                BusinessRulesEngine._EXPRESSION_CACHE[expr_string] = \
+                    QgsExpression(expr_string)
+
+            exp = BusinessRulesEngine._EXPRESSION_CACHE[expr_string]
+
             if not exp.evaluate(context):
                 errors.append({
                     'message': rule['name'],
