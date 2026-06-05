@@ -4,6 +4,8 @@ from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextU
 class BusinessRulesEngine:
     """Moteur de règles métier automatisé pour les tables iTeraka."""
 
+    _EXPRESSION_CACHE = {}
+
     RULES = {
         'arbre_gps': [
             {'name': 'Diamètre positif', 'expr': '"dbh" > 0', 'severity': 'error'},
@@ -26,7 +28,11 @@ class BusinessRulesEngine:
         context.setFeature(feature)
 
         for rule in rules:
-            exp = QgsExpression(rule['expr'])
+            expr_str = rule['expr']
+            if expr_str not in BusinessRulesEngine._EXPRESSION_CACHE:
+                BusinessRulesEngine._EXPRESSION_CACHE[expr_str] = QgsExpression(expr_str)
+
+            exp = BusinessRulesEngine._EXPRESSION_CACHE[expr_str]
             if not exp.evaluate(context):
                 errors.append({
                     'message': rule['name'],
