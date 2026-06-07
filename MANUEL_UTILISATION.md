@@ -1,6 +1,6 @@
-# 📖 Manuel d'Utilisation - Plugin QGIS MrvTeraka
+# 📖 Manuel d'Utilisation Complet - Plugin QGIS MrvTeraka
 
-**Version:** 3.0
+**Version:** 3.1
 **Équipe:** iTeraka
 **Date:** Mai 2026
 
@@ -8,71 +8,90 @@
 
 ## 🌟 Introduction
 
-Le plugin **MrvTeraka** est un outil professionnel conçu pour automatiser les flux de données entre QGIS, votre backend API (PostgREST/Django) et le terrain (via Mergin Map). Il permet de gérer plus de 90 tables métiers, d'assurer la validation des collectes et de migrer des projets complets.
+Le plugin **MrvTeraka** est une solution SIG avancée conçue pour l'équipe MRV d'iTeraka. Il sert de pont entre :
+1.  **QGIS Desktop** (Analyse et édition cartographique)
+2.  **API PostgREST / Django** (Stockage centralisé des données)
+3.  **Mergin Map** (Collecte de données sur le terrain via mobile)
+
+Ce manuel détaille toutes les fonctionnalités pour une utilisation optimale et sécurisée de vos données géospatiales.
 
 ---
 
-## 🔐 1. Connexion et Authentification
+## 🔐 1. Installation et Authentification
 
-Dès le lancement de QGIS, un bouton **[🔐 Connexion]** apparaît dans votre barre d'outils.
+### Connexion Initiale
+Lors de l'activation du plugin, une icône **[🔐 Connexion]** s'ajoute à votre barre d'outils QGIS.
+*   **URL API :** Par défaut `http://localhost:8000` (Backend Django).
+*   **Identifiants :** Utilisez votre email professionnel et mot de passe.
+*   **Mode :** Choisissez "Django" pour bénéficier du rendu d'erreurs détaillé.
 
-1.  **Formulaire :** Saisissez l'URL de votre API, votre identifiant (email) et votre mot de passe.
-2.  **Mémorisation :** Cochez "Mémoriser les identifiants" pour une reconnexion automatique au prochain démarrage.
-3.  **Surveillance :** Une icône en haut de la fenêtre du plugin affiche le statut :
-    *   🟢 **Connecté :** Tout est opérationnel.
-    *   🟠 **Attention :** Session expirée ou serveur injoignable (vérification automatique en arrière-plan).
-
----
-
-## 🗺️ 2. L'Interface (Dock Widget)
-
-L'interface est organisée en trois groupes logiques pour guider votre travail :
-
-### A. Connexion API
-Permet de se déconnecter proprement et d'effacer le jeton de sécurité local.
-
-### B. Données PostgREST (Base de données)
-C'est ici que vous gérez le lien direct entre vos couches QGIS et le backend :
-*   **Sélection de table :** Utilisez la liste déroulante pour choisir l'une des 97 tables disponibles.
-*   **[Charger base] :** Télécharge les données de l'API et crée une couche mémoire dans QGIS.
-*   **[Comparer] :** Compare le nombre d'enregistrements entre votre projet et le serveur.
-*   **[Migrer vers base] :** **(Nouveau)** Pousse toutes les données de vos couches locales vers le serveur en utilisant une logique intelligente (Upsert) qui met à jour les données existantes sans créer de doublons.
-
-### C. Flux Mergin Map (Terrain)
-Suivez les étapes numérotées (1, 2, 3) :
-1.  **Préparation :** Sélectionnez la table de terrain et cliquez sur **[Préparer Mergin]**. Cela crée un projet local prêt à être synchronisé vers vos mobiles.
-2.  **Collecte & Import :** Après le terrain, cliquez sur **[Importer Mergin]** pour récupérer les données saisies.
-3.  **Validation & Fusion :**
-    *   Cliquez sur **[Valider import]** pour ouvrir l'assistant de validation.
-    *   Comparez les données avant/après.
-    *   Cliquez sur **[Synchroniser]** pour envoyer définitivement les données validées en base de données.
+### Gestion de la Session
+*   **Reconnexion automatique :** Si vous cochez "Mémoriser", le plugin utilise un jeton JWT sécurisé stocké localement.
+*   **Surveillance en direct :** Le plugin vérifie votre connexion toutes les 60 secondes. Un indicateur visuel (Rouge/Vert) vous informe en temps réel si le serveur est joignable.
 
 ---
 
-## 🚀 3. Fonctionnalités Avancées
+## 🏗️ 2. Gestion des Données Centralisées (PostgREST)
 
-### ⚡ Performance & Volume
-Le plugin gère automatiquement la **pagination**. Si vous téléchargez une table de 20 000 arbres, il le fera par blocs de 1 000 pour éviter de geler QGIS.
+Le groupe **Données PostgREST** permet de manipuler les 97 tables métiers de la base de données.
 
-### 🛡️ Robustesse (Upsert)
-La fonction de migration est **idempotente**. Si vous l'interrompez et la relancez, elle reprendra là où elle s'est arrêtée sans corrompre vos données existantes.
+### Filtrage par District (Nouveauté)
+Pour optimiser les performances, vous pouvez filtrer les données avant le téléchargement :
+1.  Sélectionnez la table `communes`.
+2.  Dans le champ **District**, saisissez le nom d'un district (ex: `Mandoto`).
+3.  Cliquez sur **[Charger base]** ou **[Comparer]**. Seules les communes de ce district seront traitées.
 
-### 🔄 Travail Asynchrone
-Les opérations lourdes (chargement massif, migration) s'exécutent via le **Gestionnaire de tâches de QGIS**. Vous pouvez continuer à dessiner ou analyser vos cartes pendant que les données sont envoyées au serveur.
-
----
-
-## 🛠️ 4. Dépannage (FAQ)
-
-### Q: "Les boutons sont grisés"
-*   **R :** Vous n'êtes pas authentifié. Cliquez sur le bouton de connexion dans la barre d'outils.
-
-### Q: "Erreur de syntaxe au démarrage (default.py)"
-*   **R :** Cela provient d'une erreur dans vos expressions QGIS locales. Allez dans le gestionnaire d'expressions et vérifiez que vos chaînes HTML ne commencent pas par `''''` (4 guillemets). Remplacez-les par un seul guillemet `'`.
-
-### Q: "Le plugin ne voit pas ma nouvelle couche"
-*   **R :** Assurez-vous que le nom de votre couche correspond à l'un des noms définis dans le mappage API (ex: `arbre_gps`).
+### Actions Disponibles
+*   **Sélection de table :** Liste déroulante intelligente avec recherche par saisie.
+*   **Chargement :** Télécharge les données et les transforme en couches vectorielles QGIS. Les géométries complexes (Points, Polygones) sont gérées automatiquement.
+*   **Migration (Upsert) :** L'outil **[Migrer vers base]** permet de pousser vos modifications locales vers le serveur.
+    *   *Note :* Il utilise une logique intelligente qui met à jour les enregistrements existants (si l'ID existe) et crée les nouveaux, évitant ainsi tout doublon.
+*   **Pagination automatique :** Pour les tables massives (ex: inventaires d'arbres), le téléchargement se fait par blocs transparents pour ne jamais bloquer QGIS.
 
 ---
 
-**© 2026 iIteraka - Pour toute assistance technique, contactez l'administrateur SIG.**
+## 📱 3. Workflow de Collecte de Terrain (Mergin Map)
+
+Le workflow Mergin suit un cycle rigoureux en 3 étapes :
+
+### Étape 1 : Préparation de l'export
+1.  Choisissez la table à collecter (ex: `arbre_gps`).
+2.  Cliquez sur **[Préparer Mergin]**.
+3.  Le plugin crée un dossier projet local avec les données actuelles de la base, prêt à être synchronisé sur vos tablettes de terrain.
+
+### Étape 2 : Importation après collecte
+Une fois les agents de terrain revenus :
+1.  Cliquez sur **[Importer Mergin]**.
+2.  Le plugin scanne le projet mobile et identifie les nouveaux points et les modifications.
+3.  Un message confirme le nombre d'enregistrements récupérés.
+
+### Étape 3 : Validation et Synchronisation finale
+C'est l'étape de contrôle qualité :
+1.  **Validation :** Cliquez sur **[Valider import]**. Un formulaire s'ouvre pour comparer les données collectées avec les données originales. Vous pouvez valider ou rejeter les saisies.
+2.  **Synchronisation :** Une fois validées, cliquez sur **[Synchroniser]**. Les données sont définitivement envoyées vers la base de données de production.
+
+---
+
+## 🔍 4. Diagnostic et Erreurs
+
+### Rendu d'erreurs Django
+Si une erreur survient côté serveur (ex: contrainte de base de données non respectée), le plugin affiche une fenêtre **HTML interactive** identique à celle que voient les développeurs Django. Cela permet de comprendre précisément quelle donnée pose problème.
+
+### FAQ Technique
+*   **Le bouton "Synchroniser" reste grisé :** Vous devez d'abord passer par l'étape de validation.
+*   **La géométrie n'apparaît pas :** Seules les tables comme `communes`, `arbre_gps`, `bosquet_gps`, `pg_gps` et `bosquet_geom_historique` possèdent des composantes spatiales dans ce système.
+*   **Erreur de certificat SSL :** Vérifiez que l'URL de l'API commence par `http://` (en local) ou `https://` (en production).
+
+---
+
+## 🛠️ 5. Maintenance du Plugin
+
+Le plugin est modulaire :
+*   `layer_table_mapping.json` : Contient la liste des tables et leurs clés primaires.
+*   `layer_utils.py` : Gère la conversion des formats de données.
+*   `postgrest_client.py` : Gère les communications réseau.
+
+---
+
+**© 2026 iTeraka - Solution de suivi MRV.**
+*Développé pour la gestion durable des paysages et des forêts.*
