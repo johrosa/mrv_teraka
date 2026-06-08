@@ -424,21 +424,34 @@ class DataValidationDialog(QDialog):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
 
+        if not self.collected_data:
+            return
+
+        # Optimisation : Préparer les champs et le contexte une seule fois pour tout le lot.
+        # On collecte TOUS les champs uniques de TOUS les items pour éviter les pertes d'attributs
+        # si les dictionnaires sont hétérogènes.
+        all_keys = set()
+        for item in self.collected_data:
+            all_keys.update(item.keys())
+
+        fields = QgsFields()
+        for key in sorted(all_keys):
+            fields.append(QgsField(key, QVariant.String))
+
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+
         for row in range(self.table_validation.rowCount()):
             item_data = self.collected_data[row]
 
-            # Créer une feature virtuelle avec les champs nécessaires pour éviter KeyError
-            fields = QgsFields()
-            for key in item_data.keys():
-                fields.append(QgsField(key, QVariant.String))
-
+            # Créer une feature virtuelle avec les champs pré-configurés
             feat = QgsFeature(fields)
             # On simule les champs pour l'expression
             for key, value in item_data.items():
                 feat.setAttribute(key, value)
 
-            # Utiliser le moteur de règles
-            errors = BusinessRulesEngine.validate_feature(self.current_table, feat)
+            # Utiliser le moteur de règles avec le contexte réutilisé
+            errors = BusinessRulesEngine.validate_feature(self.current_table, feat, context=context)
 
             if errors:
                 invalid_count += 1
