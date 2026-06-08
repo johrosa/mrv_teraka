@@ -4,6 +4,8 @@ from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextU
 class BusinessRulesEngine:
     """Moteur de règles métier automatisé pour les tables iTeraka."""
 
+    _EXPRESSION_CACHE = {}
+
     RULES = {
         'arbre_gps': [
             {'name': 'Diamètre positif', 'expr': '"dbh" > 0', 'severity': 'error'},
@@ -16,17 +18,29 @@ class BusinessRulesEngine:
     }
 
     @staticmethod
-    def validate_feature(table_name, feature):
+    def validate_feature(table_name, feature, context=None):
         """Valide une entité QGIS selon les règles métier de sa table."""
         errors = []
         rules = BusinessRulesEngine.RULES.get(table_name, [])
 
-        context = QgsExpressionContext()
-        context.appendScope(QgsExpressionContextUtils.globalScope())
+        if context is None:
+            context = QgsExpressionContext()
+            context.appendScope(QgsExpressionContextUtils.globalScope())
+
         context.setFeature(feature)
 
         for rule in rules:
-            exp = QgsExpression(rule['expr'])
+            expr_str = rule['expr']
+            cache_key = (table_name, expr_str)
+            # Cache the compiled QgsExpression to avoid redundant parsing.
+            # We use table_name in key because exp.prepare(context) optimizes based on field indices.
+            if cache_key not in BusinessRulesEngine._EXPRESSION_CACHE:
+                exp = QgsExpression(expr_str)
+                exp.prepare(context)
+                BusinessRulesEngine._EXPRESSION_CACHE[cache_key] = exp
+
+            exp = BusinessRulesEngine._EXPRESSION_CACHE[cache_key]
+
             if not exp.evaluate(context):
                 errors.append({
                     'message': rule['name'],
