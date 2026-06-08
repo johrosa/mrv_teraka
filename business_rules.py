@@ -4,6 +4,8 @@ from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextU
 class BusinessRulesEngine:
     """Moteur de règles métier automatisé pour les tables iTeraka."""
 
+    # Cache for compiled QgsExpression objects to avoid redundant parsing.
+    # Key is (table_name, expr_str) because preparation is specific to table fields.
     _EXPRESSION_CACHE = {}
 
     RULES = {
@@ -19,9 +21,19 @@ class BusinessRulesEngine:
 
     @staticmethod
     def validate_feature(table_name, feature, context=None):
-        """Valide une entité QGIS selon les règles métier de sa table."""
+        """
+        Valide une entité QGIS selon les règles métier de sa table.
+
+        Args:
+            table_name: Nom de la table pour charger les règles.
+            feature: Entité QgsFeature à valider.
+            context: QgsExpressionContext optionnel pour réutilisation (performance).
+        """
         errors = []
         rules = BusinessRulesEngine.RULES.get(table_name, [])
+
+        if not rules:
+            return errors
 
         if context is None:
             context = QgsExpressionContext()
@@ -32,14 +44,14 @@ class BusinessRulesEngine:
         for rule in rules:
             expr_str = rule['expr']
             cache_key = (table_name, expr_str)
-            # Cache the compiled QgsExpression to avoid redundant parsing.
-            # We use table_name in key because exp.prepare(context) optimizes based on field indices.
-            if cache_key not in BusinessRulesEngine._EXPRESSION_CACHE:
+
+            exp = BusinessRulesEngine._EXPRESSION_CACHE.get(cache_key)
+            if exp is None:
                 exp = QgsExpression(expr_str)
+                # Optimization: prepare once with the context if fields are available.
+                # Note: prepare() optimizes based on field names/indices in the context.
                 exp.prepare(context)
                 BusinessRulesEngine._EXPRESSION_CACHE[cache_key] = exp
-
-            exp = BusinessRulesEngine._EXPRESSION_CACHE[cache_key]
 
             if not exp.evaluate(context):
                 errors.append({
