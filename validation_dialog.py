@@ -429,12 +429,6 @@ class DataValidationDialog(QDialog):
 
         # Optimization: Initialize QgsFields and context once outside the loop
         # We collect all unique keys from the entire dataset to ensure compatibility
-        if not self.collected_data:
-            return
-
-        # Optimisation : Préparer les champs et le contexte une seule fois pour tout le lot.
-        # On collecte TOUS les champs uniques de TOUS les items pour éviter les pertes d'attributs
-        # si les dictionnaires sont hétérogènes.
         all_keys = set()
         for item in self.collected_data:
             all_keys.update(item.keys())
@@ -459,20 +453,6 @@ class DataValidationDialog(QDialog):
 
             # Utiliser le moteur de règles avec le contexte réutilisé
             # Optimization: Combining QgsExpression caching with Context reuse gives >90% speedup
-
-        context = QgsExpressionContext()
-        context.appendScope(QgsExpressionContextUtils.globalScope())
-
-        for row in range(self.table_validation.rowCount()):
-            item_data = self.collected_data[row]
-
-            # Créer une feature virtuelle avec les champs pré-configurés
-            feat = QgsFeature(fields)
-            # On simule les champs pour l'expression
-            for key, value in item_data.items():
-                feat.setAttribute(key, value)
-
-            # Utiliser le moteur de règles avec le contexte réutilisé
             errors = BusinessRulesEngine.validate_feature(self.current_table, feat, context=context)
 
             if errors:
@@ -610,6 +590,23 @@ class DataValidationDialog(QDialog):
                 self.validated_data = self.full_collected_data
             else:
                 self.validated_data = self.collected_data
+
+        # Remplir uuid_verificator avec l'utilisateur actuel
+        try:
+            # On tente de récupérer le token_manager via le parent (MrvTeraka)
+            from .token_manager import TokenManager
+            tm = TokenManager()
+            user_uuid = tm.get_user_id()
+            if user_uuid:
+                if isinstance(self.validated_data, dict):
+                    for table_data in self.validated_data.values():
+                        for row in table_data:
+                            row['uuid_verificator'] = user_uuid
+                elif isinstance(self.validated_data, list):
+                    for row in self.validated_data:
+                        row['uuid_verificator'] = user_uuid
+        except Exception:
+            pass
 
         super().accept()
 

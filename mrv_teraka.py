@@ -445,54 +445,6 @@ class MrvTeraka:
             return False
         return True
 
-    def build_mapping_from_schema_definition(self, table_name, definition):
-        """Construit un mapping API standard depuis une definition OpenAPI."""
-        geom_field = 'geom'
-        props = definition.get('properties', {})
-        for p_name, p_data in props.items():
-            if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
-                geom_field = p_name
-                break
-
-        return {
-            'endpoint': table_name,
-            'geom_field': geom_field,
-            'pk_field': 'id',
-            'columns': list(props.keys())
-        }
-
-    def merge_existing_layer_aliases(self, table_mappings):
-        """
-        Garde les noms de couches QGIS deja enregistres quand la liste des
-        tables est rafraichie depuis l'API.
-        """
-        content = self.load_local_mapping_content()
-        existing_mappings = content.get('mappings', {})
-        merged = dict(table_mappings)
-
-        for layer_name, old_mapping in existing_mappings.items():
-            if not isinstance(old_mapping, dict):
-                continue
-
-            endpoint = old_mapping.get('endpoint')
-            if not endpoint or endpoint not in table_mappings:
-                continue
-
-            mapping = dict(table_mappings[endpoint])
-
-            old_pk_field = old_mapping.get('pk_field')
-            if old_pk_field and old_pk_field in mapping.get('columns', []):
-                mapping['pk_field'] = old_pk_field
-
-            old_geom_field = old_mapping.get('geom_field')
-            if old_geom_field and old_geom_field in mapping.get('columns', []):
-                mapping['geom_field'] = old_geom_field
-
-            mapping['endpoint'] = endpoint
-            merged[layer_name] = mapping
-
-        return merged
-
     def refresh_api_mappings(self, force_api=True):
         """Force la mise à jour des mappings depuis l'API et les sauvegarde localement."""
         if not self.postgrest:
@@ -503,9 +455,19 @@ class MrvTeraka:
             if schema and 'definitions' in schema:
                 new_mappings = {}
                 for table_name, definition in schema['definitions'].items():
-                    new_mappings[table_name] = self.build_mapping_from_schema_definition(table_name, definition)
+                    geom_field = 'geom'
+                    props = definition.get('properties', {})
+                    for p_name, p_data in props.items():
+                        if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
+                            geom_field = p_name
+                            break
 
-                new_mappings = self.merge_existing_layer_aliases(new_mappings)
+                    new_mappings[table_name] = {
+                        'endpoint': table_name,
+                        'geom_field': geom_field,
+                        'pk_field': 'id',
+                        'columns': list(props.keys())
+                    }
 
                 # Sauvegarde locale pour persistance
                 self.layer_mappings = new_mappings
@@ -581,19 +543,9 @@ class MrvTeraka:
         if layer_name in mappings and mappings[layer_name].get('endpoint'):
             return mappings[layer_name]
 
-        normalized_layer_name = normalize_layer_name_to_endpoint(layer_name)
-        if normalized_layer_name in mappings and mappings[normalized_layer_name].get('endpoint'):
-            return mappings[normalized_layer_name]
-
-        for mapping_name, mapping in mappings.items():
-            if not mapping.get('endpoint'):
-                continue
-            if normalize_layer_name_to_endpoint(mapping_name) == normalized_layer_name:
-                return mapping
-
         # Mapping par défaut dynamique
         return {
-            'endpoint': normalized_layer_name,
+            'endpoint': normalize_layer_name_to_endpoint(layer_name),
             'geom_field': 'geom',
             'pk_field': 'id',
             'columns': [] # Inconnu par défaut
@@ -742,17 +694,8 @@ class MrvTeraka:
 
         # Chercher d'abord dans les mappings chargés explicitement
         mappings = self.load_layer_mappings()
-        if endpoint in mappings:
-            return mappings[endpoint]
-
-        normalized_endpoint = normalize_layer_name_to_endpoint(endpoint)
         for m_name, m_data in mappings.items():
-            mapping_endpoint = m_data.get('endpoint')
-            if mapping_endpoint == endpoint:
-                return m_data
-            if normalize_layer_name_to_endpoint(m_name) == normalized_endpoint:
-                return m_data
-            if mapping_endpoint and normalize_layer_name_to_endpoint(mapping_endpoint) == normalized_endpoint:
+            if m_data.get('endpoint') == endpoint:
                 return m_data
 
         # Fallback sur les couches du projet
@@ -1186,17 +1129,11 @@ class MrvTeraka:
         if report is None:
             report, _ = self.analyze_project_layers()
 
-        endpoints = sorted({
-            mapping.get('endpoint')
-            for mapping in self.load_layer_mappings().values()
-            if isinstance(mapping, dict) and mapping.get('endpoint')
-        })
-
         from .project_action_dialog import ProjectActionDialog
         dialog = ProjectActionDialog(
             self.iface.mainWindow(),
             report['layers'],
-            endpoints
+            list(self.load_layer_mappings().keys())
         )
         if dialog.exec_() != ProjectActionDialog.Accepted:
             return None, None
@@ -1679,26 +1616,23 @@ class MrvTeraka:
         """Synchronisation finale."""
         self.sync_validated_data_to_backend()
         self.dockwidget.missionProgressBar.setValue(0)
-        
+
     def push_project_data_to_backend(self, selected_mappings=None):
         """Pousse les données sélectionnées vers le backend API."""
         if not self.check_api_auth():
             return
-        
+
+        # Si appelé depuis le dialogue, on a déjà le mapping
         project_endpoints = {}
         if selected_mappings:
             for layer_id, endpoint in selected_mappings.items():
                 layer = QgsProject.instance().mapLayer(layer_id)
                 if layer:
-                    if layer.name() in ['spatial_ref_sys', 'geometry_columns']:
-                        continue
                     project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
-        
         else:
+            # Fallback legacy
             for layer in QgsProject.instance().mapLayers().values():
                 if layer.type() != QgsMapLayer.VectorLayer:
-                    continue
-                if layer.name() in ['spatial_ref_sys', 'geometry_columns']:
                     continue
                 endpoint = layer.customProperty('postgrest:endpoint')
                 if endpoint:
@@ -1719,75 +1653,63 @@ class MrvTeraka:
         if reply != QMessageBox.Yes:
             return
 
+        # Préparer les données pour la tâche
         project = QgsProject.instance()
         migration_data = []
         for layer_name, mapping in project_endpoints.items():
             layers = project.mapLayersByName(layer_name)
             if not layers:
                 continue
-            
-            # 💡 CORRECTION ICI : On extrait la première couche trouvée dans la liste
-            target_layer = layers[0]
 
-            # On passe 'target_layer' (l'objet QgsVectorLayer) à la place de 'layers' (la liste)
-            raw_data = layer_to_list_of_dicts(target_layer, geom_field=mapping.get('geom_field', 'geom'))
+            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
             if not raw_data:
                 continue
 
-            # Récupération de la liste STRICTE des colonnes attendues par l'API
+            # Filtrage des colonnes : ne garder que celles qui existent dans l'API
+            # Utile pour les couches issues de jointures
             api_columns = mapping.get('columns', [])
-            geom_field = mapping.get('geom_field', 'geom')
-            
-            cleaned_data = []
-            for row in raw_data:
-                cleaned_row = {}
-                
-                # Alignement strict basé sur les colonnes de l'API
-                for column in api_columns:
-                    if column in row:
-                        val = row[column]
-                        if val == "":
-                            val = None
-                        cleaned_row[column] = val
+
+            # Récupérer l'UUID de l'utilisateur actuel
+            user_uuid = self.token_manager.get_user_id()
+
+            if api_columns or user_uuid:
+                filtered_data = []
+                geom_field = mapping.get('geom_field', 'geom')
+                for row in raw_data:
+                    if api_columns:
+                        filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
                     else:
-                        if column == 'id' and 'fid' in row:
-                            cleaned_row['id'] = row['fid']
-                        else:
-                            cleaned_row[column] = None
+                        filtered_row = dict(row)
 
-                if geom_field in row:
-                    cleaned_row[geom_field] = row[geom_field]
+                    # Remplir uuid_operator si vide et si l'utilisateur est connu
+                    if user_uuid and not filtered_row.get('uuid_operator'):
+                        filtered_row['uuid_operator'] = user_uuid
 
-                cleaned_data.append(cleaned_row)
+                    filtered_data.append(filtered_row)
+                data_to_push = filtered_data
+            else:
+                data_to_push = raw_data
 
-            migration_data.append((layer_name, mapping['endpoint'], cleaned_data))
-
-
+            migration_data.append((layer_name, mapping['endpoint'], data_to_push))
 
         if not migration_data:
-            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
+            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
             return
 
-
-        # --- SOLUTION ANCRAGE MEMOIRE ---
-        # On stocke la tâche dans self pour empêcher le Garbage Collector de la supprimer
-        self.active_migration_task = QgsTask.fromFunction(
+        # Créer et lancer la tâche asynchrone
+        task = QgsTask.fromFunction(
             self.tr(u'Migration des données MrvTeraka'),
             self._do_migration_task,
             migration_data=migration_data,
-            # Extraction des paramètres réseau requis pour éviter de passer l'objet 'self' entier au thread
-            postgrest_client=self.postgrest, 
             on_finished=self._on_migration_finished
         )
-        
-        QgsApplication.taskManager().addTask(self.active_migration_task)
+        QgsApplication.taskManager().addTask(task)
 
         if self.dockwidget:
             self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours en arrière-plan..."))
 
-    @staticmethod
-    def _do_migration_task(task, migration_data, postgrest_client):
-        """Exécution de la migration dans un thread isolé (Static Method pour la sécurité)."""
+    def _do_migration_task(self, task, migration_data):
+        """Exécution de la migration dans un thread séparé."""
         results = []
         errors_count = 0
         total = len(migration_data)
@@ -1797,8 +1719,7 @@ class MrvTeraka:
                 return {'results': results, 'status': 'canceled'}
 
             try:
-                # Utilisation du client découplé passé en paramètre
-                postgrest_client.insert(endpoint, data, upsert=True)
+                self.postgrest.insert(endpoint, data, upsert=True)
                 results.append(f"✅ {layer_name} : {len(data)} enregistrements migrés")
             except Exception as e:
                 results.append(f"❌ {layer_name} : {str(e)}")
@@ -1808,34 +1729,20 @@ class MrvTeraka:
 
         return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
 
-    def _on_migration_finished(self, exception, result=None):
-        """Callback thread-safe exécuté sur le thread principal QGIS."""
-        # Nettoyage de la référence de la tâche
-        self.active_migration_task = None
-
-        # Gestion d'un plantage critique dans le thread
-        if exception:
-            QMessageBox.critical(
-                self.iface.mainWindow(), 
-                self.tr(u'Erreur critique'), 
-                self.tr(u"La tâche a échoué violemment : {0}").format(str(exception))
-            )
-            return
-
+    def _on_migration_finished(self, result):
+        """Callback appelé à la fin de la tâche de migration."""
         if not result or result.get('status') == 'canceled':
             self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
             return
 
         report = "\n".join(result['results'])
         if self.dockwidget:
-            # Correction ici : votre code initial pointait sur un widget différent en haut et en bas
-            self.dockwidget.merginResultsTextEdit.setPlainText(report)
+            self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
 
         if result['errors_count'] > 0:
             QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
         else:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
-
 
     def load_database_data(self):
         """Charge des données depuis l'API vers QGIS."""
