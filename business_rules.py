@@ -35,6 +35,10 @@ class BusinessRulesEngine:
         if not rules:
             return errors
 
+        """Valide une entité QGIS selon les règles métier de sa table."""
+        errors = []
+        rules = BusinessRulesEngine.RULES.get(table_name, [])
+
         if context is None:
             context = QgsExpressionContext()
             context.appendScope(QgsExpressionContextUtils.globalScope())
@@ -49,6 +53,10 @@ class BusinessRulesEngine:
                 exp = QgsExpression(expr_str)
                 # Optimization: prepare once with the context if fields are available.
                 # Note: prepare() optimizes based on field names/indices in the context.
+            # Cache the compiled QgsExpression to avoid redundant parsing.
+            # We use table_name in key because exp.prepare(context) optimizes based on field indices.
+            if cache_key not in BusinessRulesEngine._EXPRESSION_CACHE:
+                exp = QgsExpression(expr_str)
                 exp.prepare(context)
                 BusinessRulesEngine._EXPRESSION_CACHE[cache_key] = exp
 

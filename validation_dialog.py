@@ -429,6 +429,12 @@ class DataValidationDialog(QDialog):
 
         # Optimization: Initialize QgsFields and context once outside the loop
         # We collect all unique keys from the entire dataset to ensure compatibility
+        if not self.collected_data:
+            return
+
+        # Optimisation : Préparer les champs et le contexte une seule fois pour tout le lot.
+        # On collecte TOUS les champs uniques de TOUS les items pour éviter les pertes d'attributs
+        # si les dictionnaires sont hétérogènes.
         all_keys = set()
         for item in self.collected_data:
             all_keys.update(item.keys())
@@ -453,6 +459,20 @@ class DataValidationDialog(QDialog):
 
             # Utiliser le moteur de règles avec le contexte réutilisé
             # Optimization: Combining QgsExpression caching with Context reuse gives >90% speedup
+
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+
+        for row in range(self.table_validation.rowCount()):
+            item_data = self.collected_data[row]
+
+            # Créer une feature virtuelle avec les champs pré-configurés
+            feat = QgsFeature(fields)
+            # On simule les champs pour l'expression
+            for key, value in item_data.items():
+                feat.setAttribute(key, value)
+
+            # Utiliser le moteur de règles avec le contexte réutilisé
             errors = BusinessRulesEngine.validate_feature(self.current_table, feat, context=context)
 
             if errors:
