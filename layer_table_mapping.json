@@ -525,10 +525,10 @@
                 "external_url"
             ]
         },
-        "3-Arbre": {
+        "arbre_gps": {
             "endpoint": "arbre_gps",
             "geom_field": "geom",
-            "pk_field": "uuid_arbre_gps",
+            "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
@@ -783,10 +783,10 @@
                 "uuid_foncier_coutumier"
             ]
         },
-        "2-Bosquet": {
+        "bosquet_gps": {
             "endpoint": "bosquet_gps",
             "geom_field": "geom",
-            "pk_field": "uuid_bosquet_gps",
+            "pk_field": "id",
             "columns": [
                 "id",
                 "uuid_bosquet_gps",
@@ -1146,7 +1146,7 @@
         "membre_suivi": {
             "endpoint": "membre_suivi",
             "geom_field": "geom",
-            "pk_field": "uuid_membre_suivi",
+            "pk_field": "id",
             "columns": [
                 "id",
                 "uuid_membre_suivi",
@@ -1234,10 +1234,10 @@
                 "uuid_sol_use"
             ]
         },
-        "1-Petit_Groupe": {
+        "pg_gps": {
             "endpoint": "pg_gps",
             "geom_field": "geom",
-            "pk_field": "uuid_pg_gps",
+            "pk_field": "id",
             "columns": [
                 "id",
                 "uuid_pg_gps",
@@ -1642,7 +1642,87 @@
                 "created_at",
                 "updated_at"
             ]
+        },
+        "4-Membre_Suivi": {
+            "endpoint": "membre_suivi",
+            "geom_field": "geom",
+            "pk_field": "uuid_membre_suivi",
+            "columns": [
+                "id",
+                "uuid_membre_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "uuid_membre",
+                "date_suivi",
+                "annee",
+                "revenu_annuel_estime",
+                "revenu_teraka",
+                "frequence_penurie_alimentaire",
+                "qualite_recolte",
+                "pratiques_csa",
+                "foyers_ameliore",
+                "nombre_foyers_ameliore",
+                "temps_collecte_bois",
+                "pratique_agroforesterie",
+                "nouvelle_pratique_agroforesterie",
+                "ressent_bienfaits_agroforesterie",
+                "difficulte_programme",
+                "difficulte_commentaire",
+                "risque_erosion_inondation",
+                "bien_etre_general"
+            ]
+        },
+        "3-Arbre": {
+            "endpoint": "arbre_gps",
+            "geom_field": "geom",
+            "pk_field": "uuid_arbre_gps",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_arbre_gps",
+                "uuid_bosquet_gps",
+                "geom",
+                "numero_arbre",
+                "statut_arbre"
+            ]
+        },
+        "2-Bosquet": {
+            "endpoint": "bosquet_gps",
+            "geom_field": "geom",
+            "pk_field": "uuid_bosquet_gps",
+            "columns": [
+                "id",
+                "uuid_bosquet_gps",
+                "uuid_membre",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "uuid_pg",
+                "operateur_id",
+                "c_com",
+                "num_bosquet",
+                "code_bosquet",
+                "statut_bosquet",
+                "date_statut",
+                "area_ha",
+                "date_creation",
+                "geom"
+            ]
+        },
+        "1-Petit_Groupe": {
+            "endpoint": "pg_gps",
+            "geom_field": "geom",
+            "pk_field": "uuid_pg_gps",
+            "columns": [
+                "id",
+                "uuid_pg_gps",
+                "geom",
+                "uuid_pg",
+                "c_com",
+                "operateur_id"
+            ]
         }
     }
 }
-
