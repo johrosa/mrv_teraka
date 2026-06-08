@@ -1622,23 +1622,24 @@ class MrvTeraka:
         if not self.check_api_auth():
             return
 
-        # Si appelé depuis le dialogue, on a déjà le mapping
-        project_endpoints = {}
+        # Liste des couches et leurs mappings associés
+        layers_to_migrate = []
+
         if selected_mappings:
-            for layer_id, endpoint in selected_mappings.items():
-                layer = QgsProject.instance().mapLayer(layer_id)
+            for lid, endpoint in selected_mappings.items():
+                layer = QgsProject.instance().mapLayer(lid)
                 if layer:
-                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+                    layers_to_migrate.append((layer, self.get_mapping_for_endpoint(endpoint)))
         else:
-            # Fallback legacy
+            # Fallback legacy: chercher les couches avec la propriété postgrest:endpoint
             for layer in QgsProject.instance().mapLayers().values():
                 if layer.type() != QgsMapLayer.VectorLayer:
                     continue
                 endpoint = layer.customProperty('postgrest:endpoint')
                 if endpoint:
-                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
+                    layers_to_migrate.append((layer, self.get_mapping_for_endpoint(endpoint)))
 
-        if not project_endpoints:
+        if not layers_to_migrate:
             QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
                                   self.tr(u"Aucune couche mappée n'a été trouvée dans le projet."))
             return
@@ -1647,50 +1648,51 @@ class MrvTeraka:
             self.iface.mainWindow(), self.tr(u'Confirmer la migration'),
             self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n\n"
                   u"La migration utilisera la logique 'Upsert' : les enregistrements existants seront mis à jour "
-                  u"et les nouveaux seront créés.").format(count=len(project_endpoints)),
+                  u"et les nouveaux seront créés.").format(count=len(layers_to_migrate)),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply != QMessageBox.Yes:
             return
 
         # Préparer les données pour la tâche
-        project = QgsProject.instance()
         migration_data = []
-        for layer_name, mapping in project_endpoints.items():
-            layers = project.mapLayersByName(layer_name)
-            if not layers:
+
+        # Récupérer l'UUID de l'utilisateur actuel une seule fois
+        user_uuid = None
+        try:
+            user_uuid = self.token_manager.get_user_id()
+        except Exception:
+            pass
+
+        for layer, mapping in layers_to_migrate:
+            layer_name = layer.name()
+            endpoint = mapping.get('endpoint')
+            if not endpoint:
                 continue
 
-            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+            raw_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
             if not raw_data:
                 continue
 
-            # Filtrage des colonnes : ne garder que celles qui existent dans l'API
-            # Utile pour les couches issues de jointures
+            # Filtrage des colonnes et injection de l'audit
             api_columns = mapping.get('columns', [])
+            geom_field = mapping.get('geom_field', 'geom')
 
-            # Récupérer l'UUID de l'utilisateur actuel
-            user_uuid = self.token_manager.get_user_id()
+            data_to_push = []
+            for row in raw_data:
+                # Filtrer par api_columns si disponibles
+                if api_columns:
+                    filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
+                else:
+                    filtered_row = dict(row)
 
-            if api_columns or user_uuid:
-                filtered_data = []
-                geom_field = mapping.get('geom_field', 'geom')
-                for row in raw_data:
-                    if api_columns:
-                        filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
-                    else:
-                        filtered_row = dict(row)
+                # Remplir uuid_operator si absent
+                if user_uuid and not filtered_row.get('uuid_operator'):
+                    filtered_row['uuid_operator'] = user_uuid
 
-                    # Remplir uuid_operator si vide et si l'utilisateur est connu
-                    if user_uuid and not filtered_row.get('uuid_operator'):
-                        filtered_row['uuid_operator'] = user_uuid
+                data_to_push.append(filtered_row)
 
-                    filtered_data.append(filtered_row)
-                data_to_push = filtered_data
-            else:
-                data_to_push = raw_data
-
-            migration_data.append((layer_name, mapping['endpoint'], data_to_push))
+            migration_data.append((layer_name, endpoint, data_to_push))
 
         if not migration_data:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
