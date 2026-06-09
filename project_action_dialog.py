@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import json
 from qgis.PyQt import QtWidgets, QtCore, QtGui
 from qgis.core import QgsProject, QgsMapLayer
 
@@ -7,9 +8,10 @@ from qgis.core import QgsProject, QgsMapLayer
 class FieldMappingDialog(QtWidgets.QDialog):
     """Sous-dialog pour mapper les champs QGIS vers les colonnes API."""
 
-    def __init__(self, parent=None, layer=None, existing_field_map=None):
+    def __init__(self, parent=None, layer=None, existing_field_map=None, api_columns=None):
         super(FieldMappingDialog, self).__init__(parent)
         self.layer = layer
+        self.api_columns = api_columns or []
         self.setWindowTitle(f"Field Mappings — {layer.name() if layer else ''}")
         self.resize(500, 350)
 
@@ -58,7 +60,14 @@ class FieldMappingDialog(QtWidgets.QDialog):
             self.table.setItem(i, 1, qgis_item)
 
             # Colonne 2 : nom API (éditable, vide = identique)
-            api_name = existing_field_map.get(field_name) or ""
+            api_name = existing_field_map.get(field_name)
+            if api_name is None:
+                # Tentative de pré-remplissage via api_columns
+                if field_name in self.api_columns:
+                    api_name = field_name
+                else:
+                    api_name = ""
+
             api_item = QtWidgets.QTableWidgetItem("" if api_name is False else api_name)
             self.table.setItem(i, 2, api_item)
 
@@ -89,6 +98,8 @@ class ProjectActionDialog(QtWidgets.QDialog):
         super(ProjectActionDialog, self).__init__(parent)
         self.setWindowTitle("Analyse et Actions du Projet")
         self.resize(900, 550)
+
+        self._all_mappings = self._load_all_mappings()
 
         self.layout = QtWidgets.QVBoxLayout(self)
 
@@ -160,6 +171,18 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.layout.addWidget(self.button_box)
+
+    def _load_all_mappings(self):
+        """Charge tout le contenu de layer_table_mapping.json."""
+        plugin_dir = os.path.dirname(__file__)
+        path = os.path.join(plugin_dir, "layer_table_mapping.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f).get("mappings", {})
+            except Exception:
+                pass
+        return {}
 
     def populate_table(self):
         self.table.setRowCount(len(self.layer_info))
@@ -240,7 +263,27 @@ class ProjectActionDialog(QtWidgets.QDialog):
             return
 
         existing = self._field_maps.get(row, {})
-        dlg = FieldMappingDialog(self, layer=layer, existing_field_map=existing)
+
+        # Récupérer les colonnes API attendues pour l'endpoint choisi
+        combo = self.table.cellWidget(row, 3)
+        endpoint = combo.currentText()
+        api_columns = []
+        if endpoint != "-- Ignorer --":
+            # 1. On cherche d'abord si le nom de la couche QGIS est dans le mapping
+            layer_name = self.layer_info[row]['name']
+            if layer_name in self._all_mappings:
+                m_info = self._all_mappings[layer_name]
+                if m_info.get('endpoint') == endpoint:
+                    api_columns = m_info.get('columns', [])
+
+            # 2. Sinon on cherche par endpoint (plus générique)
+            if not api_columns:
+                for m_info in self._all_mappings.values():
+                    if m_info.get('endpoint') == endpoint:
+                        api_columns = m_info.get('columns', [])
+                        break
+
+        dlg = FieldMappingDialog(self, layer=layer, existing_field_map=existing, api_columns=api_columns)
         if dlg.exec_():
             field_map = dlg.get_field_map()
             self._field_maps[row] = field_map
