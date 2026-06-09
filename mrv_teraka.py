@@ -771,18 +771,22 @@ class MrvTeraka:
         """Construit les filtres PostgREST liés aux communes sélectionnées via c_com."""
         endpoint = mapping.get('endpoint') if mapping else None
         c_com_values = (commune_context or {}).get('c_com_values', [])
+        columns = mapping.get('columns', []) if mapping else []
+        has_c_com = 'c_com' in columns  # ← vérification
 
         if endpoint == 'communes':
             if c_com_values:
                 return {'c_com': 'in.({})'.format(','.join(c_com_values))}
-
             sector = self.get_sector_filter_value()
             if sector:
                 column = self.sector_filter_column(mapping)
                 return {column: f'eq.{sector}'} if column else {}
             return {}
 
-        # Tables métier: filtre par c_com
+        # Tables métier: filtre par c_com seulement si la colonne existe
+        if not has_c_com:
+            return {}  # ← pas de c_com → aucun filtre, on ramène tout
+
         if c_com_values:
             return {'c_com': 'in.({})'.format(','.join(c_com_values))}
 
