@@ -50,11 +50,13 @@ class PostgREST:
     
     def _normalize_django_postgrest_url(self) -> str:
         """Retourne l'URL de base Django pour les requêtes PostgREST proxyées."""
-        if self.api_base_url.endswith('/api/data'):
+        if self.api_base_url.endswith('/api/data/'):
             return self.api_base_url
+        if self.api_base_url.endswith('/api/data'):
+            return f"{self.api_base_url}/"
         if self.api_base_url.endswith('/api'):
-            return f"{self.api_base_url}/data"
-        return f"{self.api_base_url}/api/data"
+            return f"{self.api_base_url}/data/"
+        return f"{self.api_base_url}/api/data/"
     
     def set_auth_token(self, token: str):
         """Définit le jeton JWT pour l'authentification"""
@@ -305,16 +307,20 @@ class PostgREST:
         return self._make_request('GET', '', show_error_ui=True)
 
     def verify_token(self) -> bool:
-        """Vérifie que le jeton actuel est accepté par le serveur."""
+        """Vérifie que le jeton actuel est accepté par le serveur via une requête HEAD légère."""
         if not self.jwt_token:
             return False
         try:
-            self._make_request('GET', '', show_error_ui=False)
+            # Utiliser HEAD au lieu de GET pour éviter de télécharger tout le schéma (700Ko+)
+            self._make_request('HEAD', '', show_error_ui=False)
             return True
         except RuntimeError as exc:
             message = str(exc)
             if 'HTTP 401' in message or 'HTTP 403' in message:
                 return False
+            # Si le serveur ne supporte pas HEAD, on peut avoir une 405 Method Not Allowed
+            # Dans ce cas on considère que le token est valide (puisqu'on a atteint le serveur)
+            # ou on pourrait fallback sur un petit GET, mais HEAD est généralement supporté
             return True
         except Exception:
             return True
