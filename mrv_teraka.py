@@ -24,6 +24,7 @@ from .auth_dialog import AuthDialog
 from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
 from .validation_dialog import DataValidationDialog
+from .project_action_dialog import MissionConfirmationDialog
 from .connection_checker import ConnectionChecker
 from .project_analyzer import ProjectAnalyzer
 from .business_rules import BusinessRulesEngine
@@ -1208,7 +1209,20 @@ class MrvTeraka:
         timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
         district = self.get_sector_filter_value()
         district_slug = self.mergin_bridge.safe_project_name(district) if district else ""
-        project_name = f"mission_{district_slug}_{timestamp}" if district_slug else f"mission_{timestamp}"
+        suggested_name = f"mission_{district_slug}_{timestamp}" if district_slug else f"mission_{timestamp}"
+
+        # Dialogue de confirmation et renommage
+        dialog = MissionConfirmationDialog(self.iface.mainWindow(), suggested_name, len(selected_mappings))
+        if not dialog.exec_():
+            self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
+            self.dockwidget.missionProgressBar.setValue(0)
+            return
+
+        project_name = dialog.get_project_name()
+        if not project_name:
+            self.show_message("Erreur", "Le nom du projet ne peut pas être vide.")
+            self.dockwidget.missionProgressBar.setValue(0)
+            return
 
         # Normaliser selected_mappings vers {layer_id: endpoint} pour build_mission_layer_specs
         normalized_mappings = {}

@@ -89,6 +89,45 @@ class FieldMappingDialog(QtWidgets.QDialog):
         return result
 
 
+class MissionConfirmationDialog(QtWidgets.QDialog):
+    """Dialogue pour confirmer la création d'une mission et renommer le projet."""
+
+    def __init__(self, parent=None, suggested_name="", layers_count=0):
+        super(MissionConfirmationDialog, self).__init__(parent)
+        self.setWindowTitle("Confirmation de création de mission")
+        self.resize(400, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        layout.addWidget(QtWidgets.QLabel(
+            f"Vous allez créer une nouvelle mission Mergin Maps avec {layers_count} couche(s).\n"
+            "Veuillez confirmer ou modifier le nom du projet :"
+        ))
+
+        self.project_name_edit = QtWidgets.QLineEdit()
+        self.project_name_edit.setText(suggested_name)
+        layout.addWidget(self.project_name_edit)
+
+        # On peut ajouter un petit avertissement sur les caractères spéciaux si besoin
+        self.hint_label = QtWidgets.QLabel(
+            "<small>Note : Utilisez des caractères alphanumériques, tirets ou underscores.</small>"
+        )
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        layout.addStretch()
+
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def get_project_name(self):
+        return self.project_name_edit.text().strip()
+
+
 class ProjectActionDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, layer_info=None, endpoints=None):
         """
