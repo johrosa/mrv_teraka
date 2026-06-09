@@ -73,7 +73,7 @@
         "bosquet_suivi": {
             "endpoint": "bosquet_suivi",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_bosquet_suivi",
             "columns": [
                 "id",
                 "uuid_bosquet_suivi",
@@ -151,7 +151,7 @@
         "bosquet_evenement": {
             "endpoint": "bosquet_evenement",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_bosquet_evenement",
             "columns": [
                 "id",
                 "uuid_bosquet_evenement",
@@ -299,7 +299,7 @@
         "communes": {
             "endpoint": "communes",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_com",
             "columns": [
                 "id",
                 "uuid_com",
@@ -313,7 +313,7 @@
         "utilisation_arbres": {
             "endpoint": "utilisation_arbres",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_utilisation_arbre",
             "columns": [
                 "id",
                 "nom",
@@ -324,7 +324,7 @@
         "bosquet_baseline": {
             "endpoint": "bosquet_baseline",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_bosquet_baseline",
             "columns": [
                 "id",
                 "uuid_bosquet_baseline",
@@ -412,7 +412,7 @@
         "bosquet_photo_document": {
             "endpoint": "bosquet_photo_document",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "operateur_id",
             "columns": [
                 "id",
                 "operateur_id",
@@ -460,7 +460,7 @@
         "membre_inscrit": {
             "endpoint": "membre_inscrit",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_membre",
             "columns": [
                 "id",
                 "uuid_membre",
@@ -528,7 +528,7 @@
         "arbre_gps": {
             "endpoint": "arbre_gps",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_arbre_gps",
             "columns": [
                 "id",
                 "operateur_id",
@@ -588,7 +588,7 @@
         "pg_infos": {
             "endpoint": "pg_infos",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_pg",
             "columns": [
                 "id",
                 "uuid_pg",
@@ -683,12 +683,12 @@
         "pg_suivi": {
             "endpoint": "pg_suivi",
             "geom_field": "geom",
-            "pk_field": "id",
+            "pk_field": "uuid_pg",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_suivi",
+                "uuid_pg",
                 "uuid_pg_gps",
                 "date_suivi",
                 "trois_familles",

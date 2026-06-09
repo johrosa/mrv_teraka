@@ -1618,133 +1618,171 @@ class MrvTeraka:
         self.dockwidget.missionProgressBar.setValue(0)
 
     def push_project_data_to_backend(self, selected_mappings=None):
-        """Pousse les données sélectionnées vers le backend API."""
-        if not self.check_api_auth():
-            return
-
-        # Liste des couches et leurs mappings associés
-        layers_to_migrate = []
-
+        """Pousse les données sélectionnées vers le backend API avec tri et nettoyage strict."""
+        if not self.check_api_auth(): return
+        project_endpoints = {}
         if selected_mappings:
             for lid, endpoint in selected_mappings.items():
                 layer = QgsProject.instance().mapLayer(lid)
-                if layer:
-                    layers_to_migrate.append((layer, self.get_mapping_for_endpoint(endpoint)))
+                if layer and layer.name() not in ['spatial_ref_sys', 'geometry_columns']:
+                    project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
         else:
-            # Fallback legacy: chercher les couches avec la propriété postgrest:endpoint
             for layer in QgsProject.instance().mapLayers().values():
-                if layer.type() != QgsMapLayer.VectorLayer:
-                    continue
+                if layer.type() != QgsMapLayer.VectorLayer or layer.name() in ['spatial_ref_sys', 'geometry_columns']: continue
                 endpoint = layer.customProperty('postgrest:endpoint')
-                if endpoint:
-                    layers_to_migrate.append((layer, self.get_mapping_for_endpoint(endpoint)))
+                if endpoint: project_endpoints[layer.name()] = self.get_mapping_for_endpoint(endpoint)
 
-        if not layers_to_migrate:
-            QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'),
-                                  self.tr(u"Aucune couche mappée n'a été trouvée dans le projet."))
+        if not project_endpoints:
+            QMessageBox.information(self.iface.mainWindow(), self.tr(u'No mapped layers'), self.tr(u"Aucune couche mappée n'a été trouvée."))
             return
 
-        reply = QMessageBox.question(
-            self.iface.mainWindow(), self.tr(u'Confirmer la migration'),
-            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?\n\n"
-                  u"La migration utilisera la logique 'Upsert' : les enregistrements existants seront mis à jour "
-                  u"et les nouveaux seront créés.").format(count=len(layers_to_migrate)),
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
-            return
+        if QMessageBox.question(self.iface.mainWindow(), self.tr(u'Confirmer la migration'),
+            self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?").format(count=len(project_endpoints)),
+            QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
 
-        # Préparer les données pour la tâche
+        # --- TRI TOPOLOGIQUE (Gestion de l'ordre des clés étrangères) ---
+        EXECUTION_ORDER = ["communes", "pg_gps", "pg_infos", "membre", "bosquet_gps", "arbre_gps", "arbre_baseline"]
+        def get_priority(pair):
+            name = pair[1].get('endpoint', '').lower()
+            return EXECUTION_ORDER.index(name) if name in EXECUTION_ORDER else len(EXECUTION_ORDER)
+
+        sorted_endpoints = sorted(project_endpoints.items(), key=get_priority)
+        HARD_MAPPINGS = {
+            #"communes": {"code_insee": "c_com", "insee_com": "c_com", "id_com": "c_com"},
+            #"membre": {"code_commune": "c_com", "commune": "c_com"},
+            #"bosquet_gps": {"id_user": "username", "nom_user": "username", "pseudo": "username", "nom_membre": "uuid_membre"},
+            #"arbre_gps": {"id_operateur": "operateur_id", "nom_op": "operateur_id", "nom_bosquet": "uuid_bosquet_gps"},
+            #"arbre_baseline": {"id_operateur": "operateur_id", "nom_op": "operateur_id"}
+        }
+
+        project = QgsProject.instance()
         migration_data = []
-
-        # Récupérer l'UUID de l'utilisateur actuel une seule fois
         user_uuid = None
-        try:
-            user_uuid = self.token_manager.get_user_id()
-        except Exception:
-            pass
+        try: user_uuid = self.token_manager.get_user_id()
+        except Exception: pass
+        
+        for layer_name, mapping in sorted_endpoints:
+            layers = project.mapLayersByName(layer_name)
+            if not layers: continue
+            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+            if not raw_data: continue
 
-        for layer, mapping in layers_to_migrate:
-            layer_name = layer.name()
-            endpoint = mapping.get('endpoint')
-            if not endpoint:
-                continue
-
-            raw_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
-            if not raw_data:
-                continue
-
-            # Filtrage des colonnes et injection de l'audit
-            api_columns = mapping.get('columns', [])
-            geom_field = mapping.get('geom_field', 'geom')
-
+            api_columns = [str(col).lower() for col in mapping.get('columns', [])]
+            endpoint_name = mapping['endpoint'].lower()
+            geom_field = mapping.get('geom_field', 'geom').lower()
+            field_override = HARD_MAPPINGS.get(endpoint_name, {})
             data_to_push = []
-            for row in raw_data:
-                # Filtrer par api_columns si disponibles
-                if api_columns:
-                    filtered_row = {k: v for k, v in row.items() if k in api_columns or k == geom_field}
-                else:
-                    filtered_row = dict(row)
+            pk_field = mapping.get('pk_field', 'id').lower()
+            
+            for idx, row in enumerate(raw_data, start=1):
+                # 1. Extraction et protection de la géométrie en chaîne WKT
+                raw_geom = row.get(geom_field) or row.get('geom') or row.get('geometry')
+                geom_value = raw_geom.asWkt() if hasattr(raw_geom, 'asWkt') else (raw_geom if isinstance(raw_geom, (str, dict)) else str(raw_geom) if raw_geom else None)
 
-                # Remplir uuid_operator si absent
+                # 2. Nettoyage et mise en minuscules uniquement sur les attributs
+                row_mapped = {}
+                for k, v in row.items():
+                    k_str = str(k).lower()
+                    if k_str in [geom_field, 'geom', 'geometry']: continue
+                    row_mapped[field_override.get(k_str, k_str)] = v
+                
+                # 3. Alignement strict et nettoyage des chaînes vides
+                filtered_row = {}
+                for col in api_columns:
+                    val = row_mapped.get(col)
+                    filtered_row[col] = None if val == "" else val
+
+                # 4. Correction ID Null
+                if pk_field in api_columns and filtered_row.get('id') is None:
+                    fid_val = row_mapped.get('fid') or row_mapped.get('id_0') or row_mapped.get('gid')
+                    filtered_row[pk_field] = fid_val if fid_val is not None else idx
+
+                # 5. Ré-injection de la géométrie convertie
+                filtered_row[geom_field] = geom_value
+
+                # 6. Remplir l'opérateur si absent
                 if user_uuid and not filtered_row.get('uuid_operator'):
                     filtered_row['uuid_operator'] = user_uuid
 
+                # 7. Mutation et protection des types stricts UUID
+                for k, v in list(filtered_row.items()):
+                    if ('uuid' in k or k == 'id' or '_id' in k) and (v and isinstance(v, str) and "-" not in v and not v.isdigit()):
+                        dest_col = 'username' if 'username' in api_columns else ('nom' if 'nom' in api_columns else 'libelle')
+                        if dest_col in api_columns: filtered_row[dest_col] = v
+                        if k == 'c_com': continue
+                        filtered_row[k] = None
+
                 data_to_push.append(filtered_row)
 
-            migration_data.append((layer_name, endpoint, data_to_push))
+            # ✨ RÉPARÉ : Insertion indispensable des données nettoyées dans la file globale de traitement
+            migration_data.append((layer_name, f"{mapping['endpoint']}?on_conflict={pk_field}", data_to_push))
 
         if not migration_data:
-            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée à migrer."))
+            self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
             return
 
-        # Créer et lancer la tâche asynchrone
-        task = QgsTask.fromFunction(
-            self.tr(u'Migration des données MrvTeraka'),
-            self._do_migration_task,
-            migration_data=migration_data,
-            on_finished=self._on_migration_finished
+        # --- ANCRAGE MÉMOIRE ET LANCEMENT DE LA TÂCHE ---
+        self.active_migration_task = QgsTask.fromFunction(
+            self.tr(u'Migration des données MrvTeraka'), self._do_migration_task,
+            migration_data=migration_data, postgrest_client=self.postgrest, on_finished=self._on_migration_finished
         )
-        QgsApplication.taskManager().addTask(task)
+        QgsApplication.taskManager().addTask(self.active_migration_task)
+        if self.dockwidget: self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours..."))
 
-        if self.dockwidget:
-            self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours en arrière-plan..."))
-
-    def _do_migration_task(self, task, migration_data):
-        """Exécution de la migration dans un thread séparé."""
-        results = []
-        errors_count = 0
-        total = len(migration_data)
-
+    @staticmethod
+    def _do_migration_task(task, migration_data, postgrest_client):
+        """Exécution de la migration par Chunks (paquets) dans un thread isolé."""
+        results, errors_count, CHUNK_SIZE = [], 0, 5000
         for i, (layer_name, endpoint, data) in enumerate(migration_data):
-            if task.isCanceled():
-                return {'results': results, 'status': 'canceled'}
+            if task.isCanceled(): return {'results': results, 'status': 'canceled'}
+            layer_errors, migrated_count = 0, 0
+            
+            for start_idx in range(0, len(data), CHUNK_SIZE):
+                if task.isCanceled(): return {'results': results, 'status': 'canceled'}
+                end_idx = min(start_idx + CHUNK_SIZE, len(data))
+                chunk_data = data[start_idx:end_idx]
+                try:
+                    postgrest_client.insert(endpoint, chunk_data, upsert=True)
+                    migrated_count += len(chunk_data)
+                except Exception as e:
+                    layer_errors += 1
+                    error_msg = "Erreur inconnue"
+                    
+                    # --- INTERCEPTION DE L'ERREUR TRANSMISE PAR LE PROXY ---
+                    # Si vous utilisez la bibliothèque 'requests' dans QGIS :
+                    if hasattr(e, 'response') and e.response is not None:
+                        try:
+                            # On décode le JSON de l'erreur intercepté par build_django_response
+                            err_json = e.response.json()
+                            pg_code = err_json.get('code', 'Inconnu')
+                            pg_msg = err_json.get('message', 'Pas de message')
+                            pg_hint = err_json.get('hint') or err_json.get('details') or ''
+                            error_msg = f"PostgREST [{pg_code}] : {pg_msg} ({pg_hint})"
+                        except Exception:
+                            # Si le contenu n'est pas du JSON (ex: erreur 502 de Django/Nginx)
+                            error_msg = f"HTTP {e.response.status_code} : {e.response.text[:100]}"
+                    else:
+                        # Erreur Python locale (ex: coupure réseau, timeout)
+                        error_msg = str(e)[:100]
 
-            try:
-                self.postgrest.insert(endpoint, data, upsert=True)
-                results.append(f"✅ {layer_name} : {len(data)} enregistrements migrés")
-            except Exception as e:
-                results.append(f"❌ {layer_name} : {str(e)}")
-                errors_count += 1
+                    results.append(f"❌ {layer_name} [Paquet {start_idx}-{end_idx}] : {error_msg}")
 
-            task.setProgress((i + 1) / total * 100)
-
+            task.setProgress((i + 1) / len(migration_data) * 100)
         return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
 
-    def _on_migration_finished(self, result):
-        """Callback appelé à la fin de la tâche de migration."""
+    def _on_migration_finished(self, exception, result=None):
+        """Callback thread-safe exécuté sur le thread principal QGIS à la fin du traitement."""
+        self.active_migration_task = None
+        if exception:
+            QMessageBox.critical(self.iface.mainWindow(), self.tr(u'Erreur critique'), str(exception))
+            return
         if not result or result.get('status') == 'canceled':
             self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
             return
-
         report = "\n".join(result['results'])
-        if self.dockwidget:
-            self.dockwidget.comparisonResultsTextEdit.setPlainText(report)
-
-        if result['errors_count'] > 0:
-            QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
-        else:
-            QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
+        if self.dockwidget: self.dockwidget.merginResultsTextEdit.setPlainText(report)
+        if result['errors_count'] > 0: QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
+        else: QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
 
     def load_database_data(self):
         """Charge des données depuis l'API vers QGIS."""
