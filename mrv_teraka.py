@@ -14,7 +14,7 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit, Q
 
 from .resources import *
 
-from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes
+from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes, QgsRasterLayer
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
@@ -1331,6 +1331,33 @@ class MrvTeraka:
         mission_project.setCrs(current_project.crs())
         mission_project.setTitle(project_name)
 
+        # Ajouter Google Hybrid comme fond de carte SI présent dans le projet actuel
+        # (XYZ Layer: https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z})
+        google_hybrid_url = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+        has_google_hybrid = False
+        for lyr in current_project.mapLayers().values():
+            if isinstance(lyr, QgsRasterLayer) and google_hybrid_url in lyr.source():
+                has_google_hybrid = True
+                break
+
+        google_layer = None
+        if has_google_hybrid:
+            full_google_url = "type=xyz&url=" + google_hybrid_url
+            google_layer = QgsRasterLayer(full_google_url, "Google Hybrid", "wms")
+            if google_layer.isValid():
+                mission_project.addMapLayer(google_layer)
+                # On le met tout en bas de l'arbre des couches
+                root = mission_project.layerTreeRoot()
+                node = root.findLayer(google_layer.id())
+                if node:
+                    clone = node.clone()
+                    root.insertChildNode(-1, clone)
+                    root.removeChildNode(node)
+            else:
+                print("Failed to create Google Hybrid layer")
+                google_layer = None
+
+        added_layer_ids = {google_layer.id()} if google_layer and google_layer.isValid() else set()
         errors = []
         target_layers_by_source_id = {}
         for gpkg_name, spec in layer_specs.items():
@@ -1353,7 +1380,7 @@ class MrvTeraka:
             target_layers_by_source_id[source_layer.id()] = layer
 
         self.remap_form_layer_references(target_layers_by_source_id)
-        self.copy_layer_tree_structure(current_project, mission_project, target_layers_by_source_id)
+        self.copy_layer_tree_structure(current_project, mission_project, target_layers_by_source_id, added_layer_ids)
 
         if errors:
             self.show_message(
@@ -1430,10 +1457,9 @@ class MrvTeraka:
                 except Exception:
                     continue
 
-    def copy_layer_tree_structure(self, source_project, target_project, target_layers_by_source_id):
+    def copy_layer_tree_structure(self, source_project, target_project, target_layers_by_source_id, added_layer_ids):
         target_root = target_project.layerTreeRoot()
         source_root = source_project.layerTreeRoot()
-        added_layer_ids = set()
 
         def set_visibility(source_node, target_node):
             try:
@@ -1466,9 +1492,14 @@ class MrvTeraka:
 
         copy_children(source_root, target_root)
 
+        # S'assurer que les couches cibles qui ne sont pas dans l'arbre (non groupées) sont ajoutées
+        # mais on veut Google Hybrid en bas si possible.
         for target_layer in target_layers_by_source_id.values():
             if target_layer.id() not in added_layer_ids:
-                target_root.addLayer(target_layer)
+                # addLayer l'ajoute en haut par défaut. On l'insère à l'index 0 du root (en haut)
+                # car Google Hybrid est déjà tout en bas (-1).
+                target_root.insertChildNode(0, target_root.findLayer(target_layer.id()) or target_root.addLayer(target_layer))
+                added_layer_ids.add(target_layer.id())
 
     def auto_import_mission(self):
         self.dockwidget.merginResultsTextEdit.append("📥 Récupération des données terrain...")

@@ -84,8 +84,8 @@ class DataValidationDialog(QDialog):
         # Onglet 1: Vue d'ensemble
         self.tabs.addTab(self.create_overview_tab(), "Vue d'ensemble")
         
-        # Onglet 2: Données collectées
-        self.tabs.addTab(self.create_collected_tab(), "Données Collectées")
+        # Onglet 2: Données avant/après
+        self.tabs.addTab(self.create_data_tabs(), "Données")
         
         # Onglet 3: Comparaison
         self.tabs.addTab(self.create_comparison_tab(), "Comparaison")
@@ -142,6 +142,8 @@ class DataValidationDialog(QDialog):
         self.current_record_index = -1
         if hasattr(self, 'table_diff'):
             self.table_diff.setRowCount(0)
+        if hasattr(self, 'table_before'):
+            self.table_before.setRowCount(0)
 
         # Rafraîchir toutes les vues
         self.populate_data()
@@ -187,18 +189,27 @@ class DataValidationDialog(QDialog):
         widget.setLayout(layout)
         return widget
     
-    def create_collected_tab(self):
-        """Onglet données collectées"""
+    def create_data_tabs(self):
+        """Onglet contenant les données originales et collectées"""
         layout = QVBoxLayout()
-        
+        data_tabs = QTabWidget()
+
+        # Sous-onglet: Original (Base)
+        self.table_before = QTableWidget()
+        self.table_before.setAlternatingRowColors(True)
+        self.table_before.setColumnCount(0)
+        self.populate_table_from_data(self.table_before, self.original_data)
+        data_tabs.addTab(self.table_before, "Données Originales (Base)")
+
+        # Sous-onglet: Collecté (Terrain)
         self.table_collected = QTableWidget()
         self.table_collected.setAlternatingRowColors(True)
         self.table_collected.setColumnCount(0)
         self.populate_table_from_data(self.table_collected, self.collected_data)
-        
-        layout.addWidget(self.table_collected)
-        
-        widget = QGroupBox("Données Collectées")
+        data_tabs.addTab(self.table_collected, "Données Collectées (Terrain)")
+
+        layout.addWidget(data_tabs)
+        widget = QWidget()
         widget.setLayout(layout)
         return widget
     
@@ -385,6 +396,7 @@ class DataValidationDialog(QDialog):
         """Remplit les tables avec les données de la table active."""
         # Vider les onglets
         self.table_collected.setRowCount(0)
+        self.table_before.setRowCount(0)
         if hasattr(self, 'table_diff'):
             self.table_diff.setRowCount(0)
         self.combo_records.clear()
