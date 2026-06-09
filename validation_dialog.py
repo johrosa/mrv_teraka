@@ -487,10 +487,22 @@ class DataValidationDialog(QDialog):
                 comment_widget = self.table_validation.cellWidget(row, 5)
                 if isinstance(comment_widget, QLineEdit):
                     comment_widget.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
+                
+                # Ajouter un tooltip avec les erreurs détaillées sur toute la ligne
+                for col in range(self.table_validation.columnCount()):
+                    tbl_item = self.table_validation.item(row, col)
+                    if tbl_item:
+                        tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
 
         if invalid_count > 0:
-            QMessageBox.warning(self, "Contrôle Qualité Automatisé",
-                                f"{invalid_count} enregistrements présentent des anomalies métier.")
+            msg = f"{invalid_count} enregistrements présentent des anomalies métier."
+            QMessageBox.warning(self, "Contrôle Qualité Automatisé", msg)
+            
+            # Mettre à jour les recommandations dans l'onglet 0
+            current_recs = self.recommendation.toPlainText()
+            error_details = f"\n⚠️ {invalid_count} anomalies métier détectées dans la table '{self.current_table}'."
+            self.recommendation.setText(current_recs + error_details)
+            
             self.tabs.setCurrentIndex(3)
         else:
             QMessageBox.information(self, "Contrôle Qualité Automatisé",
@@ -579,10 +591,17 @@ class DataValidationDialog(QDialog):
         changes = []
         
         # Comparer tous les champs
+        from .utils import Utils
         all_keys = set(list(item.keys()) + list(original.keys()))
         for key in sorted(all_keys):
             original_value = original.get(key)
             item_value = item.get(key)
+
+            # Normaliser les UUID pour la comparaison
+            if isinstance(original_value, str) and ('uuid' in key.lower() or key.lower() == 'id'):
+                original_value = Utils.normalize_uuid(original_value)
+            if isinstance(item_value, str) and ('uuid' in key.lower() or key.lower() == 'id'):
+                item_value = Utils.normalize_uuid(item_value)
 
             if key not in original:
                 changes.append(f"🆕 {key}")

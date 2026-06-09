@@ -11,10 +11,20 @@ class BusinessRulesEngine:
     RULES = {
         'arbre_gps': [
             {'name': 'Diamètre positif', 'expr': '"dbh" > 0', 'severity': 'error'},
-            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'}
+            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'},
+            {'name': 'Espèce renseignée', 'expr': 'length("espece") > 0', 'severity': 'error'}
         ],
         'communes': [
-            {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'}
+            {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'},
+            {'name': 'Code commune valide', 'expr': '"c_com" >= 100000', 'severity': 'warning'}
+        ],
+        'membre': [
+            {'name': 'ID opérateur présent', 'expr': 'length("operateur_id") > 0', 'severity': 'error'},
+            {'name': 'UUID PG présent', 'expr': 'length("uuid_pg") > 0', 'severity': 'error'}
+        ],
+        'parcelle': [
+            {'name': 'Surface positive', 'expr': '"surface" > 0', 'severity': 'error'},
+            {'name': 'Propriétaire renseigné', 'expr': 'length("proprio") > 0', 'severity': 'warning'}
         ]
         # On peut étendre pour les 97 tables
     }

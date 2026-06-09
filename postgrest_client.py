@@ -102,6 +102,35 @@ class PostgREST:
         headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """Effectue une requête HTTP vers PostgREST."""
+        from .utils import Utils
+        
+        # Normaliser les UUID dans les données si présentes
+        if data:
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        for k, v in item.items():
+                            if isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                                item[k] = Utils.normalize_uuid(v)
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                        data[k] = Utils.normalize_uuid(v)
+
+        # Normaliser les UUID dans les paramètres (filtres)
+        if params:
+            for k, v in params.items():
+                if isinstance(v, str) and ('.eq.' in v or '.neq.' in v):
+                    # Cas spécial pour les filtres PostgREST type col=eq.{uuid}
+                    parts = v.split('.', 2)
+                    if len(parts) >= 3:
+                        op = parts[1]
+                        val = parts[2]
+                        if 'uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower():
+                            params[k] = f"{parts[0]}.{op}.{Utils.normalize_uuid(val)}"
+                elif isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                    params[k] = Utils.normalize_uuid(v)
+
         url = self._build_url(endpoint, params)
         request_data = json.dumps(data).encode('utf-8') if data is not None else None
         

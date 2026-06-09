@@ -30,3 +30,20 @@ class Utils:
     def is_geojson(data):
         """Détecte si les données sont au format GeoJSON."""
         return isinstance(data, dict) and data.get('type') in ['FeatureCollection', 'Feature']
+
+    @staticmethod
+    def normalize_uuid(value):
+        """
+        Nettoie un UUID en enlevant les accolades QGIS {} et en mettant en minuscule.
+        """
+        if not value or not isinstance(value, str):
+            return value
+        
+        # Enlever les accolades { }
+        cleaned = value.strip().replace('{', '').replace('}', '')
+        
+        # Vérifier si c'est un format UUID (8-4-4-4-12 hex chars)
+        if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', cleaned, re.IGNORECASE):
+            return cleaned.lower()
+            
+        return value
