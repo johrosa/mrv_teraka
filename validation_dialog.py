@@ -26,6 +26,12 @@ class DataValidationDialog(QDialog):
     def __init__(self, parent=None, collected_data=None, original_data=None):
         super().__init__(parent)
 
+        self.setWindowFlags(
+            self.windowFlags() |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowMaximizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
         # Gérer les données multi-tables ou mono-table
         self.full_collected_data = collected_data or {}
         self.full_original_data = original_data or {}

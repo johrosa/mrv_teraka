@@ -9,6 +9,13 @@ class FieldMappingDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None, layer=None, existing_field_map=None):
         super(FieldMappingDialog, self).__init__(parent)
+
+        self.setWindowFlags(
+            self.windowFlags() |
+            QtCore.Qt.WindowType.WindowMinimizeButtonHint |
+            QtCore.Qt.WindowType.WindowMaximizeButtonHint |
+            QtCore.Qt.WindowType.WindowCloseButtonHint
+        )
         self.layer = layer
         self.setWindowTitle(f"Field Mappings — {layer.name() if layer else ''}")
         self.resize(500, 350)
@@ -83,6 +90,13 @@ class FieldMappingDialog(QtWidgets.QDialog):
 class LayerMappingDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, layers=None, endpoints=None):
         super(LayerMappingDialog, self).__init__(parent)
+
+        self.setWindowFlags(
+            self.windowFlags() |
+            QtCore.Qt.WindowType.WindowMinimizeButtonHint |
+            QtCore.Qt.WindowType.WindowMaximizeButtonHint |
+            QtCore.Qt.WindowType.WindowCloseButtonHint
+        )
         self.setWindowTitle("Mapping des Couches vers l'API")
         self.resize(850, 450)
 

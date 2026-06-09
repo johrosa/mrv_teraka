@@ -26,6 +26,12 @@ class TableSelectionDialog(QDialog):
             title: Titre de la fenêtre
         """
         super().__init__(parent)
+        self.setWindowFlags(
+            self.windowFlags() |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowMaximizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
         self.setWindowTitle(title)
         self.setMinimumWidth(400)
         self.setMinimumHeight(300)

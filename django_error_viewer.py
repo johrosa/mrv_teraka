@@ -36,6 +36,13 @@ class DjangoErrorViewer(QDialog):
                 }
         """
         super().__init__(parent)
+
+        self.setWindowFlags(
+            self.windowFlags() |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowMaximizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
         self.error_data = error_data or {}
         self.status_code = error_data.get('status_code', 500) if error_data else 500
         self.reason = error_data.get('reason', 'Erreur Inconnue') if error_data else 'Erreur Inconnue'
