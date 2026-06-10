@@ -176,30 +176,6 @@
           </property>
           <layout class="QVBoxLayout" name="verticalLayoutDB">
            <item>
-            <layout class="QHBoxLayout" name="layoutEndpoint">
-             <item>
-              <widget class="QLabel" name="labelEndpoint">
-               <property name="text">
-                <string>Couche :</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QComboBox" name="endpointComboBox">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="editable">
-                <bool>true</bool>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-           <item>
             <layout class="QVBoxLayout" name="verticalLayoutGeoFilters">
              <property name="spacing">
               <number>4</number>
@@ -269,6 +245,30 @@
                </property>
                <property name="selectionMode">
                 <enum>QAbstractItemView::ExtendedSelection</enum>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="layoutEndpoint">
+             <item>
+              <widget class="QLabel" name="labelEndpoint">
+               <property name="text">
+                <string>Couche :</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="endpointComboBox">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="editable">
+                <bool>true</bool>
                </property>
               </widget>
              </item>
