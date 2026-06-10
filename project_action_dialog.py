@@ -66,7 +66,7 @@ class FieldMappingDialog(QtWidgets.QDialog):
             qgis_item.setFlags(qgis_item.flags() ^ QtCore.Qt.ItemIsEditable)
             self.table.setItem(i, 1, qgis_item)
 
-            # Colonne 2 : nom API (éditable, vide = identique)
+            # Colonne 2 : nom API (ComboBox si api_columns dispos, sinon LineEdit)
             api_name = existing_field_map.get(field_name)
             if api_name is None:
                 # Tentative de pré-remplissage via api_columns
@@ -75,8 +75,26 @@ class FieldMappingDialog(QtWidgets.QDialog):
                 else:
                     api_name = ""
 
-            api_item = QtWidgets.QTableWidgetItem("" if api_name is False else api_name)
-            self.table.setItem(i, 2, api_item)
+            if self.api_columns:
+                combo = QtWidgets.QComboBox()
+                combo.setEditable(True)
+                combo.addItem("")  # Option vide
+                combo.addItems(self.api_columns)
+                
+                # Appliquer la valeur
+                if api_name and api_name is not False:
+                    index = combo.findText(api_name)
+                    if index >= 0:
+                        combo.setCurrentIndex(index)
+                    else:
+                        combo.setEditText(api_name)
+                else:
+                    combo.setCurrentIndex(0)
+                
+                self.table.setCellWidget(i, 2, combo)
+            else:
+                api_item = QtWidgets.QTableWidgetItem("" if api_name is False else api_name)
+                self.table.setItem(i, 2, api_item)
 
     def get_field_map(self):
         """
@@ -91,7 +109,15 @@ class FieldMappingDialog(QtWidgets.QDialog):
             if not included:
                 continue
             qgis_name = self.table.item(i, 1).text()
-            api_name = self.table.item(i, 2).text().strip()
+            
+            # Récupérer la valeur API (Widget ou Item)
+            widget = self.table.cellWidget(i, 2)
+            if isinstance(widget, QtWidgets.QComboBox):
+                api_name = widget.currentText().strip()
+            else:
+                item = self.table.item(i, 2)
+                api_name = item.text().strip() if item else ""
+                
             result[qgis_name] = api_name
         return result
 
