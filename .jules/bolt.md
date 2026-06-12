@@ -1,3 +1,7 @@
 ## 2025-05-15 - [Optimization of PyQGIS Business Rule Validation]
 **Learning:** Significant performance gains (>90% speedup) in PyQGIS can be achieved by combining `QgsExpression` caching with `QgsExpressionContext` and `QgsFeature` reuse during bulk validation. However, reusing a `QgsFeature` requires careful attribute management (e.g., using `setAttributes` with a full list) to avoid data leakage between features if some features have fewer attributes than others.
 **Action:** Always prefer `feat.setAttributes()` when reusing `QgsFeature` objects in loops to ensure state is completely reset for each iteration. Cache `QgsExpression` objects at a class level using a composite key that includes the table name, as `prepare()` optimizations are schema-dependent.
+
+## 2025-05-20 - [Batching PostgREST API Requests for Data Sync]
+**Learning:** For synchronization tasks involving hundreds or thousands of records, individual API calls for each modification (PATCH) or deletion (DELETE) create a massive bottleneck due to network latency. PostgREST supports batch UPSERT via `Prefer: resolution=merge-duplicates` and batch DELETE using the `in.` operator.
+**Action:** Always batch synchronization actions. Use a single POST request with `upsert=True` for all additions and modifications. Use a single DELETE request with the `in.` operator for deletions. Always provide a fallback to individual requests in case of batch failure (e.g., URL length limits).
