@@ -144,6 +144,14 @@ class TokenManager:
 
     def get_user_id(self):
         """Retourne l'ID/UUID de l'utilisateur à partir du jeton."""
+        payload = self.get_jwt_payload(self.token) if self.token else None
+        if payload:
+            # Essayer différents noms de champs communs pour l'ID utilisateur
+            return payload.get('user_id') or payload.get('sub') or payload.get('uuid')
+        return None
+
+    def get_user_role(self):
+        """Retourne le rôle de l'utilisateur à partir du jeton."""
         if not self.token:
             self.load_token()
 
@@ -152,8 +160,8 @@ class TokenManager:
 
         payload = self.get_jwt_payload(self.token)
         if payload:
-            # Essayer différents noms de champs communs pour l'ID utilisateur
-            return payload.get('user_id') or payload.get('sub') or payload.get('uuid')
+            # Chercher le rôle dans les champs communs (role, roles, groups, etc.)
+            return payload.get('role') or payload.get('roles') or payload.get('group') or payload.get('groups')
         return None
 
     def get_token_info(self):

@@ -14,13 +14,21 @@ class BusinessRulesEngine:
             {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'},
             {'name': 'Espèce renseignée', 'expr': 'length("espece") > 0', 'severity': 'error'}
         ],
+        'bosquet_gps': [
+            {'name': 'Nom bosquet présent', 'expr': 'length("nom") > 0', 'severity': 'error'},
+            {'name': 'C_COM valide', 'expr': 'length("c_com") > 0', 'severity': 'error'}
+        ],
         'communes': [
             {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'},
             {'name': 'Code commune valide', 'expr': '"c_com" >= 100000', 'severity': 'warning'}
         ],
+        'pg_gps': [
+            {'name': 'Code PG présent', 'expr': 'length("code_pg") > 0', 'severity': 'error'},
+            {'name': 'Commune valide', 'expr': 'length("c_com") > 0', 'severity': 'error'}
+        ],
         'membre': [
-            {'name': 'ID opérateur présent', 'expr': 'length("operateur_id") > 0', 'severity': 'error'},
-            {'name': 'UUID PG présent', 'expr': 'length("uuid_pg") > 0', 'severity': 'error'}
+            {'name': 'ID membre présent', 'expr': 'length("uuid_membre") > 0', 'severity': 'error'},
+            {'name': 'Nom membre présent', 'expr': 'length("nom") > 0', 'severity': 'error'}
         ],
         'parcelle': [
             {'name': 'Surface positive', 'expr': '"surface" > 0', 'severity': 'error'},

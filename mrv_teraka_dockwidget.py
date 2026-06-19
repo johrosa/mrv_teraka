@@ -250,11 +250,14 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.status_label.setText(message)
         self.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
-    def set_authenticated(self, username=None, api_url=None):
+    def set_authenticated(self, username=None, api_url=None, role=None):
         self.status_label.setText("● Connecté")
         self.status_label.setStyleSheet("color: #2D5A27; font-weight: bold;")
+        
+        role_suffix = f" ({role})" if role else ""
         if username and api_url:
-            self.user_label.setText(f"{username} @ {api_url}")
+            self.user_label.setText(f"{username}{role_suffix} @ {api_url}")
+        
         self.logout_button.setEnabled(True)
         self.populate_table_lists()
         self.populate_project_list()
@@ -265,14 +268,27 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.endpointComboBox.setEnabled(True)
 
+        # Liste des boutons avec leur accessibilité par rôle
         buttons = [
             'loadDbButton', 'compareButton', 'refreshFromApiButton', 'processProjectButton',
-            'autoPrepareButton', 'autoImportButton', 'autoValidateButton',
+            'autoPrepareButton', 'autoImportButton', 'autoValidateButton', 'autoSyncButton',
             'refreshMappingsButton'
         ]
-        for btn in buttons:
-            if hasattr(self, btn):
-                getattr(self, btn).setEnabled(True)
+        
+        # Logique de restriction par rôle
+        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+        
+        for btn_name in buttons:
+            if hasattr(self, btn_name):
+                btn = getattr(self, btn_name)
+                
+                # Restrictions spécifiques
+                if btn_name in ['autoValidateButton', 'autoSyncButton']:
+                    btn.setEnabled(is_validator)
+                    if not is_validator:
+                        btn.setToolTip("Action réservée aux validateurs")
+                else:
+                    btn.setEnabled(True)
 
     def set_unauthenticated(self):
         self.status_label.setText("● Déconnecté")

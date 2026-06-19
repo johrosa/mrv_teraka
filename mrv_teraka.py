@@ -177,6 +177,44 @@ class MrvTeraka:
         self.show_message(title, str(exc), icon=QMessageBox.Critical)
         return False
 
+    def show_warning(self, title, message):
+        """Affiche un avertissement."""
+        self.show_message(title, message, icon=QMessageBox.Warning)
+
+    def show_info(self, title, message):
+        """Affiche une information."""
+        self.show_message(title, message, icon=QMessageBox.Information)
+
+    def push_info(self, title, message, duration=3):
+        """Pousse un message d'information dans la barre de message de QGIS."""
+        self.iface.messageBar().pushMessage(title, message, level=0, duration=duration)
+
+    def push_warning(self, title, message, duration=5):
+        """Pousse un avertissement dans la barre de message de QGIS."""
+        self.iface.messageBar().pushMessage(title, message, level=1, duration=duration)
+
+    def push_error(self, title, message, duration=7):
+        """Pousse une erreur dans la barre de message de QGIS."""
+        self.iface.messageBar().pushMessage(title, message, level=2, duration=duration)
+
+    def ask_confirmation(self, title, message):
+        """Pose une question oui/non à l'utilisateur."""
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            title,
+            message,
+            QMessageBox.Yes | QMessageBox.No
+        )
+        return reply == QMessageBox.Yes
+
+    def set_progress(self, value, message=None):
+        """Met à jour la barre de progression et le message de statut."""
+        if self.dockwidget:
+            self.dockwidget.missionProgressBar.setValue(value)
+            if message:
+                color = "blue" if value < 100 else "green"
+                self.dockwidget.set_status_message(message, color=color)
+
     def show_message(self, title, message, icon=QMessageBox.Information):
         """Affiche un message en texte brut ou HTML selon le contenu."""
         msg_box = QMessageBox(self.iface.mainWindow())
@@ -266,7 +304,9 @@ class MrvTeraka:
         )
         if auth_dialog.exec_() == AuthDialog.Accepted:
             credentials = auth_dialog.get_credentials()
-            self.authenticate_with_credentials(credentials, auth_dialog)
+            success = self.authenticate_with_credentials(credentials, auth_dialog)
+            if success:
+                auth_dialog.save_settings()
 
     def authenticate_with_credentials(self, credentials, dialog=None):
         username = credentials['username']
@@ -305,33 +345,28 @@ class MrvTeraka:
             self.current_username = username
             self.conn_checker.set_client(self.postgrest)
 
-            if credentials['remember']:
-                settings = QSettings('iTeraka', 'MrvTeraka')
-                settings.setValue('auth/last_username', username)
-                if credentials.get('mergin_username'):
-                    settings.setValue('auth/mergin_username', credentials['mergin_username'])
-            else:
-                settings = QSettings('iTeraka', 'MrvTeraka')
-                settings.remove('auth/last_username')
-                settings.remove('auth/mergin_username')
+            # Note: La sauvegarde des identifiants (username, url, mergin_user) est désormais gérée
+            # par auth_dialog.save_settings() dans show_auth_dialog() après succès.
+            # On met à jour l'UI et on informe l'utilisateur.
 
             self.update_auth_ui()
             self.conn_checker.set_client(self.postgrest)
 
             if self.dockwidget:
-                self.dockwidget.set_authenticated(username, self.api_base_url)
+                self.dockwidget.set_authenticated(username, self.api_base_url, role=self.token_manager.get_user_role())
 
             mode_label = "Django" if self.postgrest_mode == PostgRESTMode.DJANGO else "PostgREST"
-            QMessageBox.information(
-                self.iface.mainWindow(),
+            self.show_info(
                 self.tr(u'Authentification réussie'),
                 f"Connecté à {mode_label} en tant que {username}"
             )
+            return True
 
         except Exception as exc:
             shown = self.show_error(self.tr(u"Erreur d'authentification"), exc)
             if dialog and not shown:
                 dialog.show_error(str(exc))
+            return False
 
     def load_saved_token(self):
         token, api_url, mode = self.token_manager.load_token()
@@ -349,20 +384,18 @@ class MrvTeraka:
                 return
 
             settings = QSettings('iTeraka', 'MrvTeraka')
-            self.current_username = settings.value('auth/last_username', 'Utilisateur')
+            self.current_username = settings.value('auth/username', 'Utilisateur')
             self.update_auth_ui()
 
     def open_default_qgis_project(self):
         if os.path.exists(self.default_project_file):
             if not QgsProject.instance().read(self.default_project_file):
-                QMessageBox.warning(
-                    self.iface.mainWindow(),
+                self.show_warning(
                     self.tr(u'Ouverture du projet'),
                     self.tr(u'Impossible de charger le projet QGIS par défaut.')
                 )
         else:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Ouverture du projet'),
                 self.tr(u'Fichier de projet QGIS introuvable : {path}').format(path=self.default_project_file)
             )
@@ -379,24 +412,23 @@ class MrvTeraka:
         if self.dockwidget:
             username = self.current_username or "Utilisateur"
             url = self.api_base_url or "API"
-            self.dockwidget.set_authenticated(username, url)
+            role = self.token_manager.get_user_role()
+            self.dockwidget.set_authenticated(username, url, role=role)
 
     def on_connection_status_changed(self, is_connected, message):
         if not is_connected and self.postgrest:
             if self.dockwidget:
                 self.dockwidget.set_status_message(f"⚠️ {message}", color="orange")
         elif is_connected and self.dockwidget:
-            self.dockwidget.set_authenticated(self.current_username, self.api_base_url)
+            role = self.token_manager.get_user_role()
+            self.dockwidget.set_authenticated(self.current_username, self.api_base_url, role=role)
 
     def logout(self, confirm=True):
         if confirm:
-            reply = QMessageBox.question(
-                self.iface.mainWindow(),
+            if not self.ask_confirmation(
                 self.tr(u'Confirmation'),
-                self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?'),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
+                self.tr(u'Êtes-vous sûr de vouloir vous déconnecter ?')
+            ):
                 return
 
         self.token_manager.clear_token()
@@ -418,16 +450,14 @@ class MrvTeraka:
             self.dockwidget.set_unauthenticated()
 
         if confirm:
-            QMessageBox.information(
-                self.iface.mainWindow(),
+            self.show_info(
                 self.tr(u'Déconnexion'),
                 self.tr(u'Vous avez été déconnecté.')
             )
 
     def check_api_auth(self):
         if not self.postgrest or not self.token_manager.is_token_valid():
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Authentification requise'),
                 self.tr(u'Veuillez vous authentifier avant de continuer.')
             )
@@ -796,7 +826,7 @@ class MrvTeraka:
             if idx >= 0:
                 self.dockwidget.projectComboBox.setCurrentIndex(idx)
 
-        QMessageBox.information(self.iface.mainWindow(), self.tr(u"Projet Mergin cree"), message)
+        self.show_info(self.tr(u"Projet Mergin cree"), message)
 
     def load_project_by_id(self, project_id):
         if not self.check_api_auth():
@@ -1192,24 +1222,23 @@ class MrvTeraka:
             msg += f" ({error_count} erreurs)"
 
         self.dockwidget.merginResultsTextEdit.append(f"✅ {msg}")
-        QMessageBox.information(self.iface.mainWindow(), "Mise à jour", msg)
+        self.show_info("Mise à jour", msg)
 
     def auto_deploy_mission(self, selected_mappings=None):
         """Déploiement terrain automatisé (GPKG + API Mergin)."""
         if not self.check_api_auth():
             return
 
-        self.dockwidget.missionProgressBar.setValue(10)
-        self.dockwidget.merginResultsTextEdit.append("🚀 Début du déploiement automatisé...")
+        self.set_progress(10, "🚀 Début du déploiement automatisé...")
 
         selected_mappings = self.get_or_confirm_terrain_mappings(selected_mappings)
         if selected_mappings is None:
             self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
-            self.dockwidget.missionProgressBar.setValue(0)
+            self.set_progress(0)
             return
 
         if not selected_mappings:
-            self.show_message("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
+            self.show_error("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
             return
 
         timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1221,13 +1250,13 @@ class MrvTeraka:
         dialog = MissionConfirmationDialog(self.iface.mainWindow(), suggested_name, len(selected_mappings))
         if not dialog.exec_():
             self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
-            self.dockwidget.missionProgressBar.setValue(0)
+            self.set_progress(0)
             return
 
         project_name = dialog.get_project_name()
         if not project_name:
-            self.show_message("Erreur", "Le nom du projet ne peut pas être vide.")
-            self.dockwidget.missionProgressBar.setValue(0)
+            self.show_error("Erreur", "Le nom du projet ne peut pas être vide.")
+            self.set_progress(0)
             return
 
         # Normaliser selected_mappings vers {layer_id: endpoint} pour build_mission_layer_specs
@@ -1266,7 +1295,7 @@ class MrvTeraka:
             snapshot_data[ep] = layer_to_list_of_dicts(layer)
         self.mergin_manager.save_exported_data(project_id, snapshot_data)
 
-        self.dockwidget.missionProgressBar.setValue(50)
+        self.set_progress(50, f"📦 Projet QGIS + GeoPackage créés : {len(layers_to_export)} couches.")
         self.dockwidget.merginResultsTextEdit.append(
             f"📦 Projet QGIS + GeoPackage créés : {len(layers_to_export)} couches."
         )
@@ -1299,8 +1328,8 @@ class MrvTeraka:
                 f"⚠️ {self.mergin_bridge.connection_label()}. Projet local uniquement."
             )
 
-        self.dockwidget.missionProgressBar.setValue(100)
-        QMessageBox.information(self.iface.mainWindow(), "Déploiement Réussi",
+        self.set_progress(100, f"La mission '{project_name}' est prête.")
+        self.show_info("Déploiement Réussi",
                                 f"La mission '{project_name}' est prête.")
 
     def build_mission_layer_specs(self, selected_mappings):
@@ -1529,10 +1558,10 @@ class MrvTeraka:
         mapped_layers = [l for l in report['layers'] if l['mapping']]
 
         if not mapped_layers:
-            self.show_message("Importation", "Aucune couche mappée détectée dans le projet actif.")
+            self.show_warning("Importation", "Aucune couche mappée détectée dans le projet actif.")
             return
 
-        self.dockwidget.missionProgressBar.setValue(30)
+        self.set_progress(30, f"🔍 Analyse de {len(mapped_layers)} couches mappées...")
         self.dockwidget.merginResultsTextEdit.append(f"🔍 Analyse de {len(mapped_layers)} couches mappées...")
 
         collected_payload = {}
@@ -1565,21 +1594,47 @@ class MrvTeraka:
         self.mergin_validation_ready = True
         self.set_validation_ready(True)
 
-        self.dockwidget.missionProgressBar.setValue(100)
+        self.set_progress(100, f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation.")
         self.dockwidget.merginResultsTextEdit.append(
             f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation."
         )
         self.auto_validate_mission()
 
     def auto_validate_mission(self):
+        if not self.check_api_auth():
+            return
+
+        role = self.token_manager.get_user_role()
+        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+        
+        if not is_validator:
+            self.show_warning(
+                self.tr(u'Accès refusé'),
+                self.tr(u'Seul un validateur peut effectuer cette action.')
+            )
+            return
+
         if not self.mergin_validation_ready:
             self.auto_import_mission()
             return
         self.open_validation_form(self.current_collected_data, self.current_original_data)
 
     def auto_finalize_mission(self):
+        if not self.check_api_auth():
+            return
+
+        role = self.token_manager.get_user_role()
+        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+
+        if not is_validator:
+            self.show_warning(
+                self.tr(u'Accès refusé'),
+                self.tr(u'Seul un validateur peut finaliser et synchroniser la mission.')
+            )
+            return
+
         self.sync_validated_data_to_backend()
-        self.dockwidget.missionProgressBar.setValue(0)
+        self.set_progress(0)
 
     def push_project_data_to_backend(self, selected_mappings=None):
         """Pousse les données sélectionnées vers le backend API."""
@@ -1606,8 +1661,7 @@ class MrvTeraka:
                     project_endpoints[layer.name()] = mapping
 
         if not project_endpoints:
-            QMessageBox.information(
-                self.iface.mainWindow(),
+            self.show_info(
                 self.tr(u'No mapped layers'),
                 self.tr(u"Aucune couche mappée n'a été trouvée.")
             )
@@ -1682,8 +1736,8 @@ class MrvTeraka:
 
                 filtered_row[geom_field] = geom_value
 
-                if user_uuid and not filtered_row.get('uuid_operator'):
-                    filtered_row['uuid_operator'] = user_uuid
+                if user_uuid and not filtered_row.get('uuid_operateur'):
+                    filtered_row['uuid_operateur'] = user_uuid
 
                 for k, v in list(filtered_row.items()):
                     if ('uuid' in k or k == 'id' or '_id' in k) and (
@@ -1753,18 +1807,18 @@ class MrvTeraka:
     def _on_migration_finished(self, exception, result=None):
         self.active_migration_task = None
         if exception:
-            QMessageBox.critical(self.iface.mainWindow(), self.tr(u'Erreur critique'), str(exception))
+            self.show_error(self.tr(u'Erreur critique'), exception)
             return
         if not result or result.get('status') == 'canceled':
-            self.show_message(self.tr(u'Migration'), self.tr(u"Migration annulée."))
+            self.show_info(self.tr(u'Migration'), self.tr(u"Migration annulée."))
             return
         report = "\n".join(result['results'])
         if self.dockwidget:
             self.dockwidget.merginResultsTextEdit.setPlainText(report)
         if result['errors_count'] > 0:
-            QMessageBox.warning(self.iface.mainWindow(), self.tr(u'Migration terminée avec erreurs'), report)
+            self.show_warning(self.tr(u'Migration terminée avec erreurs'), report)
         else:
-            QMessageBox.information(self.iface.mainWindow(), self.tr(u'Migration réussie'), report)
+            self.show_info(self.tr(u'Migration réussie'), report)
 
     def load_database_data(self):
         if not self.dockwidget or not self.check_api_auth():
@@ -1775,8 +1829,7 @@ class MrvTeraka:
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Erreur'),
                 self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
             )
@@ -1817,8 +1870,7 @@ class MrvTeraka:
                         layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
                         QgsProject.instance().addMapLayer(layer)
 
-            QMessageBox.information(
-                self.iface.mainWindow(),
+            self.show_info(
                 self.tr(u'Chargement terminé'),
                 self.tr(u'Des couches API ont été chargées depuis PostgREST.')
             )
@@ -1834,8 +1886,7 @@ class MrvTeraka:
         requested_endpoints = self.get_requested_endpoints(endpoint)
 
         if not requested_endpoints:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Erreur'),
                 self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
             )
@@ -1869,10 +1920,19 @@ class MrvTeraka:
         if not self.dockwidget or not self.check_api_auth():
             return
 
+        role = self.token_manager.get_user_role()
+        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+
+        if not is_validator:
+            self.show_warning(
+                self.tr(u'Accès refusé'),
+                self.tr(u'Seul un validateur peut charger et valider les données collectées.')
+            )
+            return
+
         endpoint = self.dockwidget.endpointLineEdit.text()
         if not endpoint and collected_data is None:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Erreur'),
                 self.tr(u'Veuillez spécifier un endpoint.')
             )
@@ -1917,6 +1977,19 @@ class MrvTeraka:
 
             if validation_dialog.exec_() == DataValidationDialog.Accepted:
                 validated_data = validation_dialog.validated_data
+                
+                # S'assurer que uuid_operateur est présent si absent (et qu'on a un utilisateur)
+                user_uuid = self.token_manager.get_user_id()
+                if user_uuid:
+                    if isinstance(validated_data, dict):
+                        for table_data in validated_data.values():
+                            for row in table_data:
+                                if not row.get('uuid_operateur'):
+                                    row['uuid_operateur'] = user_uuid
+                    elif isinstance(validated_data, list):
+                        for row in validated_data:
+                            if not row.get('uuid_operateur'):
+                                row['uuid_operateur'] = user_uuid
 
                 validation_results = {
                     'status': 'approved',
@@ -1930,8 +2003,7 @@ class MrvTeraka:
                 if self.current_project_id:
                     self.mergin_manager.validate_data(self.current_project_id, validation_results)
 
-                QMessageBox.information(
-                    self.iface.mainWindow(),
+                self.show_info(
                     self.tr(u'Validation terminée'),
                     self.tr(u'Les données validées sont prêtes pour la synchronisation backend.')
                 )
@@ -1943,8 +2015,7 @@ class MrvTeraka:
             return
 
         if not self.current_validated_data:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
+            self.show_warning(
                 self.tr(u'Synchronisation impossible'),
                 self.tr(u"Aucune donnée validée n'a été trouvée. Veuillez d'abord valider des données.")
             )
@@ -1960,7 +2031,26 @@ class MrvTeraka:
             )
             sync_payloads.append((mapping, self.current_validated_data))
 
-        try:
+        # Utiliser un worker thread pour ne pas bloquer l'interface
+        from .worker_thread import create_backend_sync_worker
+        
+        self.dockwidget.set_status_message("🚀 Synchronisation en cours...", color="blue")
+        self.dockwidget.autoSyncButton.setEnabled(False)
+        
+        def on_sync_finished(results):
+            self.dockwidget.autoSyncButton.setEnabled(True)
+            self.set_progress(100, "✅ Synchronisation terminée")
+            self.set_sync_ready(False)
+            self.current_validated_data = None
+            
+        def on_sync_error(error_msg):
+            self.dockwidget.autoSyncButton.setEnabled(True)
+            self.dockwidget.set_status_message("❌ Erreur de synchronisation", color="red")
+            self.show_error("Erreur de synchronisation", error_msg)
+
+        # On traite les payloads l'un après l'autre ou on adapte le worker
+        # Pour simplifier on garde la logique séquentielle mais dans le worker
+        def multi_sync_task(worker):
             all_merge_results = []
             full_original_data = {}
 
@@ -1974,10 +2064,13 @@ class MrvTeraka:
                     with open(metadata_file, 'r', encoding='utf-8') as f:
                         full_original_data = json.load(f)
 
-            for mapping, validated_data in sync_payloads:
+            total = len(sync_payloads)
+            for i, (mapping, validated_data) in enumerate(sync_payloads):
                 endpoint = mapping.get('endpoint')
                 if not endpoint:
                     continue
+                
+                worker.update_progress(int((i/total)*100), f"Synchronisation de {endpoint}...")
 
                 original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else None
                 if not original_data:
@@ -2000,10 +2093,14 @@ class MrvTeraka:
                     'merged_actions': total_actions,
                     'timestamp': str(__import__('datetime').datetime.now())
                 })
-                self.set_sync_ready(False)
-                self.current_validated_data = None
-        except Exception as exc:
-            self.show_error(self.tr(u'Erreur'), exc)
+            return all_merge_results
+
+        from .worker_thread import Worker
+        self.sync_worker = Worker(multi_sync_task)
+        self.sync_worker.signals.result.connect(on_sync_finished)
+        self.sync_worker.signals.error.connect(on_sync_error)
+        self.sync_worker.signals.progress.connect(lambda val, msg: self.set_progress(val, msg))
+        self.sync_worker.start()
 
     def merge_validated_data(self, mapping, original, validated):
         try:
@@ -2059,7 +2156,8 @@ class MrvTeraka:
                 self.dockwidget.logout_requested.connect(self.logout)
 
             if self.token_manager.is_token_valid():
-                self.dockwidget.set_authenticated(self.current_username, self.api_base_url)
+                role = self.token_manager.get_user_role()
+                self.dockwidget.set_authenticated(self.current_username, self.api_base_url, role=role)
             else:
                 self.dockwidget.set_unauthenticated()
 

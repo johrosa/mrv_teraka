@@ -438,6 +438,18 @@ class DataValidationDialog(QDialog):
         
         self.recommendation.setText("\n".join(recs))
 
+    def show_info(self, title, message):
+        """Affiche une information."""
+        QMessageBox.information(self, title, message)
+
+    def show_warning(self, title, message):
+        """Affiche un avertissement."""
+        QMessageBox.warning(self, title, message)
+
+    def show_error(self, title, message):
+        """Affiche une erreur."""
+        QMessageBox.critical(self, title, message)
+
     def run_validation_rules(self):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
@@ -496,7 +508,7 @@ class DataValidationDialog(QDialog):
 
         if invalid_count > 0:
             msg = f"{invalid_count} enregistrements présentent des anomalies métier."
-            QMessageBox.warning(self, "Contrôle Qualité Automatisé", msg)
+            self.show_warning("Contrôle Qualité Automatisé", msg)
             
             # Mettre à jour les recommandations dans l'onglet 0
             current_recs = self.recommendation.toPlainText()
@@ -505,7 +517,7 @@ class DataValidationDialog(QDialog):
             
             self.tabs.setCurrentIndex(3)
         else:
-            QMessageBox.information(self, "Contrôle Qualité Automatisé",
+            self.show_info("Contrôle Qualité Automatisé",
                                     "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
@@ -628,9 +640,9 @@ class DataValidationDialog(QDialog):
             else:
                 self.validated_data = self.collected_data
 
-        # Remplir uuid_verificator avec l'utilisateur actuel
+        # Remplir uuid_verificateur avec l'utilisateur actuel
         try:
-            # On tente de récupérer le token_manager via le parent (MrvTeraka)
+            # On tente de récupérer le token_manager
             from .token_manager import TokenManager
             tm = TokenManager()
             user_uuid = tm.get_user_id()
@@ -638,10 +650,10 @@ class DataValidationDialog(QDialog):
                 if isinstance(self.validated_data, dict):
                     for table_data in self.validated_data.values():
                         for row in table_data:
-                            row['uuid_verificator'] = user_uuid
+                            row['uuid_verificateur'] = user_uuid
                 elif isinstance(self.validated_data, list):
                     for row in self.validated_data:
-                        row['uuid_verificator'] = user_uuid
+                        row['uuid_verificateur'] = user_uuid
         except Exception:
             pass
 
@@ -662,14 +674,14 @@ class DataValidationDialog(QDialog):
                 self.validated_data = self.collected_data
 
             self.progress.setValue(100)
-            QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
+            self.show_info("Succès", "Données prêtes à fusionner")
             self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
         self.tabs.setCurrentIndex(3)  # Aller à l'onglet validation
-        QMessageBox.information(
-            self, "Révision Manuelle",
+        self.show_info(
+            "Révision Manuelle",
             "Veuillez réviser chaque enregistrement\n"
             "dans l'onglet 'Validation'"
         )
@@ -690,5 +702,5 @@ class DataValidationDialog(QDialog):
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
         
-        QMessageBox.information(self, "Rapport Exporté", f"Rapport sauvegardé: {filename}")
+        self.show_info("Rapport Exporté", f"Rapport sauvegardé: {filename}")
 

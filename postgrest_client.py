@@ -138,6 +138,10 @@ class PostgREST:
         request_headers = self.headers.copy()
         if headers:
             request_headers.update(headers)
+        
+        # Ajouter Prefer: resolution=merge pour les POST/PATCH/PUT pour gérer les upserts
+        if method.upper() in ['POST', 'PATCH', 'PUT'] and 'Prefer' not in request_headers:
+            request_headers['Prefer'] = 'resolution=merge'
 
         try:
             request = urllib.request.Request(
@@ -341,7 +345,7 @@ class PostgREST:
             return False
         try:
             # Utiliser HEAD au lieu de GET pour éviter de télécharger tout le schéma (700Ko+)
-            self._make_request('HEAD', '', show_error_ui=False)
+            self._make_request('HEAD', '', show_error_ui=False, timeout=5)
             return True
         except RuntimeError as exc:
             message = str(exc)
@@ -352,7 +356,7 @@ class PostgREST:
             # ou on pourrait fallback sur un petit GET, mais HEAD est généralement supporté
             return True
         except Exception:
-            return True
+            return False
 
     # Versions avec support UI pour les erreurs
     def select_with_ui(
