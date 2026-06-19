@@ -65,8 +65,23 @@ git clone https://github.com/iTeraka/mrv_teraka.git
 ✓ Données collectées (tableau)
 ✓ Comparaison avant/après
 ✓ Validation ligne par ligne
+✓ Contrôle Qualité Métier ⭐ (Nouveau)
 ✓ Actions: Fusion auto, Révision, Rapport
 ```
+
+### 🧠 Moteur de Règles Métier (BusinessRulesEngine)
+Le plugin intègre désormais un moteur de validation automatisé basé sur des expressions QGIS.
+
+**Comment l'exploiter :**
+1. **Ajout de règles** : Éditez `business_rules.py` et ajoutez vos contraintes dans le dictionnaire `RULES`.
+   ```python
+   'ma_table': [
+       {'name': 'Prix positif', 'expr': '"prix" > 0', 'severity': 'error'},
+       {'name': 'Date cohérente', 'expr': '"date" <= now()', 'severity': 'warning'}
+   ]
+   ```
+2. **Exécution** : Dans le dialogue de validation, cliquez sur **🚀 Lancer vérification**.
+3. **Résultat** : Les lignes invalides passent en orange avec un descriptif de l'erreur dans la colonne "Commentaire" et un résumé dans les recommandations.
 
 ### 🔗 Merge Intelligent
 ```

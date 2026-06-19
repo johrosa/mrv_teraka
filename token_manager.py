@@ -121,6 +121,15 @@ class TokenManager:
 
     def _get_jwt_expiry(self, token: str):
         """Retourne le timestamp d'expiration du JWT s'il est disponible."""
+        payload = self.get_jwt_payload(token)
+        if payload:
+            exp = payload.get('exp')
+            if isinstance(exp, (int, float)):
+                return float(exp)
+        return None
+
+    def get_jwt_payload(self, token: str):
+        """Décode et retourne le payload du JWT."""
         try:
             parts = token.split('.')
             if len(parts) != 3:
@@ -129,12 +138,30 @@ class TokenManager:
             payload = parts[1]
             padding = '=' * (-len(payload) % 4)
             decoded = base64.urlsafe_b64decode(payload + padding).decode('utf-8')
-            payload_data = json.loads(decoded)
-            exp = payload_data.get('exp')
-            if isinstance(exp, (int, float)):
-                return float(exp)
+            return json.loads(decoded)
         except Exception:
             return None
+
+    def get_user_id(self):
+        """Retourne l'ID/UUID de l'utilisateur à partir du jeton."""
+        payload = self.get_jwt_payload(self.token) if self.token else None
+        if payload:
+            # Essayer différents noms de champs communs pour l'ID utilisateur
+            return payload.get('user_id') or payload.get('sub') or payload.get('uuid')
+        return None
+
+    def get_user_role(self):
+        """Retourne le rôle de l'utilisateur à partir du jeton."""
+        if not self.token:
+            self.load_token()
+
+        if not self.token:
+            return None
+
+        payload = self.get_jwt_payload(self.token)
+        if payload:
+            # Chercher le rôle dans les champs communs (role, roles, groups, etc.)
+            return payload.get('role') or payload.get('roles') or payload.get('group') or payload.get('groups')
         return None
 
     def get_token_info(self):

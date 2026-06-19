@@ -50,11 +50,13 @@ class PostgREST:
     
     def _normalize_django_postgrest_url(self) -> str:
         """Retourne l'URL de base Django pour les requêtes PostgREST proxyées."""
-        if self.api_base_url.endswith('/api/data'):
+        if self.api_base_url.endswith('/api/data/'):
             return self.api_base_url
+        if self.api_base_url.endswith('/api/data'):
+            return f"{self.api_base_url}/"
         if self.api_base_url.endswith('/api'):
-            return f"{self.api_base_url}/data"
-        return f"{self.api_base_url}/api/data"
+            return f"{self.api_base_url}/data/"
+        return f"{self.api_base_url}/api/data/"
     
     def set_auth_token(self, token: str):
         """Définit le jeton JWT pour l'authentification"""
@@ -100,6 +102,35 @@ class PostgREST:
         headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """Effectue une requête HTTP vers PostgREST."""
+        from .utils import Utils
+        
+        # Normaliser les UUID dans les données si présentes
+        if data:
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        for k, v in item.items():
+                            if isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                                item[k] = Utils.normalize_uuid(v)
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                        data[k] = Utils.normalize_uuid(v)
+
+        # Normaliser les UUID dans les paramètres (filtres)
+        if params:
+            for k, v in params.items():
+                if isinstance(v, str) and ('.eq.' in v or '.neq.' in v):
+                    # Cas spécial pour les filtres PostgREST type col=eq.{uuid}
+                    parts = v.split('.', 2)
+                    if len(parts) >= 3:
+                        op = parts[1]
+                        val = parts[2]
+                        if 'uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower():
+                            params[k] = f"{parts[0]}.{op}.{Utils.normalize_uuid(val)}"
+                elif isinstance(v, str) and ('uuid' in k.lower() or k.lower() == 'id' or 'pg_uuid' in k.lower()):
+                    params[k] = Utils.normalize_uuid(v)
+
         url = self._build_url(endpoint, params)
         request_data = json.dumps(data).encode('utf-8') if data is not None else None
         
@@ -107,6 +138,10 @@ class PostgREST:
         request_headers = self.headers.copy()
         if headers:
             request_headers.update(headers)
+        
+        # Ajouter Prefer: resolution=merge pour les POST/PATCH/PUT pour gérer les upserts
+        if method.upper() in ['POST', 'PATCH', 'PUT'] and 'Prefer' not in request_headers:
+            request_headers['Prefer'] = 'resolution=merge'
 
         try:
             request = urllib.request.Request(
@@ -305,19 +340,23 @@ class PostgREST:
         return self._make_request('GET', '', show_error_ui=True)
 
     def verify_token(self) -> bool:
-        """Vérifie que le jeton actuel est accepté par le serveur."""
+        """Vérifie que le jeton actuel est accepté par le serveur via une requête HEAD légère."""
         if not self.jwt_token:
             return False
         try:
-            self._make_request('GET', '', show_error_ui=False)
+            # Utiliser HEAD au lieu de GET pour éviter de télécharger tout le schéma (700Ko+)
+            self._make_request('HEAD', '', show_error_ui=False, timeout=5)
             return True
         except RuntimeError as exc:
             message = str(exc)
             if 'HTTP 401' in message or 'HTTP 403' in message:
                 return False
+            # Si le serveur ne supporte pas HEAD, on peut avoir une 405 Method Not Allowed
+            # Dans ce cas on considère que le token est valide (puisqu'on a atteint le serveur)
+            # ou on pourrait fallback sur un petit GET, mais HEAD est généralement supporté
             return True
         except Exception:
-            return True
+            return False
 
     # Versions avec support UI pour les erreurs
     def select_with_ui(

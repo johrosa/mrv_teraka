@@ -793,7 +793,6 @@
                 "uuid_membre",
                 "uuid_operateur",
                 "uuid_verificateur",
-                "uuid_pg",
                 "operateur_id",
                 "c_com",
                 "num_bosquet",

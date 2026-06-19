@@ -12,7 +12,8 @@ import os
 from qgis.PyQt import QtGui, QtWidgets, uic
 from qgis.PyQt.QtCore import pyqtSignal, Qt, QSettings
 from qgis.PyQt.QtWidgets import (
-    QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget, QGroupBox, QSpacerItem, QSizePolicy
+    QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget, QGroupBox, QSpacerItem, QSizePolicy,
+    QListWidget, QListWidgetItem, QCheckBox
 )
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.core import QgsProject
@@ -46,16 +47,17 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Remplir les listes
         self.populate_table_lists()
         self.populate_project_list()
-        self.populate_sector_list()
+        self.populate_region_list()
 
         # Style et Ergonomie
         self.logout_button.setIcon(QIcon(':/plugins/mrv_teraka/login_icon.svg'))
         self.logout_button.setToolTip("Quitter la session en cours")
 
-        self.districtLineEdit.setEditable(True)
-        self.districtLineEdit.setToolTip("Filtrer par secteur/district pour les chargements et rafraîchissements API")
-        if self.districtLineEdit.lineEdit():
-            self.districtLineEdit.lineEdit().setPlaceholderText("Tout le pays...")
+        self.regionComboBox.setEditable(True)
+        self.regionComboBox.lineEdit().setPlaceholderText("Sélectionner une région...")
+
+        self.districtComboBox.setEditable(True)
+        self.districtComboBox.lineEdit().setPlaceholderText("Sélectionner un district...")
 
         # Tooltips métier
         self.compareButton.setToolTip("Vérifier les différences avec la base centrale")
@@ -111,30 +113,67 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             # On stocke le chemin du fichier .qgs/.qgz en data
             self.projectComboBox.addItem(p.get('name'), p.get('project_file'))
 
-    def populate_sector_list(self):
-        """Remplit la liste des secteurs/districts disponibles depuis l'API."""
-        current = self.districtLineEdit.currentText().strip()
-        self.districtLineEdit.blockSignals(True)
-        self.districtLineEdit.clear()
-        self.districtLineEdit.addItem("Tout le pays", "")
+    def populate_region_list(self):
+        """Remplit la liste des régions disponibles."""
+        self.regionComboBox.blockSignals(True)
+        self.regionComboBox.clear()
+        self.regionComboBox.addItem("Toutes les régions", "")
 
-        sectors = []
-        if self.plugin and getattr(self.plugin, 'postgrest', None):
-            sectors = self.plugin.fetch_sector_values()
+        regions = []
+        if self.plugin:
+            regions = self.plugin.fetch_unique_regions()
 
-        for sector in sectors:
-            self.districtLineEdit.addItem(sector, sector)
+        for region in regions:
+            self.regionComboBox.addItem(region, region)
+        self.regionComboBox.blockSignals(False)
 
-        if current:
-            idx = self.districtLineEdit.findText(current)
-            if idx >= 0:
-                self.districtLineEdit.setCurrentIndex(idx)
-            else:
-                self.districtLineEdit.setEditText(current)
-        else:
-            self.districtLineEdit.setCurrentIndex(0)
+    def populate_district_list(self):
+        """Remplit la liste des districts pour la région sélectionnée."""
+        region = self.regionComboBox.currentData()
+        self.districtComboBox.blockSignals(True)
+        self.districtComboBox.clear()
+        self.districtComboBox.addItem("Tous les districts", "")
 
-        self.districtLineEdit.blockSignals(False)
+        districts = []
+        if self.plugin:
+            districts = self.plugin.fetch_unique_districts(region)
+
+        for district in districts:
+            self.districtComboBox.addItem(district, district)
+        self.districtComboBox.blockSignals(False)
+
+    def populate_commune_list(self):
+        """Remplit la liste des communes pour le district sélectionné."""
+        district = self.districtComboBox.currentData()
+        self.communesListWidget.blockSignals(True)
+        self.communesListWidget.clear()
+
+        communes = []
+        if self.plugin:
+            communes = self.plugin.fetch_communes_by_district(district)
+
+        for name, c_com in communes:
+            item = QListWidgetItem(name)
+            item.setData(Qt.UserRole, c_com)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            self.communesListWidget.addItem(item)
+
+        self.communesListWidget.blockSignals(False)
+
+    def on_region_changed(self):
+        self.populate_district_list()
+        self.populate_commune_list()
+
+    def on_district_changed(self):
+        self.populate_commune_list()
+
+    def on_select_all_communes(self, state):
+        self.communesListWidget.blockSignals(True)
+        for i in range(self.communesListWidget.count()):
+            item = self.communesListWidget.item(i)
+            item.setCheckState(Qt.Checked if state == Qt.Checked else Qt.Unchecked)
+        self.communesListWidget.blockSignals(False)
 
     def setup_connections(self):
         """Connecte les signaux aux actions métier."""
@@ -157,6 +196,11 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.autoValidateButton.clicked.connect(self.plugin.auto_validate_mission)
         self.autoSyncButton.clicked.connect(self.plugin.auto_finalize_mission)
 
+        # Filtres Géo
+        self.regionComboBox.currentTextChanged.connect(self.on_region_changed)
+        self.districtComboBox.currentTextChanged.connect(self.on_district_changed)
+        self.selectAllCommunesCheckBox.stateChanged.connect(self.on_select_all_communes)
+
         # Configuration
         self.refreshMappingsButton.clicked.connect(self.on_refresh_mappings_clicked)
 
@@ -178,8 +222,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         if success:
             self.populate_table_lists()
-            self.populate_sector_list()
-            QtWidgets.QMessageBox.information(self, "Succès", "Les listes de couches et secteurs ont été mises à jour depuis l'API.")
+            self.populate_region_list()
+            QtWidgets.QMessageBox.information(self, "Succès", "Les listes de couches et régions ont été mises à jour depuis l'API.")
         else:
             QtWidgets.QMessageBox.warning(self, "Erreur", "Impossible de contacter l'API pour mettre à jour les listes.")
 
@@ -206,11 +250,14 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.status_label.setText(message)
         self.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
-    def set_authenticated(self, username=None, api_url=None):
+    def set_authenticated(self, username=None, api_url=None, role=None):
         self.status_label.setText("● Connecté")
         self.status_label.setStyleSheet("color: #2D5A27; font-weight: bold;")
+        
+        role_suffix = f" ({role})" if role else ""
         if username and api_url:
-            self.user_label.setText(f"{username} @ {api_url}")
+            self.user_label.setText(f"{username}{role_suffix} @ {api_url}")
+        
         self.logout_button.setEnabled(True)
         self.populate_table_lists()
         self.populate_project_list()
@@ -221,14 +268,27 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.endpointComboBox.setEnabled(True)
 
+        # Liste des boutons avec leur accessibilité par rôle
         buttons = [
             'loadDbButton', 'compareButton', 'refreshFromApiButton', 'processProjectButton',
-            'autoPrepareButton', 'autoImportButton', 'autoValidateButton',
+            'autoPrepareButton', 'autoImportButton', 'autoValidateButton', 'autoSyncButton',
             'refreshMappingsButton'
         ]
-        for btn in buttons:
-            if hasattr(self, btn):
-                getattr(self, btn).setEnabled(True)
+        
+        # Logique de restriction par rôle
+        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+        
+        for btn_name in buttons:
+            if hasattr(self, btn_name):
+                btn = getattr(self, btn_name)
+                
+                # Restrictions spécifiques
+                if btn_name in ['autoValidateButton', 'autoSyncButton']:
+                    btn.setEnabled(is_validator)
+                    if not is_validator:
+                        btn.setToolTip("Action réservée aux validateurs")
+                else:
+                    btn.setEnabled(True)
 
     def set_unauthenticated(self):
         self.status_label.setText("● Déconnecté")

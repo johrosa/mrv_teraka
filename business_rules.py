@@ -4,29 +4,73 @@ from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextU
 class BusinessRulesEngine:
     """Moteur de règles métier automatisé pour les tables iTeraka."""
 
+    # Cache for compiled QgsExpression objects to avoid redundant parsing.
+    # Key is (table_name, expr_str) because preparation is specific to table fields.
+    _EXPRESSION_CACHE = {}
+
     RULES = {
         'arbre_gps': [
             {'name': 'Diamètre positif', 'expr': '"dbh" > 0', 'severity': 'error'},
-            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'}
+            {'name': 'Hauteur réaliste', 'expr': '"hauteur" < 50', 'severity': 'warning'},
+            {'name': 'Espèce renseignée', 'expr': 'length("espece") > 0', 'severity': 'error'}
+        ],
+        'bosquet_gps': [
+            {'name': 'Nom bosquet présent', 'expr': 'length("nom") > 0', 'severity': 'error'},
+            {'name': 'C_COM valide', 'expr': 'length("c_com") > 0', 'severity': 'error'}
         ],
         'communes': [
-            {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'}
+            {'name': 'Nom présent', 'expr': 'length("nom") > 0', 'severity': 'error'},
+            {'name': 'Code commune valide', 'expr': '"c_com" >= 100000', 'severity': 'warning'}
+        ],
+        'pg_gps': [
+            {'name': 'Code PG présent', 'expr': 'length("code_pg") > 0', 'severity': 'error'},
+            {'name': 'Commune valide', 'expr': 'length("c_com") > 0', 'severity': 'error'}
+        ],
+        'membre': [
+            {'name': 'ID membre présent', 'expr': 'length("uuid_membre") > 0', 'severity': 'error'},
+            {'name': 'Nom membre présent', 'expr': 'length("nom") > 0', 'severity': 'error'}
+        ],
+        'parcelle': [
+            {'name': 'Surface positive', 'expr': '"surface" > 0', 'severity': 'error'},
+            {'name': 'Propriétaire renseigné', 'expr': 'length("proprio") > 0', 'severity': 'warning'}
         ]
         # On peut étendre pour les 97 tables
     }
 
     @staticmethod
-    def validate_feature(table_name, feature):
-        """Valide une entité QGIS selon les règles métier de sa table."""
+    def validate_feature(table_name, feature, context=None):
+        """
+        Valide une entité QGIS selon les règles métier de sa table.
+
+        Args:
+            table_name: Nom de la table pour charger les règles.
+            feature: Entité QgsFeature à valider.
+            context: QgsExpressionContext optionnel pour réutilisation (performance).
+        """
         errors = []
         rules = BusinessRulesEngine.RULES.get(table_name, [])
 
-        context = QgsExpressionContext()
-        context.appendScope(QgsExpressionContextUtils.globalScope())
+        if not rules:
+            return errors
+
+        if context is None:
+            context = QgsExpressionContext()
+            context.appendScope(QgsExpressionContextUtils.globalScope())
+
         context.setFeature(feature)
 
         for rule in rules:
-            exp = QgsExpression(rule['expr'])
+            expr_str = rule['expr']
+            cache_key = (table_name, expr_str)
+
+            exp = BusinessRulesEngine._EXPRESSION_CACHE.get(cache_key)
+            if exp is None:
+                exp = QgsExpression(expr_str)
+                # Optimization: prepare once with the context if fields are available.
+                # Note: prepare() optimizes based on field names/indices in the context.
+                exp.prepare(context)
+                BusinessRulesEngine._EXPRESSION_CACHE[cache_key] = exp
+
             if not exp.evaluate(context):
                 errors.append({
                     'message': rule['name'],

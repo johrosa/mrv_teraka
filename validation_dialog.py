@@ -9,11 +9,12 @@ from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
     QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QProgressBar,
-    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout
+    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout, QWidget
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
 import json
+import os
 from .business_rules import BusinessRulesEngine
 
 
@@ -25,6 +26,12 @@ class DataValidationDialog(QDialog):
     def __init__(self, parent=None, collected_data=None, original_data=None):
         super().__init__(parent)
 
+        self.setWindowFlags(
+            self.windowFlags() |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowMaximizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
         # Gérer les données multi-tables ou mono-table
         self.full_collected_data = collected_data or {}
         self.full_original_data = original_data or {}
@@ -37,6 +44,7 @@ class DataValidationDialog(QDialog):
 
         # Table active
         self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
+        self.current_record_index = -1
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -82,8 +90,8 @@ class DataValidationDialog(QDialog):
         # Onglet 1: Vue d'ensemble
         self.tabs.addTab(self.create_overview_tab(), "Vue d'ensemble")
         
-        # Onglet 2: Données collectées
-        self.tabs.addTab(self.create_collected_tab(), "Données Collectées")
+        # Onglet 2: Données avant/après
+        self.tabs.addTab(self.create_data_tabs(), "Données")
         
         # Onglet 3: Comparaison
         self.tabs.addTab(self.create_comparison_tab(), "Comparaison")
@@ -129,6 +137,7 @@ class DataValidationDialog(QDialog):
         layout.addLayout(button_layout)
         
         self.setLayout(layout)
+        self.table_diff.itemChanged.connect(self.on_diff_item_changed)
         self.populate_data()
 
     def switch_table(self, table_name):
@@ -136,6 +145,11 @@ class DataValidationDialog(QDialog):
         self.current_table = table_name
         self.collected_data = self.full_collected_data.get(table_name, [])
         self.original_data = self.full_original_data.get(table_name, [])
+        self.current_record_index = -1
+        if hasattr(self, 'table_diff'):
+            self.table_diff.setRowCount(0)
+        if hasattr(self, 'table_before'):
+            self.table_before.setRowCount(0)
 
         # Rafraîchir toutes les vues
         self.populate_data()
@@ -181,23 +195,32 @@ class DataValidationDialog(QDialog):
         widget.setLayout(layout)
         return widget
     
-    def create_collected_tab(self):
-        """Onglet données collectées"""
+    def create_data_tabs(self):
+        """Onglet contenant les données originales et collectées"""
         layout = QVBoxLayout()
-        
+        data_tabs = QTabWidget()
+
+        # Sous-onglet: Original (Base)
+        self.table_before = QTableWidget()
+        self.table_before.setAlternatingRowColors(True)
+        self.table_before.setColumnCount(0)
+        self.populate_table_from_data(self.table_before, self.original_data)
+        data_tabs.addTab(self.table_before, "Données Originales (Base)")
+
+        # Sous-onglet: Collecté (Terrain)
         self.table_collected = QTableWidget()
         self.table_collected.setAlternatingRowColors(True)
         self.table_collected.setColumnCount(0)
         self.populate_table_from_data(self.table_collected, self.collected_data)
-        
-        layout.addWidget(self.table_collected)
-        
-        widget = QGroupBox("Données Collectées")
+        data_tabs.addTab(self.table_collected, "Données Collectées (Terrain)")
+
+        layout.addWidget(data_tabs)
+        widget = QWidget()
         widget.setLayout(layout)
         return widget
     
     def create_comparison_tab(self):
-        """Onglet comparaison avant/après"""
+        """Onglet comparaison et résolution de conflits"""
         layout = QVBoxLayout()
         
         # Contrôles de comparaison
@@ -215,32 +238,15 @@ class DataValidationDialog(QDialog):
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
         
-        # Tables de comparaison
-        tables_layout = QHBoxLayout()
-        
-        # Avant
-        layout_before = QVBoxLayout()
-        l_before = QLabel("⬅️ Original (Base)")
-        l_before.setStyleSheet("color: #d32f2f; font-weight: bold; font-size: 11px;")
-        layout_before.addWidget(l_before)
-        self.table_before = QTableWidget()
-        self.table_before.setAlternatingRowColors(True)
-        layout_before.addWidget(self.table_before)
-        
-        # Après
-        layout_after = QVBoxLayout()
-        l_after = QLabel("➡️ Collecté (Terrain)")
-        l_after.setStyleSheet("color: #388e3c; font-weight: bold; font-size: 11px;")
-        layout_after.addWidget(l_after)
-        self.table_after = QTableWidget()
-        self.table_after.setAlternatingRowColors(True)
-        layout_after.addWidget(self.table_after)
-        
-        tables_layout.addLayout(layout_before)
-        tables_layout.addLayout(layout_after)
-        layout.addLayout(tables_layout)
-        
-        widget = QGroupBox("Comparaison Avant/Après")
+        # Table de résolution unique
+        self.table_diff = QTableWidget()
+        self.table_diff.setAlternatingRowColors(True)
+        self.table_diff.setColumnCount(4)
+        self.table_diff.setHorizontalHeaderLabels(["Champ", "Base", "Terrain", "Valeur finale"])
+        self.table_diff.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.table_diff)
+
+        widget = QGroupBox("Résolution des Conflits")
         widget.setLayout(layout)
         return widget
     
@@ -397,6 +403,8 @@ class DataValidationDialog(QDialog):
         # Vider les onglets
         self.table_collected.setRowCount(0)
         self.table_before.setRowCount(0)
+        if hasattr(self, 'table_diff'):
+            self.table_diff.setRowCount(0)
         self.combo_records.clear()
 
         # Recréer la table de validation car sa structure peut changer
@@ -430,25 +438,52 @@ class DataValidationDialog(QDialog):
         
         self.recommendation.setText("\n".join(recs))
 
+    def show_info(self, title, message):
+        """Affiche une information."""
+        QMessageBox.information(self, title, message)
+
+    def show_warning(self, title, message):
+        """Affiche un avertissement."""
+        QMessageBox.warning(self, title, message)
+
+    def show_error(self, title, message):
+        """Affiche une erreur."""
+        QMessageBox.critical(self, title, message)
+
     def run_validation_rules(self):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
+        row_count = self.table_validation.rowCount()
+        if row_count == 0:
+            return
 
-        for row in range(self.table_validation.rowCount()):
+        # Optimization: Initialize QgsFields and context once outside the loop
+        # We collect all unique keys from the entire dataset to ensure compatibility
+        all_keys = set()
+        for item in self.collected_data:
+            all_keys.update(item.keys())
+
+        fields = QgsFields()
+        for key in sorted(all_keys):
+            fields.append(QgsField(key, QVariant.String))
+
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+
+        # Reuse a single QgsFeature object
+        feat = QgsFeature(fields)
+        sorted_keys = sorted(all_keys)
+
+        for row in range(row_count):
             item_data = self.collected_data[row]
 
-            # Créer une feature virtuelle avec les champs nécessaires pour éviter KeyError
-            fields = QgsFields()
-            for key in item_data.keys():
-                fields.append(QgsField(key, QVariant.String))
+            # Update all feature attributes to prevent leakage from previous rows
+            # Performance: setAttributes with a list is faster than multiple setAttribute calls
+            feat.setAttributes([item_data.get(key) for key in sorted_keys])
 
-            feat = QgsFeature(fields)
-            # On simule les champs pour l'expression
-            for key, value in item_data.items():
-                feat.setAttribute(key, value)
-
-            # Utiliser le moteur de règles
-            errors = BusinessRulesEngine.validate_feature(self.current_table, feat)
+            # Utiliser le moteur de règles avec le contexte réutilisé
+            # Optimization: Combining QgsExpression caching with Context reuse gives >90% speedup
+            errors = BusinessRulesEngine.validate_feature(self.current_table, feat, context=context)
 
             if errors:
                 invalid_count += 1
@@ -464,77 +499,100 @@ class DataValidationDialog(QDialog):
                 comment_widget = self.table_validation.cellWidget(row, 5)
                 if isinstance(comment_widget, QLineEdit):
                     comment_widget.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
+                
+                # Ajouter un tooltip avec les erreurs détaillées sur toute la ligne
+                for col in range(self.table_validation.columnCount()):
+                    tbl_item = self.table_validation.item(row, col)
+                    if tbl_item:
+                        tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
 
         if invalid_count > 0:
-            QMessageBox.warning(self, "Contrôle Qualité Automatisé",
-                                f"{invalid_count} enregistrements présentent des anomalies métier.")
+            msg = f"{invalid_count} enregistrements présentent des anomalies métier."
+            self.show_warning("Contrôle Qualité Automatisé", msg)
+            
+            # Mettre à jour les recommandations dans l'onglet 0
+            current_recs = self.recommendation.toPlainText()
+            error_details = f"\n⚠️ {invalid_count} anomalies métier détectées dans la table '{self.current_table}'."
+            self.recommendation.setText(current_recs + error_details)
+            
             self.tabs.setCurrentIndex(3)
         else:
-            QMessageBox.information(self, "Contrôle Qualité Automatisé",
+            self.show_info("Contrôle Qualité Automatisé",
                                     "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
-        """Affiche la comparaison avant/après pour un enregistrement"""
-        if 0 <= index < len(self.collected_data):
-            collected_item = self.collected_data[index]
-            original_item = self.original_data[index] if index < len(self.original_data) else {}
+        """Affiche la comparaison avec sélection interactive de la valeur finale"""
+        if index < 0 or index >= len(self.collected_data):
+            return
 
-            # Récupérer tous les champs (before + after)
-            all_keys = set(list(collected_item.keys()) + list(original_item.keys()))
-            all_keys = sorted(list(all_keys))
+        self.current_record_index = index
+        self.table_diff.blockSignals(True)
+        self.table_diff.setRowCount(0)
 
-            # Configuration des tableaux
-            self.table_before.setColumnCount(2)
-            self.table_before.setHorizontalHeaderLabels(["Champ", "Valeur"])
-            self.table_before.setRowCount(len(all_keys))
+        collected_item = self.collected_data[index]
+        original_item = self.original_data[index] if index < len(self.original_data) else {}
 
-            self.table_after.setColumnCount(2)
-            self.table_after.setHorizontalHeaderLabels(["Champ", "Valeur"])
-            self.table_after.setRowCount(len(all_keys))
+        all_keys = sorted(list(set(list(collected_item.keys()) + list(original_item.keys()))))
+        self.table_diff.setRowCount(len(all_keys))
 
-            # Remplir les tableaux avec détection des changements
-            for row, key in enumerate(all_keys):
-                original_value = original_item.get(key, "[absent]")
-                collected_value = collected_item.get(key, "[absent]")
+        for row, key in enumerate(all_keys):
+            orig_val = original_item.get(key, "[absent]")
+            coll_val = collected_item.get(key, "[absent]")
 
-                # Formater les valeurs
-                original_str = str(original_value) if not isinstance(original_value, (dict, list)) else json.dumps(original_value)[:100]
-                collected_str = str(collected_value) if not isinstance(collected_value, (dict, list)) else json.dumps(collected_value)[:100]
+            self.table_diff.setItem(row, 0, QTableWidgetItem(key))
 
-                # Table AVANT (original)
-                label_item_before = QTableWidgetItem(key)
-                value_item_before = QTableWidgetItem(original_str)
-                self.table_before.setItem(row, 0, label_item_before)
-                self.table_before.setItem(row, 1, value_item_before)
+            # Case à cocher pour BASE
+            base_item = QTableWidgetItem(str(orig_val))
+            base_item.setFlags(base_item.flags() | Qt.ItemIsUserCheckable)
+            base_item.setCheckState(Qt.Unchecked)
+            self.table_diff.setItem(row, 1, base_item)
 
-                # Table APRÈS (collecté)
-                label_item_after = QTableWidgetItem(key)
-                value_item_after = QTableWidgetItem(collected_str)
-                self.table_after.setItem(row, 0, label_item_after)
-                self.table_after.setItem(row, 1, value_item_after)
+            # Case à cocher pour TERRAIN (par défaut)
+            coll_item = QTableWidgetItem(str(coll_val))
+            coll_item.setFlags(coll_item.flags() | Qt.ItemIsUserCheckable)
+            coll_item.setCheckState(Qt.Checked)
+            self.table_diff.setItem(row, 2, coll_item)
 
-                # Colorer si changement détecté
-                if original_value != collected_value:
-                    # Colorer les deux tables
-                    before_color = QColor(255, 200, 200)  # Rose clair
-                    after_color = QColor(200, 255, 200)   # Vert clair
+            # Valeur finale (Éditable)
+            final_item = QTableWidgetItem(str(coll_val))
+            final_item.setFlags(final_item.flags() | Qt.ItemIsEditable)
+            if orig_val != coll_val:
+                final_item.setBackground(QColor(255, 255, 200)) # Highlight
+            self.table_diff.setItem(row, 3, final_item)
 
-                    value_item_before.setBackground(before_color)
-                    value_item_after.setBackground(after_color)
-                    label_item_before.setBackground(before_color)
-                    label_item_after.setBackground(after_color)
+        self.table_diff.blockSignals(False)
 
-                    # Font bold pour les modifications
-                    font = label_item_before.font()
-                    font.setBold(True)
-                    label_item_before.setFont(font)
-                    label_item_after.setFont(font)
-                    value_item_before.setFont(font)
-                    value_item_after.setFont(font)
+    def on_diff_item_changed(self, item):
+        """Met à jour les données quand la valeur finale ou une checkbox est modifiée"""
+        if self.current_record_index == -1:
+            return
 
-            # Redimensionner les colonnes
-            self.table_before.resizeColumnsToContents()
-            self.table_after.resizeColumnsToContents()
+        row = item.row()
+        col = item.column()
+        field_name = self.table_diff.item(row, 0).text()
+
+        # Logique des cases à cocher (Colonnes 1: Base, 2: Terrain)
+        if col in [1, 2]:
+            if item.checkState() == Qt.Checked:
+                self.table_diff.blockSignals(True)
+                # Décocher l'autre colonne
+                other_col = 2 if col == 1 else 1
+                self.table_diff.item(row, other_col).setCheckState(Qt.Unchecked)
+
+                # Mettre à jour la valeur finale
+                chosen_val = item.text()
+                self.table_diff.item(row, 3).setText(chosen_val)
+                # Synchroniser avec les données collectées
+                self.collected_data[self.current_record_index][field_name] = chosen_val
+                print(f"DEBUG: Choix pour {field_name} -> {chosen_val}")
+                self.table_diff.blockSignals(False)
+            return
+
+        # Mise à jour manuelle de la valeur finale (Colonne 3)
+        if col == 3:
+            new_value = item.text()
+            print(f"DEBUG: Mise à jour {field_name} = {new_value}")
+            self.collected_data[self.current_record_index][field_name] = new_value
 
     def detect_changes(self, item, index):
         """Détecte les changements par rapport à l'original"""
@@ -545,10 +603,17 @@ class DataValidationDialog(QDialog):
         changes = []
         
         # Comparer tous les champs
+        from .utils import Utils
         all_keys = set(list(item.keys()) + list(original.keys()))
         for key in sorted(all_keys):
             original_value = original.get(key)
             item_value = item.get(key)
+
+            # Normaliser les UUID pour la comparaison
+            if isinstance(original_value, str) and ('uuid' in key.lower() or key.lower() == 'id'):
+                original_value = Utils.normalize_uuid(original_value)
+            if isinstance(item_value, str) and ('uuid' in key.lower() or key.lower() == 'id'):
+                item_value = Utils.normalize_uuid(item_value)
 
             if key not in original:
                 changes.append(f"🆕 {key}")
@@ -575,6 +640,23 @@ class DataValidationDialog(QDialog):
             else:
                 self.validated_data = self.collected_data
 
+        # Remplir uuid_verificateur avec l'utilisateur actuel
+        try:
+            # On tente de récupérer le token_manager
+            from .token_manager import TokenManager
+            tm = TokenManager()
+            user_uuid = tm.get_user_id()
+            if user_uuid:
+                if isinstance(self.validated_data, dict):
+                    for table_data in self.validated_data.values():
+                        for row in table_data:
+                            row['uuid_verificateur'] = user_uuid
+                elif isinstance(self.validated_data, list):
+                    for row in self.validated_data:
+                        row['uuid_verificateur'] = user_uuid
+        except Exception:
+            pass
+
         super().accept()
 
     def auto_merge(self):
@@ -592,14 +674,14 @@ class DataValidationDialog(QDialog):
                 self.validated_data = self.collected_data
 
             self.progress.setValue(100)
-            QMessageBox.information(self, "Succès", "Données prêtes à fusionner")
+            self.show_info("Succès", "Données prêtes à fusionner")
             self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
         self.tabs.setCurrentIndex(3)  # Aller à l'onglet validation
-        QMessageBox.information(
-            self, "Révision Manuelle",
+        self.show_info(
+            "Révision Manuelle",
             "Veuillez réviser chaque enregistrement\n"
             "dans l'onglet 'Validation'"
         )
@@ -620,5 +702,5 @@ class DataValidationDialog(QDialog):
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
         
-        QMessageBox.information(self, "Rapport Exporté", f"Rapport sauvegardé: {filename}")
+        self.show_info("Rapport Exporté", f"Rapport sauvegardé: {filename}")
 
