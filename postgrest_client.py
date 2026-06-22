@@ -80,14 +80,15 @@ class PostgREST:
         Returns:
             URL complète formatée.
         """
+        endpoint = endpoint.strip('/')
         if self.mode == PostgRESTMode.DJANGO:
-            # For Django mode, the final URL should be postgrest_api_url + endpoint
-            # self.postgrest_api_url is already normalized to '.../api/data/'
-            url = f"{self.postgrest_api_url}{endpoint.lstrip('/')}"
+            if endpoint.startswith('api/data/'):
+                endpoint = endpoint[len('api/data/'):]
+            elif endpoint.startswith('data/'):
+                endpoint = endpoint[len('data/'):]
 
-        else: # Standalone mode
-            url = f"{self.postgrest_api_url}/{endpoint.lstrip('/')}"
-
+        base_url = self.postgrest_api_url.rstrip('/')
+        url = f"{base_url}/{endpoint}" if endpoint else base_url
         if params:
             query_string = urllib.parse.urlencode(params)
             url = f"{url}?{query_string}"

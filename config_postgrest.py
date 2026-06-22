@@ -32,11 +32,16 @@ def normalize_layer_mapping(layer_name: str, mapping) -> Dict[str, str]:
         }
 
     if isinstance(mapping, dict):
-        return {
+        normalized = {
             'endpoint': str(mapping.get('endpoint', normalize_layer_name_to_endpoint(layer_name))),
             'geom_field': str(mapping.get('geom_field', DEFAULT_GEOM_FIELD)),
             'pk_field': str(mapping.get('pk_field', DEFAULT_PK_FIELD))
         }
+        if isinstance(mapping.get('columns'), list):
+            normalized['columns'] = mapping['columns']
+        if isinstance(mapping.get('field_map'), dict):
+            normalized['field_map'] = mapping['field_map']
+        return normalized
 
     return {
         'endpoint': normalize_layer_name_to_endpoint(layer_name),

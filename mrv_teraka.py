@@ -657,6 +657,43 @@ class MrvTeraka:
 
         return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
 
+    def mapping_columns(self, mapping):
+        if not isinstance(mapping, dict):
+            return set()
+        return {str(col).lower() for col in mapping.get('columns', [])}
+
+    def mapping_has_column(self, mapping, column):
+        return str(column).lower() in self.mapping_columns(mapping)
+
+    def prepare_rows_for_mapping(self, rows, mapping, add_user_uuid=True):
+        if not isinstance(rows, list):
+            return rows
+
+        allowed_columns = self.mapping_columns(mapping)
+        prepared_rows = []
+        user_uuid = None
+        if add_user_uuid and self.mapping_has_column(mapping, 'uuid_operateur'):
+            try:
+                user_uuid = self.token_manager.get_user_id()
+            except Exception:
+                user_uuid = None
+
+        for row in rows:
+            if not isinstance(row, dict):
+                prepared_rows.append(row)
+                continue
+
+            prepared = {
+                key: value
+                for key, value in row.items()
+                if not allowed_columns or str(key).lower() in allowed_columns
+            }
+            if user_uuid and not prepared.get('uuid_operateur'):
+                prepared['uuid_operateur'] = user_uuid
+            prepared_rows.append(prepared)
+
+        return prepared_rows
+
     # ─────────────────────────────────────────────────────────────────────
     # FILTRES COMMUNES / SECTEURS
     # ─────────────────────────────────────────────────────────────────────
@@ -1736,7 +1773,7 @@ class MrvTeraka:
 
                 filtered_row[geom_field] = geom_value
 
-                if user_uuid and not filtered_row.get('uuid_operateur'):
+                if 'uuid_operateur' in api_columns and user_uuid and not filtered_row.get('uuid_operateur'):
                     filtered_row['uuid_operateur'] = user_uuid
 
                 for k, v in list(filtered_row.items()):
@@ -1978,18 +2015,19 @@ class MrvTeraka:
             if validation_dialog.exec_() == DataValidationDialog.Accepted:
                 validated_data = validation_dialog.validated_data
                 
-                # S'assurer que uuid_operateur est présent si absent (et qu'on a un utilisateur)
-                user_uuid = self.token_manager.get_user_id()
-                if user_uuid:
-                    if isinstance(validated_data, dict):
-                        for table_data in validated_data.values():
-                            for row in table_data:
-                                if not row.get('uuid_operateur'):
-                                    row['uuid_operateur'] = user_uuid
-                    elif isinstance(validated_data, list):
-                        for row in validated_data:
-                            if not row.get('uuid_operateur'):
-                                row['uuid_operateur'] = user_uuid
+                if isinstance(validated_data, dict) and not is_geojson(validated_data):
+                    validated_data = {
+                        endpoint: self.prepare_rows_for_mapping(
+                            table_data,
+                            self.get_mapping_for_endpoint(endpoint)
+                        )
+                        for endpoint, table_data in validated_data.items()
+                    }
+                elif isinstance(validated_data, list):
+                    mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
+                        self.dockwidget.endpointLineEdit.text()
+                    )
+                    validated_data = self.prepare_rows_for_mapping(validated_data, mapping)
 
                 validation_results = {
                     'status': 'approved',
@@ -2069,6 +2107,7 @@ class MrvTeraka:
                 endpoint = mapping.get('endpoint')
                 if not endpoint:
                     continue
+                validated_data = self.prepare_rows_for_mapping(validated_data, mapping)
                 
                 worker.update_progress(int((i/total)*100), f"Synchronisation de {endpoint}...")
 
