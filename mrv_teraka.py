@@ -39,7 +39,7 @@ class MrvTeraka:
         self.iface = iface
 
         self.postgrest_mode = PostgRESTMode.DJANGO
-        self.api_base_url = 'http://localhost:8000'
+        self.api_base_url = None
 
         self.postgrest = None
         self.token_manager = TokenManager()

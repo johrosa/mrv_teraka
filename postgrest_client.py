@@ -56,7 +56,9 @@ class PostgREST:
             return f"{self.api_base_url}/"
         if self.api_base_url.endswith('/api'):
             return f"{self.api_base_url}/data/"
-        return f"{self.api_base_url}/api/data/"
+        if '/api' not in self.api_base_url:
+             return f"{self.api_base_url}/api/data/"
+        return f"{self.api_base_url}/data/"
     
     def set_auth_token(self, token: str):
         """Définit le jeton JWT pour l'authentification"""
@@ -78,14 +80,14 @@ class PostgREST:
         Returns:
             URL complète formatée.
         """
-        endpoint = endpoint.strip('/')
         if self.mode == PostgRESTMode.DJANGO:
-            if endpoint.startswith('api/data/'):
-                endpoint = endpoint[len('api/data/'):]
-            elif endpoint.startswith('data/'):
-                endpoint = endpoint[len('data/'):]
+            # For Django mode, the final URL should be postgrest_api_url + endpoint
+            # self.postgrest_api_url is already normalized to '.../api/data/'
+            url = f"{self.postgrest_api_url}{endpoint.lstrip('/')}"
 
-        url = f"{self.postgrest_api_url}/{endpoint}" if endpoint else self.postgrest_api_url
+        else: # Standalone mode
+            url = f"{self.postgrest_api_url}/{endpoint.lstrip('/')}"
+
         if params:
             query_string = urllib.parse.urlencode(params)
             url = f"{url}?{query_string}"
@@ -508,7 +510,9 @@ class PostgRESTAuthenticator:
             return self.api_base_url[:-len('/data')]
         if self.api_base_url.endswith('/api'):
             return self.api_base_url
-        return f"{self.api_base_url}/api"
+        if '/api' not in self.api_base_url:
+            return f"{self.api_base_url}/api"
+        return self.api_base_url # Assume it's correct if /api is present but not at the end
 
     def authenticate(
         self,
@@ -607,7 +611,3 @@ class PostgRESTAuthenticator:
             raise RuntimeError('Réponse invalide: jeton JWT introuvable')
         
         return token
-
-
-
-
