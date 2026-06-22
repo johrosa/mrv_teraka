@@ -512,7 +512,7 @@ class PostgRESTAuthenticator:
             return self.api_base_url
         if '/api' not in self.api_base_url:
             return f"{self.api_base_url}/api"
-        return self.api_base_url # Assume it's correct if /api is present but not at the end
+        return self.api_base_url 
 
     def authenticate(
         self,

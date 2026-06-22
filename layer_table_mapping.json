@@ -35,14 +35,22 @@
                 "uuid_lutte_nuisible"
             ]
         },
-        "core_users_groups": {
-            "endpoint": "core_users_groups",
+        "audit_log_view": {
+            "endpoint": "audit_log_view",
             "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
-                "users_id",
-                "group_id"
+                "event_time",
+                "schema_name",
+                "table_name",
+                "operation",
+                "row_data",
+                "changed_by",
+                "changed_by_email",
+                "txid",
+                "prev_hash",
+                "row_hash"
             ]
         },
         "answer_sourcing_graine_arbre_baseline": {
@@ -403,9 +411,9 @@
             "pk_field": "id",
             "columns": [
                 "id",
-                "role_id",
                 "created_at",
                 "updated_at",
+                "role_id",
                 "user_id"
             ]
         },
@@ -626,6 +634,23 @@
                 "uuid_topo"
             ]
         },
+        "audit_log": {
+            "endpoint": "audit_log",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "event_time",
+                "schema_name",
+                "table_name",
+                "operation",
+                "row_data",
+                "changed_by",
+                "txid",
+                "prev_hash",
+                "row_hash"
+            ]
+        },
         "answer_utilisation_arbre_bosquet_suivi": {
             "endpoint": "answer_utilisation_arbre_bosquet_suivi",
             "geom_field": "geom",
@@ -688,7 +713,7 @@
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_suivi",
+                "uuid_pg_suivi",
                 "uuid_pg_gps",
                 "date_suivi",
                 "trois_familles",
@@ -793,6 +818,7 @@
                 "uuid_membre",
                 "uuid_operateur",
                 "uuid_verificateur",
+                "uuid_pg",
                 "operateur_id",
                 "c_com",
                 "num_bosquet",
@@ -1082,16 +1108,6 @@
                 "nom",
                 "nom_malagasy",
                 "uuid_usufruitier"
-            ]
-        },
-        "core_users_user_permissions": {
-            "endpoint": "core_users_user_permissions",
-            "geom_field": "geom",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "users_id",
-                "permission_id"
             ]
         },
         "django_session": {
@@ -1481,6 +1497,15 @@
                 "external_url"
             ]
         },
+        "test_audit_table": {
+            "endpoint": "test_audit_table",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "data"
+            ]
+        },
         "produits_arbres": {
             "endpoint": "produits_arbres",
             "geom_field": "geom",
@@ -1637,9 +1662,9 @@
                 "id",
                 "code",
                 "description",
-                "level",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                "level"
             ]
         }
     }
