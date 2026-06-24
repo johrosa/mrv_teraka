@@ -14,7 +14,7 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QInputDialog, QLineEdit, Q
 
 from .resources import *
 
-from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes, QgsRasterLayer
+from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes, QgsRasterLayer, QgsDefaultValue
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
@@ -665,18 +665,70 @@ class MrvTeraka:
     def mapping_has_column(self, mapping, column):
         return str(column).lower() in self.mapping_columns(mapping)
 
-    def prepare_rows_for_mapping(self, rows, mapping, add_user_uuid=True):
+    def conflict_field_for_mapping(self, mapping):
+        """Préfère uuid_<endpoint> pour les upserts quand cette colonne existe."""
+        if not isinstance(mapping, dict):
+            return 'id'
+
+        endpoint = str(mapping.get('endpoint') or '').strip().lower()
+        columns = self.mapping_columns(mapping)
+        pk_field = str(mapping.get('pk_field', 'id') or 'id').lower()
+
+        candidates = []
+        if endpoint:
+            candidates.append(f'uuid_{endpoint}')
+            if endpoint.endswith('s'):
+                candidates.append(f'uuid_{endpoint[:-1]}')
+
+        for candidate in candidates:
+            if candidate in columns:
+                return candidate
+
+        return pk_field
+
+    def is_current_user_validator(self):
+        try:
+            if self.token_manager.get_is_validator():
+                return True
+        except Exception:
+            pass
+
+        role = self.token_manager.get_user_role()
+        if isinstance(role, (list, tuple, set)):
+            role_text = " ".join(str(item) for item in role)
+        else:
+            role_text = str(role or "")
+        role_text = role_text.lower()
+        return any(
+            value in role_text
+            for value in ['validator', 'validateur', 'admin', 'superviseur', 'mrv_l3', 'mrv']
+        )
+
+    def current_user_uuid(self):
+        try:
+            return self.token_manager.get_user_id()
+        except Exception:
+            return None
+
+    def field_index_by_name(self, layer, field_name):
+        if not layer:
+            return -1
+        target = str(field_name).lower()
+        fields = layer.fields()
+        for idx in range(fields.count()):
+            if fields.at(idx).name().lower() == target:
+                return idx
+        return -1
+
+    def prepare_rows_for_mapping(self, rows, mapping, add_user_uuid=True, add_verifier_uuid=False):
         if not isinstance(rows, list):
             return rows
 
         allowed_columns = self.mapping_columns(mapping)
         prepared_rows = []
-        user_uuid = None
-        if add_user_uuid and self.mapping_has_column(mapping, 'uuid_operateur'):
-            try:
-                user_uuid = self.token_manager.get_user_id()
-            except Exception:
-                user_uuid = None
+        user_uuid = self.current_user_uuid()
+        should_stamp_operator = add_user_uuid and user_uuid and self.mapping_has_column(mapping, 'uuid_operateur')
+        should_stamp_verifier = add_verifier_uuid and user_uuid and self.mapping_has_column(mapping, 'uuid_verificateur')
 
         for row in rows:
             if not isinstance(row, dict):
@@ -688,8 +740,10 @@ class MrvTeraka:
                 for key, value in row.items()
                 if not allowed_columns or str(key).lower() in allowed_columns
             }
-            if user_uuid and not prepared.get('uuid_operateur'):
+            if should_stamp_operator and not prepared.get('uuid_operateur'):
                 prepared['uuid_operateur'] = user_uuid
+            if should_stamp_verifier and not prepared.get('uuid_verificateur'):
+                prepared['uuid_verificateur'] = user_uuid
             prepared_rows.append(prepared)
 
         return prepared_rows
@@ -1462,6 +1516,8 @@ class MrvTeraka:
                 layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
             self.copy_layer_style(source_layer, layer)
             self.copy_layer_form(source_layer, layer)
+            if endpoint:
+                self.configure_operator_capture_for_mergin_layer(layer, mapping)
             mission_project.addMapLayer(layer, False)
             target_layers_by_source_id[source_layer.id()] = layer
 
@@ -1480,6 +1536,22 @@ class MrvTeraka:
             return None
 
         return project_file
+
+    def configure_operator_capture_for_mergin_layer(self, layer, mapping):
+        """Default uuid_operateur to the logged-in user for field edits in Mergin Maps."""
+        user_uuid = self.current_user_uuid()
+        if not user_uuid or not self.mapping_has_column(mapping, 'uuid_operateur'):
+            return
+
+        field_idx = self.field_index_by_name(layer, 'uuid_operateur')
+        if field_idx < 0:
+            return
+
+        escaped_uuid = str(user_uuid).replace("'", "''")
+        try:
+            layer.setDefaultValueDefinition(field_idx, QgsDefaultValue("'{}'".format(escaped_uuid), True))
+        except Exception:
+            pass
 
     def copy_layer_style(self, source_layer, target_layer):
         try:
@@ -1641,10 +1713,7 @@ class MrvTeraka:
         if not self.check_api_auth():
             return
 
-        role = self.token_manager.get_user_role()
-        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
-        
-        if not is_validator:
+        if not self.is_current_user_validator():
             self.show_warning(
                 self.tr(u'Accès refusé'),
                 self.tr(u'Seul un validateur peut effectuer cette action.')
@@ -1660,10 +1729,7 @@ class MrvTeraka:
         if not self.check_api_auth():
             return
 
-        role = self.token_manager.get_user_role()
-        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
-
-        if not is_validator:
+        if not self.is_current_user_validator():
             self.show_warning(
                 self.tr(u'Accès refusé'),
                 self.tr(u'Seul un validateur peut finaliser et synchroniser la mission.')
@@ -1791,7 +1857,8 @@ class MrvTeraka:
 
                 data_to_push.append(filtered_row)
 
-            migration_data.append((layer_name, f"{mapping['endpoint']}?on_conflict={pk_field}", data_to_push))
+            conflict_field = self.conflict_field_for_mapping(mapping)
+            migration_data.append((layer_name, mapping['endpoint'], conflict_field, data_to_push))
 
         if not migration_data:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
@@ -1809,7 +1876,7 @@ class MrvTeraka:
     @staticmethod
     def _do_migration_task(task, migration_data, postgrest_client):
         results, errors_count, CHUNK_SIZE = [], 0, 5000
-        for i, (layer_name, endpoint, data) in enumerate(migration_data):
+        for i, (layer_name, endpoint, conflict_field, data) in enumerate(migration_data):
             if task.isCanceled():
                 return {'results': results, 'status': 'canceled'}
             layer_errors, migrated_count = 0, 0
@@ -1820,7 +1887,7 @@ class MrvTeraka:
                 end_idx = min(start_idx + CHUNK_SIZE, len(data))
                 chunk_data = data[start_idx:end_idx]
                 try:
-                    postgrest_client.insert(endpoint, chunk_data, upsert=True)
+                    postgrest_client.insert(endpoint, chunk_data, upsert=True, on_conflict=conflict_field)
                     migrated_count += len(chunk_data)
                 except Exception as e:
                     layer_errors += 1
@@ -1957,10 +2024,7 @@ class MrvTeraka:
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        role = self.token_manager.get_user_role()
-        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
-
-        if not is_validator:
+        if not self.is_current_user_validator():
             self.show_warning(
                 self.tr(u'Accès refusé'),
                 self.tr(u'Seul un validateur peut charger et valider les données collectées.')
@@ -2019,7 +2083,9 @@ class MrvTeraka:
                     validated_data = {
                         endpoint: self.prepare_rows_for_mapping(
                             table_data,
-                            self.get_mapping_for_endpoint(endpoint)
+                            self.get_mapping_for_endpoint(endpoint),
+                            add_user_uuid=False,
+                            add_verifier_uuid=True
                         )
                         for endpoint, table_data in validated_data.items()
                     }
@@ -2027,7 +2093,12 @@ class MrvTeraka:
                     mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
                         self.dockwidget.endpointLineEdit.text()
                     )
-                    validated_data = self.prepare_rows_for_mapping(validated_data, mapping)
+                    validated_data = self.prepare_rows_for_mapping(
+                        validated_data,
+                        mapping,
+                        add_user_uuid=False,
+                        add_verifier_uuid=True
+                    )
 
                 validation_results = {
                     'status': 'approved',
@@ -2107,7 +2178,12 @@ class MrvTeraka:
                 endpoint = mapping.get('endpoint')
                 if not endpoint:
                     continue
-                validated_data = self.prepare_rows_for_mapping(validated_data, mapping)
+                validated_data = self.prepare_rows_for_mapping(
+                    validated_data,
+                    mapping,
+                    add_user_uuid=False,
+                    add_verifier_uuid=True
+                )
                 
                 worker.update_progress(int((i/total)*100), f"Synchronisation de {endpoint}...")
 

@@ -164,6 +164,22 @@ class TokenManager:
             return payload.get('role') or payload.get('roles') or payload.get('group') or payload.get('groups')
         return None
 
+    def get_is_validator(self):
+        """Retourne True si le JWT indique explicitement un droit validateur."""
+        if not self.token:
+            self.load_token()
+
+        payload = self.get_jwt_payload(self.token) if self.token else None
+        if not payload:
+            return False
+
+        value = payload.get('is_validator')
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true', 'yes', 'oui')
+        return bool(value)
+
     def get_token_info(self):
         """
         Retourne les informations du jeton

@@ -276,7 +276,15 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         ]
         
         # Logique de restriction par rôle
-        is_validator = role and any(v in role.lower() for v in ['validator', 'validateur', 'admin', 'superviseur'])
+        if isinstance(role, (list, tuple, set)):
+            role_text = " ".join(str(item) for item in role)
+        else:
+            role_text = str(role or "")
+        role_text = role_text.lower()
+        is_validator = any(
+            value in role_text
+            for value in ['validator', 'validateur', 'admin', 'superviseur', 'mrv_l3', 'mrv']
+        )
         
         for btn_name in buttons:
             if hasattr(self, btn_name):

@@ -94,6 +94,40 @@ class PostgREST:
             url = f"{url}?{query_string}"
         return url
 
+    def _split_endpoint_params(self, endpoint: str) -> tuple[str, Dict[str, str]]:
+        """Sépare un endpoint éventuellement suffixé par des paramètres de requête."""
+        endpoint = str(endpoint or "")
+        if '?' not in endpoint:
+            return endpoint, {}
+
+        path, query = endpoint.split('?', 1)
+        parsed = urllib.parse.parse_qs(query, keep_blank_values=True)
+        params = {
+            key: values[-1] if values else ""
+            for key, values in parsed.items()
+        }
+        return path, params
+
+    def _infer_uuid_conflict_field(self, endpoint: str, payload: List[Dict[str, Any]]) -> Optional[str]:
+        """Retourne uuid_<endpoint> si ce champ est présent dans le payload."""
+        endpoint_name = endpoint.strip('/').split('/')[-1].lower()
+        if not endpoint_name:
+            return None
+
+        payload_columns = set()
+        for row in payload:
+            if isinstance(row, dict):
+                payload_columns.update(str(key).lower() for key in row.keys())
+
+        candidates = [f'uuid_{endpoint_name}']
+        if endpoint_name.endswith('s'):
+            candidates.append(f'uuid_{endpoint_name[:-1]}')
+
+        for candidate in candidates:
+            if candidate in payload_columns:
+                return candidate
+        return None
+
     def _make_request(
         self,
         method: str,
@@ -264,7 +298,13 @@ class PostgREST:
 
         return all_data
     
-    def insert(self, table: str, data: Dict[str, Any] | List[Dict[str, Any]], upsert: bool = False):
+    def insert(
+        self,
+        table: str,
+        data: Dict[str, Any] | List[Dict[str, Any]],
+        upsert: bool = False,
+        on_conflict: Optional[str] = None
+    ):
         """
         Insère ou met à jour un ou plusieurs enregistrements.
         
@@ -272,17 +312,22 @@ class PostgREST:
             table: Nom de la table.
             data: Données (dict ou liste de dicts).
             upsert: Si True, met à jour les enregistrements existants (basé sur la PK).
+            on_conflict: Champ(s) uniques à utiliser pour l'upsert PostgREST.
         
         Returns:
             Données traitées.
         """
         payload = data if isinstance(data, list) else [data]
         headers = {}
+        endpoint, params = self._split_endpoint_params(table)
         if upsert:
             # Header PostgREST pour support Upsert
             headers['Prefer'] = 'resolution=merge-duplicates'
+            conflict_field = on_conflict or params.get('on_conflict') or self._infer_uuid_conflict_field(endpoint, payload)
+            if conflict_field:
+                params['on_conflict'] = conflict_field
 
-        return self._make_request('POST', table, data=payload, show_error_ui=True, headers=headers)
+        return self._make_request('POST', endpoint, params=params or None, data=payload, show_error_ui=True, headers=headers)
     
     def update(
         self,
