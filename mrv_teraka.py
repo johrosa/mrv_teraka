@@ -6,6 +6,7 @@
  ***************************************************************************/
 """
 import json
+import os
 import os.path
 import re
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt, QVariant
@@ -1012,12 +1013,12 @@ class MrvTeraka:
         if self.dockwidget and hasattr(self.dockwidget, 'autoSyncButton'):
             self.dockwidget.autoSyncButton.setEnabled(ready)
 
-    def refresh_data_via_api(self):
+    def refresh_data_via_api(self, selected_endpoints=None):
         if not self.dockwidget or not self.check_api_auth():
             return
         self.current_validated_data = None
         self.set_sync_ready(False)
-        self.load_database_data()
+        self.load_database_data(selected_endpoints=selected_endpoints)
         self.set_validation_ready(False)
 
     def load_project_from_mergin(self):
@@ -1964,13 +1965,32 @@ class MrvTeraka:
         else:
             self.show_info(self.tr(u'Migration réussie'), report)
 
-    def load_database_data(self):
+    def load_database_data(self, selected_endpoints=None):
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.endpointLineEdit.text().strip()
         commune_context = self.build_commune_filters()
-        requested_endpoints = self.get_requested_endpoints(endpoint)
+        
+        if selected_endpoints:
+            # If selected_endpoints is a dict from the dialog (layer_name -> mapping)
+            if isinstance(selected_endpoints, dict) and selected_endpoints:
+                first_key = next(iter(selected_endpoints.keys()))
+                if isinstance(selected_endpoints[first_key], dict) and 'endpoint' in selected_endpoints[first_key]:
+                    # Convert dict format {layer_name: {endpoint:..., pk_field:..., geom_field:...}} to endpoints list
+                    selected_list = [m.get('endpoint') for m in selected_endpoints.values() if m.get('endpoint')]
+                    requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected_list}
+                else:
+                    # Already in the right format
+                    requested_endpoints = selected_endpoints
+            else:
+                requested_endpoints = selected_endpoints or {}
+        else:
+            # Get from UI selection or project layers
+            selected = self.dockwidget.get_selected_endpoints()
+            if selected:
+                requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected}
+            else:
+                requested_endpoints = self.get_project_layer_endpoints()
 
         if not requested_endpoints:
             self.show_warning(
@@ -1980,6 +2000,7 @@ class MrvTeraka:
             return
 
         try:
+            updated_count = 0
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
                 filters = self.build_sector_filters(mapping, commune_context)
@@ -1987,12 +2008,44 @@ class MrvTeraka:
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
 
+                # Try to find existing layer by endpoint
+                existing_layer = None
+                for layer in QgsProject.instance().mapLayers().values():
+                    if layer.type() != QgsMapLayer.VectorLayer:
+                        continue
+                    if layer.customProperty('postgrest:endpoint') == endpoint_value:
+                        existing_layer = layer
+                        break
+
                 if not db_data:
-                    layer = create_vector_layer([{'id': ''}], display_name, geom_field)
-                    if layer:
-                        layer.setCustomProperty('postgrest:endpoint', endpoint_value)
-                        QgsProject.instance().addMapLayer(layer)
+                    # No data from API, skip updating (don't create empty layers)
+                    if not existing_layer:
+                        self.show_warning(
+                            self.tr(u'Avertissement'),
+                            self.tr(u'Pas de données disponibles pour {0}').format(endpoint_value)
+                        )
                     continue
+
+                # Prepare style and visibility preservation
+                preserved_style = None
+                preserved_visibility = True
+                preserved_opacity = 1.0
+                layer_tree_index = None
+
+                if existing_layer:
+                    # Save style from existing layer
+                    style_doc = QgsMapLayerStyle()
+                    style_doc.readFromLayer(existing_layer)
+                    preserved_style = style_doc
+                    preserved_visibility = existing_layer.isVisible()
+                    preserved_opacity = existing_layer.opacity()
+
+                    # Get position in layer tree (root group)
+                    root = QgsProject.instance().layerTreeRoot()
+                    for i, child in enumerate(root.children()):
+                        if hasattr(child, 'layer') and child.layer() and child.layer().id() == existing_layer.id():
+                            layer_tree_index = i
+                            break
 
                 if is_geojson(db_data):
                     import tempfile
@@ -2000,23 +2053,76 @@ class MrvTeraka:
                         json.dump(db_data, f)
                         temp_file = f.name
 
-                    layer = QgsVectorLayer(temp_file, display_name, 'ogr')
-                    if layer.isValid():
-                        QgsProject.instance().addMapLayer(layer)
-                        os.unlink(temp_file)
-                    else:
+                    new_layer = QgsVectorLayer(temp_file, display_name, 'ogr')
+                    if not new_layer.isValid():
                         QMessageBox.critical(self.iface.mainWindow(), "Erreur", f"GéoJSON invalide pour {endpoint_value}.")
+                        os.unlink(temp_file)
+                        continue
+
+                    if existing_layer:
+                        # Remove old layer first
+                        QgsProject.instance().removeMapLayer(existing_layer.id())
+                        
+                        # Set custom properties before adding
+                        new_layer.setCustomProperty('postgrest:endpoint', endpoint_value)
+                        new_layer.setCustomProperty('postgrest:geom_field', geom_field)
+                        new_layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+                        
+                        # Add layer back (at the same position if available)
+                        if layer_tree_index is not None:
+                            root = QgsProject.instance().layerTreeRoot()
+                            QgsProject.instance().addMapLayer(new_layer, False)
+                            root.insertChildNode(layer_tree_index, root.findLayer(new_layer.id()).parent().takeChild(root.findLayer(new_layer.id())))
+                        else:
+                            QgsProject.instance().addMapLayer(new_layer)
+                        
+                        # Restore style, visibility, and opacity
+                        if preserved_style:
+                            preserved_style.writeToLayer(new_layer)
+                        new_layer.setVisibility(preserved_visibility)
+                        new_layer.setOpacity(preserved_opacity)
+                        
+                        updated_count += 1
+                    else:
+                        # Skip creating new layers during refresh - only update existing ones
+                        continue
+                    os.unlink(temp_file)
                 else:
-                    layer = create_vector_layer(db_data, display_name, geom_field)
-                    if layer and layer.isValid():
-                        layer.setCustomProperty('postgrest:endpoint', endpoint_value)
-                        layer.setCustomProperty('postgrest:geom_field', geom_field)
-                        layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
-                        QgsProject.instance().addMapLayer(layer)
+                    new_layer = create_vector_layer(db_data, display_name, geom_field)
+                    if not new_layer or not new_layer.isValid():
+                        continue
+
+                    if existing_layer:
+                        # Remove old layer first
+                        QgsProject.instance().removeMapLayer(existing_layer.id())
+                        
+                        # Set custom properties before adding
+                        new_layer.setCustomProperty('postgrest:endpoint', endpoint_value)
+                        new_layer.setCustomProperty('postgrest:geom_field', geom_field)
+                        new_layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+                        
+                        # Add layer back (at the same position if available)
+                        if layer_tree_index is not None:
+                            root = QgsProject.instance().layerTreeRoot()
+                            QgsProject.instance().addMapLayer(new_layer, False)
+                            root.insertChildNode(layer_tree_index, root.findLayer(new_layer.id()).parent().takeChild(root.findLayer(new_layer.id())))
+                        else:
+                            QgsProject.instance().addMapLayer(new_layer)
+                        
+                        # Restore style, visibility, and opacity
+                        if preserved_style:
+                            preserved_style.writeToLayer(new_layer)
+                        new_layer.setVisibility(preserved_visibility)
+                        new_layer.setOpacity(preserved_opacity)
+                        
+                        updated_count += 1
+                    else:
+                        # Skip creating new layers during refresh - only update existing ones
+                        continue
 
             self.show_info(
                 self.tr(u'Chargement terminé'),
-                self.tr(u'Des couches API ont été chargées depuis PostgREST.')
+                self.tr(u'{0} couche(s) mise(s) à jour depuis PostgREST.').format(updated_count)
             )
         except Exception as exc:
             self.show_error(self.tr(u'Erreur'), exc)
@@ -2025,9 +2131,13 @@ class MrvTeraka:
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        endpoint = self.dockwidget.endpointLineEdit.text().strip()
+        selected = self.dockwidget.get_selected_endpoints()
         commune_context = self.build_commune_filters()
-        requested_endpoints = self.get_requested_endpoints(endpoint)
+        
+        if selected:
+            requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected}
+        else:
+            requested_endpoints = self.get_project_layer_endpoints()
 
         if not requested_endpoints:
             self.show_warning(
@@ -2071,7 +2181,8 @@ class MrvTeraka:
             )
             return
 
-        endpoint = self.dockwidget.endpointLineEdit.text()
+        selected = self.dockwidget.get_selected_endpoints()
+        endpoint = selected[0] if selected else ""
         if not endpoint and collected_data is None:
             self.show_warning(
                 self.tr(u'Erreur'),
@@ -2130,9 +2241,9 @@ class MrvTeraka:
                         for endpoint, table_data in validated_data.items()
                     }
                 elif isinstance(validated_data, list):
-                    mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-                        self.dockwidget.endpointLineEdit.text()
-                    )
+                    selected = self.dockwidget.get_selected_endpoints()
+                    endpoint = selected[0] if selected else ""
+                    mapping = self.current_data_mapping or self.get_mapping_for_endpoint(endpoint)
                     validated_data = self.prepare_rows_for_mapping(
                         validated_data,
                         mapping,
@@ -2175,9 +2286,9 @@ class MrvTeraka:
             for endpoint, data in self.current_validated_data.items():
                 sync_payloads.append((self.get_mapping_for_endpoint(endpoint), data))
         else:
-            mapping = self.current_data_mapping or self.get_mapping_for_endpoint(
-                self.dockwidget.endpointLineEdit.text()
-            )
+            selected = self.dockwidget.get_selected_endpoints()
+            endpoint = selected[0] if selected else ""
+            mapping = self.current_data_mapping or self.get_mapping_for_endpoint(endpoint)
             sync_payloads.append((mapping, self.current_validated_data))
 
         # Utiliser un worker thread pour ne pas bloquer l'interface

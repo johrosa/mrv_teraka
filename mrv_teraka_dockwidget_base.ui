@@ -251,24 +251,48 @@
             </layout>
            </item>
            <item>
-            <layout class="QHBoxLayout" name="layoutEndpoint">
+            <layout class="QVBoxLayout" name="layoutEndpoint">
              <item>
-              <widget class="QLabel" name="labelEndpoint">
-               <property name="text">
-                <string>Couche :</string>
-               </property>
-              </widget>
+              <layout class="QHBoxLayout" name="layoutEndpointHeader">
+               <item>
+                <widget class="QLabel" name="labelEndpoint">
+                 <property name="text">
+                  <string>Couches :</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="endpointSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="selectAllEndpointsCheckBox">
+                 <property name="text">
+                  <string>Toutes les couches</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
              </item>
              <item>
-              <widget class="QComboBox" name="endpointComboBox">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
+              <widget class="QListWidget" name="endpointListWidget">
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>100</height>
+                </size>
                </property>
-               <property name="editable">
-                <bool>true</bool>
+               <property name="selectionMode">
+                <enum>QAbstractItemView::ExtendedSelection</enum>
                </property>
               </widget>
              </item>

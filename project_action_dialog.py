@@ -257,6 +257,15 @@ class ProjectActionDialog(QtWidgets.QDialog):
 
         # Bouton sous le tableau
         btn_layout = QtWidgets.QHBoxLayout()
+        
+        self.select_all_btn = QtWidgets.QPushButton("Sélectionner tout")
+        self.select_all_btn.clicked.connect(self._select_all_layers)
+        btn_layout.addWidget(self.select_all_btn)
+        
+        self.deselect_all_btn = QtWidgets.QPushButton("Désélectionner tout")
+        self.deselect_all_btn.clicked.connect(self._deselect_all_layers)
+        btn_layout.addWidget(self.deselect_all_btn)
+        
         self.field_mapping_btn = QtWidgets.QPushButton("Configurer les field mappings…")
         self.field_mapping_btn.setEnabled(False)
         self.field_mapping_btn.clicked.connect(self._open_field_mapping_from_selection)
@@ -431,6 +440,20 @@ class ProjectActionDialog(QtWidgets.QDialog):
         if not selected_rows:
             return
         self._open_field_mapping(selected_rows[0].row())
+
+    def _select_all_layers(self):
+        """Sélectionne toutes les couches."""
+        for i in range(self.table.rowCount()):
+            container = self.table.cellWidget(i, 0)
+            checkbox = container.findChild(QtWidgets.QCheckBox)
+            checkbox.setChecked(True)
+
+    def _deselect_all_layers(self):
+        """Désélectionne toutes les couches."""
+        for i in range(self.table.rowCount()):
+            container = self.table.cellWidget(i, 0)
+            checkbox = container.findChild(QtWidgets.QCheckBox)
+            checkbox.setChecked(False)
 
     def get_results(self):
         selected_mappings = {}

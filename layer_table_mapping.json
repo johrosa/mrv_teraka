@@ -2,7 +2,6 @@
     "mappings": {
         "answer_nuisible_bosquet_baseline": {
             "endpoint": "answer_nuisible_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -14,7 +13,6 @@
         },
         "answer_utilisation_arbre_bosquet_baseline": {
             "endpoint": "answer_utilisation_arbre_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -26,7 +24,6 @@
         },
         "lutte_nuisibles": {
             "endpoint": "lutte_nuisibles",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -37,7 +34,6 @@
         },
         "audit_log_view": {
             "endpoint": "audit_log_view",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -55,7 +51,6 @@
         },
         "answer_sourcing_graine_arbre_baseline": {
             "endpoint": "answer_sourcing_graine_arbre_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -68,7 +63,6 @@
         },
         "answer_lutte_nuisible_bosquet_baseline": {
             "endpoint": "answer_lutte_nuisible_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -80,7 +74,6 @@
         },
         "bosquet_suivi": {
             "endpoint": "bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -132,7 +125,6 @@
         },
         "spatial_ref_sys": {
             "endpoint": "spatial_ref_sys",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "srid",
@@ -144,7 +136,6 @@
         },
         "pg_photo_document": {
             "endpoint": "pg_photo_document",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -158,7 +149,6 @@
         },
         "bosquet_evenement": {
             "endpoint": "bosquet_evenement",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -182,7 +172,6 @@
         },
         "sourcing_graines": {
             "endpoint": "sourcing_graines",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -193,7 +182,6 @@
         },
         "answer_produit_arbre_bosquet_suivi": {
             "endpoint": "answer_produit_arbre_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -205,7 +193,6 @@
         },
         "formations": {
             "endpoint": "formations",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -216,7 +203,6 @@
         },
         "foncier_legals": {
             "endpoint": "foncier_legals",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -227,7 +213,6 @@
         },
         "photo_bosquet": {
             "endpoint": "photo_bosquet",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -240,7 +225,6 @@
         },
         "pg_nouveau_membre": {
             "endpoint": "pg_nouveau_membre",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -273,7 +257,6 @@
         },
         "invasifs": {
             "endpoint": "invasifs",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -284,7 +267,6 @@
         },
         "answer_sourcing_plant_arbre_baseline": {
             "endpoint": "answer_sourcing_plant_arbre_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -297,7 +279,6 @@
         },
         "auth_group": {
             "endpoint": "auth_group",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -320,7 +301,6 @@
         },
         "utilisation_arbres": {
             "endpoint": "utilisation_arbres",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -331,7 +311,6 @@
         },
         "bosquet_baseline": {
             "endpoint": "bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -395,7 +374,6 @@
         },
         "answer_lutte_invasif_bosquet_baseline": {
             "endpoint": "answer_lutte_invasif_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -407,7 +385,6 @@
         },
         "core_userrole": {
             "endpoint": "core_userrole",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -419,7 +396,6 @@
         },
         "bosquet_photo_document": {
             "endpoint": "bosquet_photo_document",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -433,7 +409,6 @@
         },
         "answer_usufruiter_bosquet_baseline": {
             "endpoint": "answer_usufruiter_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -445,7 +420,6 @@
         },
         "demarche_autorisations": {
             "endpoint": "demarche_autorisations",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -456,7 +430,6 @@
         },
         "sol_couleurs": {
             "endpoint": "sol_couleurs",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -467,7 +440,6 @@
         },
         "membre_inscrit": {
             "endpoint": "membre_inscrit",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -507,7 +479,6 @@
         },
         "geometry_columns": {
             "endpoint": "geometry_columns",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "f_table_catalog",
@@ -521,7 +492,6 @@
         },
         "photo_liste_rouge_arbre_suivi": {
             "endpoint": "photo_liste_rouge_arbre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -550,7 +520,6 @@
         },
         "photo_autorisation_bosquet_suivi": {
             "endpoint": "photo_autorisation_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -563,7 +532,6 @@
         },
         "answer_demarche_autorisation_bosquet_suivi": {
             "endpoint": "answer_demarche_autorisation_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -576,7 +544,6 @@
         },
         "paiement_pg": {
             "endpoint": "paiement_pg",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -595,7 +562,6 @@
         },
         "pg_infos": {
             "endpoint": "pg_infos",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -625,7 +591,6 @@
         },
         "topographies": {
             "endpoint": "topographies",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -636,7 +601,6 @@
         },
         "audit_log": {
             "endpoint": "audit_log",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -653,7 +617,6 @@
         },
         "answer_utilisation_arbre_bosquet_suivi": {
             "endpoint": "answer_utilisation_arbre_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -665,7 +628,6 @@
         },
         "photo_liste_rouge_arbre_baseline": {
             "endpoint": "photo_liste_rouge_arbre_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -679,7 +641,6 @@
         },
         "paiement_membre": {
             "endpoint": "paiement_membre",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -697,7 +658,6 @@
         },
         "Cluster": {
             "endpoint": "Cluster",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -707,7 +667,6 @@
         },
         "pg_suivi": {
             "endpoint": "pg_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -743,7 +702,6 @@
         },
         "answer_produit_arbre_bosquet_baseline": {
             "endpoint": "answer_produit_arbre_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -755,7 +713,6 @@
         },
         "core_fieldmapping": {
             "endpoint": "core_fieldmapping",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -770,7 +727,6 @@
         },
         "answer_cobenefice_arbre_membre_suivi": {
             "endpoint": "answer_cobenefice_arbre_membre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -783,7 +739,6 @@
         },
         "RapportClusterPg": {
             "endpoint": "RapportClusterPg",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -799,7 +754,6 @@
         },
         "foncier_coutumiers": {
             "endpoint": "foncier_coutumiers",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -832,7 +786,6 @@
         },
         "pg_statut_historique": {
             "endpoint": "pg_statut_historique",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -850,7 +803,6 @@
         },
         "answer_sourcing_graine_arbre_suivi": {
             "endpoint": "answer_sourcing_graine_arbre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -863,7 +815,6 @@
         },
         "answer_nuisible_bosquet_suivi": {
             "endpoint": "answer_nuisible_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -875,7 +826,6 @@
         },
         "answer_sourcing_plant_arbre_suivi": {
             "endpoint": "answer_sourcing_plant_arbre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -888,7 +838,6 @@
         },
         "answer_sol_actuel_bosquet_baseline": {
             "endpoint": "answer_sol_actuel_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -900,7 +849,6 @@
         },
         "photo_pepiniere_suivi": {
             "endpoint": "photo_pepiniere_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -913,7 +861,6 @@
         },
         "pg_photo": {
             "endpoint": "pg_photo",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -927,7 +874,6 @@
         },
         "answer_cobenefice_arbre_bosquet_baseline": {
             "endpoint": "answer_cobenefice_arbre_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -939,7 +885,6 @@
         },
         "answer_cobenefice_arbre_bosquet_suivi": {
             "endpoint": "answer_cobenefice_arbre_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -951,7 +896,6 @@
         },
         "pg_membre_evenement": {
             "endpoint": "pg_membre_evenement",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -973,7 +917,6 @@
         },
         "lutte_invasifs": {
             "endpoint": "lutte_invasifs",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -984,7 +927,6 @@
         },
         "django_migrations": {
             "endpoint": "django_migrations",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -995,7 +937,6 @@
         },
         "RapportCluster": {
             "endpoint": "RapportCluster",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1024,7 +965,6 @@
         },
         "especes_arbres": {
             "endpoint": "especes_arbres",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1042,7 +982,6 @@
         },
         "geography_columns": {
             "endpoint": "geography_columns",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "f_table_catalog",
@@ -1056,7 +995,6 @@
         },
         "nuisibles": {
             "endpoint": "nuisibles",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1067,7 +1005,6 @@
         },
         "auth_group_permissions": {
             "endpoint": "auth_group_permissions",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1077,7 +1014,6 @@
         },
         "paiement_pg_historique": {
             "endpoint": "paiement_pg_historique",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1090,7 +1026,6 @@
         },
         "cobenefice_arbres": {
             "endpoint": "cobenefice_arbres",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1101,7 +1036,6 @@
         },
         "usufruitiers": {
             "endpoint": "usufruitiers",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1112,7 +1046,6 @@
         },
         "django_session": {
             "endpoint": "django_session",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "session_key",
@@ -1122,7 +1055,6 @@
         },
         "photo_autre_espece_arbre_baseline": {
             "endpoint": "photo_autre_espece_arbre_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1136,7 +1068,6 @@
         },
         "photo_pepiniere": {
             "endpoint": "photo_pepiniere",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1149,7 +1080,6 @@
         },
         "sol_types": {
             "endpoint": "sol_types",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1160,7 +1090,6 @@
         },
         "membre_suivi": {
             "endpoint": "membre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1191,7 +1120,6 @@
         },
         "answer_usufruitier_bosquet_suivi": {
             "endpoint": "answer_usufruitier_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1203,7 +1131,6 @@
         },
         "arbre_suivi": {
             "endpoint": "arbre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1227,7 +1154,6 @@
         },
         "answer_invasif_bosquet_suivi": {
             "endpoint": "answer_invasif_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1239,7 +1165,6 @@
         },
         "answer_sol_actuel_bosquet_suivi": {
             "endpoint": "answer_sol_actuel_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1280,7 +1205,6 @@
         },
         "answer_lutte_invasif_bosquet_suivi": {
             "endpoint": "answer_lutte_invasif_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1292,7 +1216,6 @@
         },
         "pg_suivi_admin": {
             "endpoint": "pg_suivi_admin",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1316,7 +1239,6 @@
         },
         "pg_photo_membre_evenement": {
             "endpoint": "pg_photo_membre_evenement",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1330,7 +1252,6 @@
         },
         "type_doc_foncier": {
             "endpoint": "type_doc_foncier",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1341,7 +1262,6 @@
         },
         "bosquet_evenement_document": {
             "endpoint": "bosquet_evenement_document",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1358,7 +1278,6 @@
         },
         "auth_permission": {
             "endpoint": "auth_permission",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1369,7 +1288,6 @@
         },
         "photo_autorisation_bosquet": {
             "endpoint": "photo_autorisation_bosquet",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1382,7 +1300,6 @@
         },
         "answer_invasif_bosquet_baseline": {
             "endpoint": "answer_invasif_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1394,7 +1311,6 @@
         },
         "photo_bosquet_suivi": {
             "endpoint": "photo_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1407,7 +1323,6 @@
         },
         "django_content_type": {
             "endpoint": "django_content_type",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1417,7 +1332,6 @@
         },
         "utilisation_sol_bosquets": {
             "endpoint": "utilisation_sol_bosquets",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1428,7 +1342,6 @@
         },
         "users": {
             "endpoint": "users",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1454,7 +1367,6 @@
         },
         "pg_document": {
             "endpoint": "pg_document",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1472,7 +1384,6 @@
         },
         "answer_bien_fait_agroforesterie_membre_suivi": {
             "endpoint": "answer_bien_fait_agroforesterie_membre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1485,7 +1396,6 @@
         },
         "photo_autre_espece_arbre_suivi": {
             "endpoint": "photo_autre_espece_arbre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1499,7 +1409,6 @@
         },
         "test_audit_table": {
             "endpoint": "test_audit_table",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1508,7 +1417,6 @@
         },
         "produits_arbres": {
             "endpoint": "produits_arbres",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1519,7 +1427,6 @@
         },
         "answer_lutte_nuisible_bosquet_suivi": {
             "endpoint": "answer_lutte_nuisible_bosquet_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1531,7 +1438,6 @@
         },
         "arbre_baseline": {
             "endpoint": "arbre_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1550,7 +1456,6 @@
         },
         "sourcing_plants": {
             "endpoint": "sourcing_plants",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1561,7 +1466,6 @@
         },
         "django_admin_log": {
             "endpoint": "django_admin_log",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1576,7 +1480,6 @@
         },
         "answer_demarche_autorisation_bosquet_baseline": {
             "endpoint": "answer_demarche_autorisation_bosquet_baseline",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1589,7 +1492,6 @@
         },
         "answer_produit_arbre_membre_suivi": {
             "endpoint": "answer_produit_arbre_membre_suivi",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1602,7 +1504,6 @@
         },
         "membre": {
             "endpoint": "membre",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1645,7 +1546,6 @@
         },
         "bien_fait_agroforesteries": {
             "endpoint": "bien_fait_agroforesteries",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -1656,7 +1556,6 @@
         },
         "core_role": {
             "endpoint": "core_role",
-            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
