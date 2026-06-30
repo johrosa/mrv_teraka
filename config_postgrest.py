@@ -9,7 +9,7 @@ import re
 from typing import Dict
 
 MAPPING_FILENAME = 'layer_table_mapping.json'
-DEFAULT_GEOM_FIELD = 'geom'
+DEFAULT_GEOM_FIELD = None
 DEFAULT_PK_FIELD = 'id'
 
 
@@ -34,7 +34,7 @@ def normalize_layer_mapping(layer_name: str, mapping) -> Dict[str, str]:
     if isinstance(mapping, dict):
         normalized = {
             'endpoint': str(mapping.get('endpoint', normalize_layer_name_to_endpoint(layer_name))),
-            'geom_field': str(mapping.get('geom_field', DEFAULT_GEOM_FIELD)),
+        'geom_field': mapping.get('geom_field') if mapping.get('geom_field') is not None else None,
             'pk_field': str(mapping.get('pk_field', DEFAULT_PK_FIELD))
         }
         if isinstance(mapping.get('columns'), list):

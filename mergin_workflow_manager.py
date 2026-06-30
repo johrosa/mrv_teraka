@@ -337,13 +337,30 @@ class MerginDataMerger:
         Returns:
             dict: Résultats détaillés de la fusion.
         """
+        # Préférer un champ uuid_<endpoint> si présent dans les données collectées
+        try:
+            endpoint_name = str(table).strip().strip('/')
+        except Exception:
+            endpoint_name = str(table or '')
+
+        uuid_candidate = None
+        if hasattr(self, 'postgrest') and hasattr(self.postgrest, '_infer_uuid_conflict_field'):
+            try:
+                uuid_candidate = self.postgrest._infer_uuid_conflict_field(endpoint_name, collected)
+            except Exception:
+                uuid_candidate = None
+
+        if uuid_candidate:
+            pk_field = uuid_candidate
+
         conflicts = self.detect_conflicts(original, collected, pk_field=pk_field)
         results = {
             'table': table,
             'strategy': strategy,
             'merged_at': datetime.datetime.now().isoformat(),
             'conflicts': conflicts,
-            'actions': []
+            'actions': [],
+            'pk_field_used': pk_field
         }
 
         if strategy == 'merge':

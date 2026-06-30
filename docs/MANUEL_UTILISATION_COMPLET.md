@@ -1,4 +1,4 @@
-# Manuel d'utilisation complet - MRV Teraka
+# Manuel d'utilisation - MRV Teraka
 
 Version du manuel : 2026-06-23  
 Plugin : MRV Teraka pour QGIS  

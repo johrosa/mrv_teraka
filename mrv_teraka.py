@@ -477,7 +477,7 @@ class MrvTeraka:
             if schema and 'definitions' in schema:
                 new_mappings = {}
                 for table_name, definition in schema['definitions'].items():
-                    geom_field = 'geom'
+                    geom_field = None
                     props = definition.get('properties', {})
                     for p_name, p_data in props.items():
                         if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
@@ -491,8 +491,13 @@ class MrvTeraka:
                     }
                 self.layer_mappings = new_mappings
                 mapping_path = os.path.join(self.plugin_dir, 'layer_table_mapping.json')
+                # Sanitize mappings: don't store geom_field when it's None
+                save_mappings = {}
+                for name, cfg in new_mappings.items():
+                    cfg_to_save = {k: v for k, v in cfg.items() if not (k == 'geom_field' and v is None)}
+                    save_mappings[name] = cfg_to_save
                 with open(mapping_path, 'w', encoding='utf-8') as f:
-                    json.dump({'mappings': new_mappings}, f, indent=4)
+                    json.dump({'mappings': save_mappings}, f, indent=4)
                 return True
         except Exception as e:
             print(f"Erreur refresh mappings: {e}")
@@ -526,7 +531,7 @@ class MrvTeraka:
                 if schema and 'definitions' in schema:
                     mappings = {}
                     for table_name, definition in schema['definitions'].items():
-                        geom_field = 'geom'
+                        geom_field = None
                         props = definition.get('properties', {})
                         for p_name, p_data in props.items():
                             if p_data.get('format') == 'geojson' or p_name in ['geom', 'geometry', 'the_geom']:
@@ -553,7 +558,7 @@ class MrvTeraka:
             return mappings[layer_name]
         return {
             'endpoint': normalize_layer_name_to_endpoint(layer_name),
-            'geom_field': 'geom',
+            'geom_field': None,
             'pk_field': 'id',
             'columns': []
         }
@@ -600,7 +605,14 @@ class MrvTeraka:
             mappings[layer_name] = mapping
 
             layer.setCustomProperty('postgrest:endpoint', endpoint)
-            layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+            geom_prop = mapping.get('geom_field')
+            if geom_prop:
+                layer.setCustomProperty('postgrest:geom_field', geom_prop)
+            else:
+                try:
+                    layer.removeCustomProperty('postgrest:geom_field')
+                except Exception:
+                    layer.setCustomProperty('postgrest:geom_field', '')
             layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
             updated_count += 1
 
@@ -612,6 +624,13 @@ class MrvTeraka:
             )
             return False
 
+        # Before saving, remove geom_field keys that are None so the file only contains
+        # geom_field when the layer is spatial
+        sanitized = {}
+        for name, cfg in mappings.items():
+            cfg_to_save = {k: v for k, v in cfg.items() if not (k == 'geom_field' and v is None)}
+            sanitized[name] = cfg_to_save
+        content['mappings'] = sanitized
         with open(self.local_mapping_path(), 'w', encoding='utf-8') as f:
             json.dump(content, f, indent=4, ensure_ascii=False)
 
@@ -644,7 +663,7 @@ class MrvTeraka:
 
     def get_mapping_for_endpoint(self, endpoint):
         if not endpoint:
-            return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
+            return {'endpoint': endpoint, 'geom_field': None, 'pk_field': 'id'}
 
         mappings = self.load_layer_mappings()
         for m_name, m_data in mappings.items():
@@ -1083,10 +1102,17 @@ class MrvTeraka:
 
                 mapping = self.get_mapping_for_endpoint(endpoint)
                 layer.setCustomProperty('postgrest:endpoint', endpoint)
-                layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                geom_prop = mapping.get('geom_field')
+                if geom_prop:
+                    layer.setCustomProperty('postgrest:geom_field', geom_prop)
+                else:
+                    try:
+                        layer.removeCustomProperty('postgrest:geom_field')
+                    except Exception:
+                        layer.setCustomProperty('postgrest:geom_field', '')
 
                 # Extraire données locales
-                local_data = layer_to_list_of_dicts(layer, geom_field=mapping.get('geom_field', 'geom'))
+                local_data = layer_to_list_of_dicts(layer, geom_field=(mapping.get('geom_field') or 'geom'))
 
                 # ← Appliquer le field_map : renommer les colonnes QGIS → API
                 local_data = self._apply_field_map(local_data, field_map)
@@ -1153,10 +1179,17 @@ class MrvTeraka:
             try:
                 filters = self.build_sector_filters(mapping, commune_context)
                 db_data = self.postgrest.select(mapping['endpoint'], filters=filters)
-                layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field', 'geom'))
+                layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field'))
                 if layer and layer.isValid():
                     layer.setCustomProperty('postgrest:endpoint', mapping['endpoint'])
-                    layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                    geom_prop = mapping.get('geom_field')
+                    if geom_prop:
+                        layer.setCustomProperty('postgrest:geom_field', geom_prop)
+                    else:
+                        try:
+                            layer.removeCustomProperty('postgrest:geom_field')
+                        except Exception:
+                            layer.setCustomProperty('postgrest:geom_field', '')
                     layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
                     new_layers.append((layer_name, layer))
                 else:
@@ -1512,7 +1545,14 @@ class MrvTeraka:
             if endpoint:
                 mapping = self.get_mapping_for_endpoint(endpoint)
                 layer.setCustomProperty('postgrest:endpoint', endpoint)
-                layer.setCustomProperty('postgrest:geom_field', mapping.get('geom_field', 'geom'))
+                geom_prop = mapping.get('geom_field')
+                if geom_prop:
+                    layer.setCustomProperty('postgrest:geom_field', geom_prop)
+                else:
+                    try:
+                        layer.removeCustomProperty('postgrest:geom_field')
+                    except Exception:
+                        layer.setCustomProperty('postgrest:geom_field', '')
                 layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
             self.copy_layer_style(source_layer, layer)
             self.copy_layer_form(source_layer, layer)
@@ -1800,7 +1840,7 @@ class MrvTeraka:
             if not layers:
                 continue
 
-            raw_data = layer_to_list_of_dicts(layers[0], geom_field=mapping.get('geom_field', 'geom'))
+            raw_data = layer_to_list_of_dicts(layers[0], geom_field=(mapping.get('geom_field') or 'geom'))
             if not raw_data:
                 continue
 
@@ -1810,7 +1850,7 @@ class MrvTeraka:
 
             api_columns = [str(col).lower() for col in mapping.get('columns', [])]
             endpoint_name = mapping['endpoint'].lower()
-            geom_field = mapping.get('geom_field', 'geom').lower()
+            geom_field = (mapping.get('geom_field') or 'geom').lower()
             field_override = HARD_MAPPINGS.get(endpoint_name, {})
             pk_field = mapping.get('pk_field', 'id').lower()
             data_to_push = []
