@@ -2037,11 +2037,13 @@ class MrvTeraka:
                     style_doc = QgsMapLayerStyle()
                     style_doc.readFromLayer(existing_layer)
                     preserved_style = style_doc
-                    preserved_visibility = existing_layer.isVisible()
                     preserved_opacity = existing_layer.opacity()
 
                     # Get position in layer tree (root group)
                     root = QgsProject.instance().layerTreeRoot()
+                    existing_node = root.findLayer(existing_layer.id())
+                    if existing_node:
+                        preserved_visibility = existing_node.itemVisibilityChecked()
                     for i, child in enumerate(root.children()):
                         if hasattr(child, 'layer') and child.layer() and child.layer().id() == existing_layer.id():
                             layer_tree_index = i
@@ -2072,14 +2074,16 @@ class MrvTeraka:
                         if layer_tree_index is not None:
                             root = QgsProject.instance().layerTreeRoot()
                             QgsProject.instance().addMapLayer(new_layer, False)
-                            root.insertChildNode(layer_tree_index, root.findLayer(new_layer.id()).parent().takeChild(root.findLayer(new_layer.id())))
+                            new_node = root.insertLayer(layer_tree_index, new_layer)
                         else:
                             QgsProject.instance().addMapLayer(new_layer)
+                            new_node = QgsProject.instance().layerTreeRoot().findLayer(new_layer.id())
                         
                         # Restore style, visibility, and opacity
                         if preserved_style:
                             preserved_style.writeToLayer(new_layer)
-                        new_layer.setVisibility(preserved_visibility)
+                        if new_node:
+                            new_node.setItemVisibilityChecked(preserved_visibility)
                         new_layer.setOpacity(preserved_opacity)
                         
                         updated_count += 1
@@ -2105,14 +2109,16 @@ class MrvTeraka:
                         if layer_tree_index is not None:
                             root = QgsProject.instance().layerTreeRoot()
                             QgsProject.instance().addMapLayer(new_layer, False)
-                            root.insertChildNode(layer_tree_index, root.findLayer(new_layer.id()).parent().takeChild(root.findLayer(new_layer.id())))
+                            new_node = root.insertLayer(layer_tree_index, new_layer)
                         else:
                             QgsProject.instance().addMapLayer(new_layer)
+                            new_node = QgsProject.instance().layerTreeRoot().findLayer(new_layer.id())
                         
                         # Restore style, visibility, and opacity
                         if preserved_style:
                             preserved_style.writeToLayer(new_layer)
-                        new_layer.setVisibility(preserved_visibility)
+                        if new_node:
+                            new_node.setItemVisibilityChecked(preserved_visibility)
                         new_layer.setOpacity(preserved_opacity)
                         
                         updated_count += 1
