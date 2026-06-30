@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>850</height>
+    <height>955</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -296,32 +296,32 @@
                </property>
               </widget>
              </item>
+             <item>
+              <layout class="QHBoxLayout" name="layoutDbActions">
+               <item>
+                <widget class="QPushButton" name="loadDbButton">
+                 <property name="text">
+                  <string>Charger</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="compareButton">
+                 <property name="text">
+                  <string>Vérifier</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
             </layout>
            </item>
            <item>
-            <layout class="QHBoxLayout" name="layoutDbActions">
-             <item>
-              <widget class="QPushButton" name="loadDbButton">
-               <property name="text">
-                <string>Charger</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QPushButton" name="compareButton">
-               <property name="text">
-                <string>Vérifier</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QPushButton" name="refreshFromApiButton">
-               <property name="text">
-                <string>Actualiser</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
+            <widget class="QPushButton" name="refreshFromApiButton">
+             <property name="text">
+              <string>Actualiser</string>
+             </property>
+            </widget>
            </item>
            <item>
             <widget class="QPushButton" name="processProjectButton">
