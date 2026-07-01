@@ -51,7 +51,7 @@ class DataValidationDialog(QDialog):
 
         self.validated_data = []
         self.setWindowTitle("Validation des Données Collectées")
-        self.setGeometry(100, 100, 1000, 600)
+        self.setGeometry(100, 100, 800, 500)
         self.initUI()
     
     def initUI(self):

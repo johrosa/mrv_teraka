@@ -48,7 +48,7 @@ class DjangoErrorViewer(QDialog):
         self.reason = error_data.get('reason', 'Erreur Inconnue') if error_data else 'Erreur Inconnue'
         
         self.setWindowTitle(f"Erreur Django {self.status_code} - {self.reason}")
-        self.setGeometry(50, 50, 1200, 800)
+        self.setGeometry(50, 50, 900, 600)
         self.initUI()
     
     def initUI(self):

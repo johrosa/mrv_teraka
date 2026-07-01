@@ -544,7 +544,23 @@ class MrvTeraka:
                             'pk_field': 'id',
                             'columns': list(props.keys())
                         }
-                    mappings.update(load_layer_mapping(self.plugin_dir))
+                    # Charger et fusionner avec les mappings du fichier JSON
+                    # Important: le .update() va écraser avec les bonnes PK UUIDs inférées
+                    json_mappings = load_layer_mapping(self.plugin_dir)
+                    
+                    # Pour chaque mapping du JSON, mettre à jour complètement (pas juste fusionner)
+                    for table_name, json_mapping in json_mappings.items():
+                        if table_name in mappings:
+                            # Fusionner intelligemment: garder columns du schema, utiliser pk du JSON
+                            schema_columns = mappings[table_name].get('columns', [])
+                            mappings[table_name].update(json_mapping)
+                            # Ajouter les colonnes du schema si pas présentes dans JSON
+                            if 'columns' not in json_mapping:
+                                mappings[table_name]['columns'] = schema_columns
+                        else:
+                            # Mapping nouveau dans JSON
+                            mappings[table_name] = json_mapping
+                    
                     self.layer_mappings = mappings
                     return mappings
             except Exception:

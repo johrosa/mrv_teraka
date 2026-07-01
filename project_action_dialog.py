@@ -20,7 +20,7 @@ class FieldMappingDialog(QtWidgets.QDialog):
         self.layer = layer
         self.api_columns = api_columns or []
         self.setWindowTitle(f"Field Mappings — {layer.name() if layer else ''}")
-        self.resize(500, 350)
+        self.resize(450, 300)
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -53,12 +53,21 @@ class FieldMappingDialog(QtWidgets.QDialog):
         fields = [f.name() for f in self.layer.fields()]
         self.table.setRowCount(len(fields))
 
+        # Champs spécifiques à QGIS qui ne doivent pas être envoyés à l'API par défaut
+        QGIS_INTERNAL_FIELDS = {'fid', 'id_0'}
+
         for i, field_name in enumerate(fields):
             # Colonne 0 : checkbox "Inclure"
             chk = QtWidgets.QTableWidgetItem()
             chk.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
-            excluded = existing_field_map.get(field_name) is False
-            chk.setCheckState(QtCore.Qt.Unchecked if excluded else QtCore.Qt.Checked)
+            
+            # Décoche automatiquement si c'est un champ interne QGIS (sauf si explicitement mappé)
+            if field_name in QGIS_INTERNAL_FIELDS and field_name not in existing_field_map:
+                chk.setCheckState(QtCore.Qt.Unchecked)
+            else:
+                excluded = existing_field_map.get(field_name) is False
+                chk.setCheckState(QtCore.Qt.Unchecked if excluded else QtCore.Qt.Checked)
+            
             self.table.setItem(i, 0, chk)
 
             # Colonne 1 : nom QGIS (non éditable)
@@ -222,7 +231,7 @@ class ProjectActionDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowTitle("Analyse et Actions du Projet")
-        self.resize(1100, 550)
+        self.resize(900, 450)
 
         self._all_mappings = self._load_all_mappings()
 
@@ -311,16 +320,11 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.layout.addWidget(self.button_box)
 
     def _load_all_mappings(self):
-        """Charge tout le contenu de layer_table_mapping.json."""
+        """Charge les mappings depuis load_layer_mapping pour appliquer l'inférence UUID."""
+        from .config_postgrest import load_layer_mapping
         plugin_dir = os.path.dirname(__file__)
-        path = os.path.join(plugin_dir, "layer_table_mapping.json")
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f).get("mappings", {})
-            except Exception:
-                pass
-        return {}
+        # Utiliser load_layer_mapping qui applique l'inférence UUID des PKs
+        return load_layer_mapping(plugin_dir)
 
     def _mapping_for_endpoint(self, endpoint):
         if not endpoint or endpoint == "-- Ignorer --":

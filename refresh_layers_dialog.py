@@ -23,7 +23,7 @@ class RefreshLayersDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowTitle("Sélectionner les couches à rafraîchir")
-        self.resize(900, 500)
+        self.resize(800, 420)
 
         self.layer_mappings = layer_mappings or {}
         self._field_maps = {}

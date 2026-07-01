@@ -34,7 +34,7 @@ La section 18 contient une matrice de couverture. Chaque action visible y est as
 
 ### 3.1 Logiciels
 
-- QGIS 3.36 minimum, selon `metadata.txt`.
+- QGIS 3.36 minimum, selon.
 - Plugin MRV Teraka installe dans le profil QGIS.
 - Acces a une API Teraka compatible Django/PostgREST.
 - Optionnel mais recommande : plugin officiel Mergin Maps installe et connecte dans QGIS.

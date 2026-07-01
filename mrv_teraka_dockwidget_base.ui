@@ -2,12 +2,18 @@
 <ui version="4.0">
  <class>MrvTerakaDockWidgetBase</class>
  <widget class="QDockWidget" name="MrvTerakaDockWidgetBase">
+  <property name="minimumWidth">
+   <number>350</number>
+  </property>
+  <property name="maximumWidth">
+   <number>500</number>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>431</width>
-    <height>940</height>
+    <width>400</width>
+    <height>600</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,19 +22,19 @@
   <widget class="QWidget" name="dockWidgetContents">
    <layout class="QVBoxLayout" name="verticalLayoutMain">
     <property name="spacing">
-     <number>6</number>
+     <number>4</number>
     </property>
     <property name="leftMargin">
-     <number>6</number>
+     <number>4</number>
     </property>
     <property name="topMargin">
-     <number>6</number>
+     <number>4</number>
     </property>
     <property name="rightMargin">
-     <number>6</number>
+     <number>4</number>
     </property>
     <property name="bottomMargin">
-     <number>6</number>
+     <number>4</number>
     </property>
     <item>
      <widget class="QLabel" name="mainTitleLabel">
@@ -240,7 +246,7 @@
                <property name="maximumSize">
                 <size>
                  <width>16777215</width>
-                 <height>80</height>
+                 <height>60</height>
                 </size>
                </property>
                <property name="selectionMode">
@@ -288,7 +294,7 @@
                <property name="maximumSize">
                 <size>
                  <width>16777215</width>
-                 <height>100</height>
+                 <height>80</height>
                 </size>
                </property>
                <property name="selectionMode">
@@ -344,7 +350,7 @@
              <property name="maximumSize">
               <size>
                <width>16777215</width>
-               <height>50</height>
+               <height>40</height>
               </size>
              </property>
              <property name="readOnly">
@@ -447,7 +453,7 @@
              <property name="maximumSize">
               <size>
                <width>16777215</width>
-               <height>100</height>
+               <height>80</height>
               </size>
              </property>
              <property name="readOnly">
