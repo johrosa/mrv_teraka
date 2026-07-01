@@ -222,7 +222,7 @@ class ProjectActionDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowTitle("Analyse et Actions du Projet")
-        self.resize(900, 550)
+        self.resize(1100, 550)
 
         self._all_mappings = self._load_all_mappings()
 
@@ -233,12 +233,14 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.layout.addWidget(self.label)
 
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
             "Sélection",
             "Couche QGIS",
             "Type",
             "Table API (Mapping)",
+            "Clé primaire",
+            "Géométrie",
             "Field Mappings",
         ])
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
@@ -246,6 +248,8 @@ class ProjectActionDialog(QtWidgets.QDialog):
         self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.layout.addWidget(self.table)
 
@@ -318,6 +322,28 @@ class ProjectActionDialog(QtWidgets.QDialog):
                 pass
         return {}
 
+    def _mapping_for_endpoint(self, endpoint):
+        if not endpoint or endpoint == "-- Ignorer --":
+            return {}
+        for mapping in self._all_mappings.values():
+            if mapping.get('endpoint') == endpoint:
+                return mapping
+        return {}
+
+    def _set_endpoint_metadata(self, row, endpoint):
+        mapping = self._mapping_for_endpoint(endpoint)
+        pk_field = mapping.get('pk_field') or "id"
+        geom_field = mapping.get('geom_field') or ""
+        geom_text = geom_field if geom_field else "Aucune"
+
+        pk_item = QtWidgets.QTableWidgetItem(pk_field if endpoint != "-- Ignorer --" else "—")
+        pk_item.setFlags(pk_item.flags() ^ QtCore.Qt.ItemIsEditable)
+        self.table.setItem(row, 4, pk_item)
+
+        geom_item = QtWidgets.QTableWidgetItem(geom_text if endpoint != "-- Ignorer --" else "—")
+        geom_item.setFlags(geom_item.flags() ^ QtCore.Qt.ItemIsEditable)
+        self.table.setItem(row, 5, geom_item)
+
     def populate_table(self):
         self.table.setRowCount(len(self.layer_info))
         for i, info in enumerate(self.layer_info):
@@ -365,12 +391,13 @@ class ProjectActionDialog(QtWidgets.QDialog):
 
             combo.currentTextChanged.connect(lambda text, r=i: self._on_endpoint_changed(r, text))
             self.table.setCellWidget(i, 3, combo)
+            self._set_endpoint_metadata(i, combo.currentText())
 
-            # Colonne 4 : bouton "Configurer…"
+            # Colonne 6 : bouton "Configurer…"
             btn = QtWidgets.QPushButton("Configurer…")
             btn.setToolTip("Définir le mapping des champs pour cette couche")
             btn.clicked.connect(lambda checked, row=i: self._open_field_mapping(row))
-            self.table.setCellWidget(i, 4, btn)
+            self.table.setCellWidget(i, 6, btn)
 
     def _on_selection_changed(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -388,9 +415,10 @@ class ProjectActionDialog(QtWidgets.QDialog):
 
     def _on_endpoint_changed(self, row, text):
         """Réinitialise les mappings de champs si l'endpoint change."""
+        self._set_endpoint_metadata(row, text)
         if row in self._field_maps:
             del self._field_maps[row]
-            btn = self.table.cellWidget(row, 4)
+            btn = self.table.cellWidget(row, 6)
             if isinstance(btn, QtWidgets.QPushButton):
                 btn.setText("Configurer…")
             self._on_selection_changed()
@@ -413,25 +441,13 @@ class ProjectActionDialog(QtWidgets.QDialog):
         endpoint = combo.currentText()
         api_columns = []
         if endpoint != "-- Ignorer --":
-            # 1. On cherche d'abord si le nom de la couche QGIS est dans le mapping
-            layer_name = self.layer_info[row]['name']
-            if layer_name in self._all_mappings:
-                m_info = self._all_mappings[layer_name]
-                if m_info.get('endpoint') == endpoint:
-                    api_columns = m_info.get('columns', [])
-
-            # 2. Sinon on cherche par endpoint (plus générique)
-            if not api_columns:
-                for m_info in self._all_mappings.values():
-                    if m_info.get('endpoint') == endpoint:
-                        api_columns = m_info.get('columns', [])
-                        break
+            api_columns = self._mapping_for_endpoint(endpoint).get('columns', [])
 
         dlg = FieldMappingDialog(self, layer=layer, existing_field_map=existing, api_columns=api_columns)
         if dlg.exec_():
             field_map = dlg.get_field_map()
             self._field_maps[row] = field_map
-            btn = self.table.cellWidget(row, 4)
+            btn = self.table.cellWidget(row, 6)
             btn.setText(f"✓ {len(field_map)} champ(s)" if field_map else "Configurer…")
         self._on_selection_changed()
 

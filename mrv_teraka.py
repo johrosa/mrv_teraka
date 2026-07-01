@@ -19,8 +19,8 @@ from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsAppli
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
 
-from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode
-from .config_postgrest import load_layer_mapping, normalize_layer_name_to_endpoint
+from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode, PostgRESTError
+from .config_postgrest import load_layer_mapping
 from .auth_dialog import AuthDialog
 from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
@@ -557,12 +557,7 @@ class MrvTeraka:
         mappings = self.load_layer_mappings()
         if layer_name in mappings and mappings[layer_name].get('endpoint'):
             return mappings[layer_name]
-        return {
-            'endpoint': normalize_layer_name_to_endpoint(layer_name),
-            'geom_field': None,
-            'pk_field': 'id',
-            'columns': []
-        }
+        return None
 
     def update_local_layer_mapping(self, selected_mappings):
         if not selected_mappings:
@@ -659,10 +654,15 @@ class MrvTeraka:
             layer_name = layer.name()
             if not layer_name:
                 continue
-            endpoints[layer_name] = self.get_layer_mapping(layer_name)
+            mapping = self.get_layer_mapping(layer_name)
+            if not mapping:
+                endpoint = layer.customProperty('postgrest:endpoint')
+                mapping = self.get_mapping_for_endpoint(endpoint, include_project=False, fallback=False) if endpoint else None
+            if mapping and mapping.get('endpoint'):
+                endpoints[layer_name] = mapping
         return endpoints
 
-    def get_mapping_for_endpoint(self, endpoint):
+    def get_mapping_for_endpoint(self, endpoint, include_project=True, fallback=True):
         if not endpoint:
             return {'endpoint': endpoint, 'geom_field': None, 'pk_field': 'id'}
 
@@ -671,11 +671,14 @@ class MrvTeraka:
             if m_data.get('endpoint') == endpoint:
                 return m_data
 
-        for mapping in self.get_project_layer_endpoints().values():
-            if mapping.get('endpoint') == endpoint:
-                return mapping
+        if include_project:
+            for mapping in self.get_project_layer_endpoints().values():
+                if mapping.get('endpoint') == endpoint:
+                    return mapping
 
-        return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
+        if fallback:
+            return {'endpoint': endpoint, 'geom_field': 'geom', 'pk_field': 'id'}
+        return None
 
     def mapping_columns(self, mapping):
         if not isinstance(mapping, dict):
@@ -1018,7 +1021,7 @@ class MrvTeraka:
             return
         self.current_validated_data = None
         self.set_sync_ready(False)
-        self.load_database_data(selected_endpoints=selected_endpoints)
+        self.load_database_data(selected_endpoints=selected_endpoints, update_existing_only=True)
         self.set_validation_ready(False)
 
     def load_project_from_mergin(self):
@@ -1915,6 +1918,74 @@ class MrvTeraka:
             self.dockwidget.merginResultsTextEdit.setPlainText(self.tr(u"Migration en cours..."))
 
     @staticmethod
+    def _postgres_error_explanation(code):
+        explanations = {
+            '23503': "Clé étrangère manquante: une donnée liée n'existe pas encore dans la table parente.",
+            '23505': "Doublon: une valeur unique existe déjà.",
+            '23502': "Champ obligatoire manquant: une colonne NOT NULL reçoit une valeur vide.",
+            '22P02': "Format invalide: souvent un UUID, nombre ou date mal formé.",
+            '42804': "Type de donnée incompatible avec la colonne cible.",
+            '42703': "Colonne introuvable dans la table ou la vue PostgREST.",
+            '42P01': "Table ou vue introuvable dans le schéma exposé.",
+            'PGRST204': "Colonne introuvable dans le cache de schéma PostgREST. Recharger le cache ou vérifier le mapping.",
+        }
+        return explanations.get(str(code or ''), "")
+
+    @staticmethod
+    def _extract_constraint_name(*texts):
+        for text in texts:
+            if not text:
+                continue
+            match = re.search(r'constraint "([^"]+)"', str(text), re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return None
+
+    @staticmethod
+    def _sample_row_identifier(rows):
+        if not rows:
+            return None
+        row = rows[0]
+        if not isinstance(row, dict):
+            return None
+        for key in ('id', 'uuid_bosquet_gps', 'uuid_pg_gps', 'uuid_pg', 'uuid_membre', 'uuid_arbre_gps'):
+            value = row.get(key)
+            if value not in (None, ""):
+                return f"{key}={value}"
+        return None
+
+    @staticmethod
+    def _format_postgrest_error(exc, layer_name, endpoint, start_idx, end_idx, rows):
+        if isinstance(exc, PostgRESTError):
+            code = exc.code or "Inconnu"
+            lines = [
+                f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]",
+                f"HTTP {exc.status_code} {exc.reason}",
+                f"Code: {code}",
+            ]
+            if exc.message:
+                lines.append(f"Message: {exc.message}")
+            if exc.details:
+                lines.append(f"Détails: {exc.details}")
+            if exc.hint:
+                lines.append(f"Indice: {exc.hint}")
+
+            constraint = MrvTeraka._extract_constraint_name(exc.message, exc.details)
+            if constraint:
+                lines.append(f"Contrainte: {constraint}")
+
+            explanation = MrvTeraka._postgres_error_explanation(code)
+            if explanation:
+                lines.append(f"Diagnostic: {explanation}")
+
+            sample_id = MrvTeraka._sample_row_identifier(rows)
+            if sample_id:
+                lines.append(f"Première ligne du paquet: {sample_id}")
+            return "\n".join(lines)
+
+        return f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]\n{str(exc)}"
+
+    @staticmethod
     def _do_migration_task(task, migration_data, postgrest_client):
         results, errors_count, CHUNK_SIZE = [], 0, 5000
         for i, (layer_name, endpoint, conflict_field, data) in enumerate(migration_data):
@@ -1932,19 +2003,11 @@ class MrvTeraka:
                     migrated_count += len(chunk_data)
                 except Exception as e:
                     layer_errors += 1
-                    error_msg = "Erreur inconnue"
-                    if hasattr(e, 'response') and e.response is not None:
-                        try:
-                            err_json = e.response.json()
-                            pg_code = err_json.get('code', 'Inconnu')
-                            pg_msg = err_json.get('message', 'Pas de message')
-                            pg_hint = err_json.get('hint') or err_json.get('details') or ''
-                            error_msg = f"PostgREST [{pg_code}] : {pg_msg} ({pg_hint})"
-                        except Exception:
-                            error_msg = f"HTTP {e.response.status_code} : {e.response.text[:100]}"
-                    else:
-                        error_msg = str(e)[:100]
-                    results.append(f"❌ {layer_name} [Paquet {start_idx}-{end_idx}] : {error_msg}")
+                    errors_count += 1
+                    error_msg = MrvTeraka._format_postgrest_error(
+                        e, layer_name, endpoint, start_idx, end_idx, chunk_data
+                    )
+                    results.append(f"❌ {error_msg}")
 
             task.setProgress((i + 1) / len(migration_data) * 100)
         return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
@@ -1965,170 +2028,180 @@ class MrvTeraka:
         else:
             self.show_info(self.tr(u'Migration réussie'), report)
 
-    def load_database_data(self, selected_endpoints=None):
+    def _requested_api_mappings(self, selected_endpoints=None, fallback_to_project=False):
+        if selected_endpoints:
+            if isinstance(selected_endpoints, dict):
+                requested = {}
+                for layer_name, mapping in selected_endpoints.items():
+                    if isinstance(mapping, dict):
+                        endpoint = mapping.get('endpoint')
+                        if endpoint:
+                            requested[layer_name] = mapping
+                    elif mapping:
+                        requested[layer_name] = self.get_mapping_for_endpoint(mapping)
+                return requested
+
+            return {
+                name: mapping
+                for name in selected_endpoints
+                for mapping in [self.get_layer_mapping(name)]
+                if mapping and mapping.get('endpoint')
+            }
+
+        selected = self.dockwidget.get_selected_endpoints() if self.dockwidget else []
+        if selected:
+            return {
+                name: mapping
+                for name in selected
+                for mapping in [self.get_layer_mapping(name)]
+                if mapping and mapping.get('endpoint')
+            }
+
+        return self.get_project_layer_endpoints() if fallback_to_project else {}
+
+    def _find_existing_api_layer(self, layer_name, endpoint_value):
+        for layer in QgsProject.instance().mapLayers().values():
+            if layer.type() != QgsMapLayer.VectorLayer:
+                continue
+            if layer.customProperty('postgrest:endpoint') == endpoint_value:
+                return layer
+
+        for layer in QgsProject.instance().mapLayersByName(layer_name):
+            if layer.type() == QgsMapLayer.VectorLayer:
+                return layer
+        return None
+
+    def _create_api_layer_from_data(self, db_data, display_name, geom_field, endpoint_value):
+        if is_geojson(db_data):
+            import tempfile
+            temp_file = None
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as f:
+                json.dump(db_data, f)
+                temp_file = f.name
+
+            new_layer = QgsVectorLayer(temp_file, display_name, 'ogr')
+            if not new_layer.isValid():
+                if temp_file and os.path.exists(temp_file):
+                    os.unlink(temp_file)
+                QMessageBox.critical(
+                    self.iface.mainWindow(),
+                    "Erreur",
+                    f"GéoJSON invalide pour {endpoint_value}."
+                )
+                return None
+            new_layer.setCustomProperty('mrv:temp_geojson_path', temp_file)
+            return new_layer
+
+        return create_vector_layer(db_data, display_name, geom_field)
+
+    def _replace_or_add_api_layer(self, new_layer, existing_layer, endpoint_value, geom_field, mapping):
+        preserved_style = None
+        preserved_visibility = True
+        preserved_opacity = 1.0
+        layer_tree_index = None
+        had_existing_layer = existing_layer is not None
+        old_temp_geojson_path = None
+
+        if had_existing_layer:
+            existing_layer_id = existing_layer.id()
+            old_temp_geojson_path = existing_layer.customProperty('mrv:temp_geojson_path')
+            style_doc = QgsMapLayerStyle()
+            style_doc.readFromLayer(existing_layer)
+            preserved_style = style_doc
+            preserved_opacity = existing_layer.opacity()
+
+            root = QgsProject.instance().layerTreeRoot()
+            existing_node = root.findLayer(existing_layer_id)
+            if existing_node:
+                preserved_visibility = existing_node.itemVisibilityChecked()
+            for i, child in enumerate(root.children()):
+                if hasattr(child, 'layer') and child.layer() and child.layer().id() == existing_layer_id:
+                    layer_tree_index = i
+                    break
+
+            QgsProject.instance().removeMapLayer(existing_layer_id)
+            existing_layer = None
+            if old_temp_geojson_path and os.path.exists(old_temp_geojson_path):
+                try:
+                    os.unlink(old_temp_geojson_path)
+                except OSError:
+                    pass
+
+        new_layer.setCustomProperty('postgrest:endpoint', endpoint_value)
+        new_layer.setCustomProperty('postgrest:geom_field', geom_field)
+        new_layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
+
+        if had_existing_layer and layer_tree_index is not None:
+            root = QgsProject.instance().layerTreeRoot()
+            QgsProject.instance().addMapLayer(new_layer, False)
+            new_node = root.insertLayer(layer_tree_index, new_layer)
+        else:
+            QgsProject.instance().addMapLayer(new_layer)
+            new_node = QgsProject.instance().layerTreeRoot().findLayer(new_layer.id())
+
+        if preserved_style:
+            preserved_style.writeToLayer(new_layer)
+        if new_node:
+            new_node.setItemVisibilityChecked(preserved_visibility)
+        new_layer.setOpacity(preserved_opacity)
+
+    def load_database_data(self, selected_endpoints=None, update_existing_only=False):
         if not self.dockwidget or not self.check_api_auth():
             return
 
         commune_context = self.build_commune_filters()
-        
-        if selected_endpoints:
-            # If selected_endpoints is a dict from the dialog (layer_name -> mapping)
-            if isinstance(selected_endpoints, dict) and selected_endpoints:
-                first_key = next(iter(selected_endpoints.keys()))
-                if isinstance(selected_endpoints[first_key], dict) and 'endpoint' in selected_endpoints[first_key]:
-                    # Convert dict format {layer_name: {endpoint:..., pk_field:..., geom_field:...}} to endpoints list
-                    selected_list = [m.get('endpoint') for m in selected_endpoints.values() if m.get('endpoint')]
-                    requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected_list}
-                else:
-                    # Already in the right format
-                    requested_endpoints = selected_endpoints
-            else:
-                requested_endpoints = selected_endpoints or {}
-        else:
-            # Get from UI selection or project layers
-            selected = self.dockwidget.get_selected_endpoints()
-            if selected:
-                requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected}
-            else:
-                requested_endpoints = self.get_project_layer_endpoints()
+        requested_endpoints = self._requested_api_mappings(
+            selected_endpoints=selected_endpoints,
+            fallback_to_project=update_existing_only
+        )
 
         if not requested_endpoints:
+            message = (
+                self.tr(u'Aucune couche QGIS mappée à actualiser.')
+                if update_existing_only else
+                self.tr(u'Aucune table sélectionnée à charger depuis l\'API.')
+            )
             self.show_warning(
                 self.tr(u'Erreur'),
-                self.tr(u'Aucun endpoint configuré ou aucune couche vectorielle détectée dans le projet.')
+                message
             )
             return
 
         try:
             updated_count = 0
+            skipped_count = 0
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
                 filters = self.build_sector_filters(mapping, commune_context)
                 db_data = self.postgrest.select(endpoint_value, filters=filters)
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
+                existing_layer = self._find_existing_api_layer(layer_name, endpoint_value)
 
-                # Try to find existing layer by endpoint
-                existing_layer = None
-                for layer in QgsProject.instance().mapLayers().values():
-                    if layer.type() != QgsMapLayer.VectorLayer:
-                        continue
-                    if layer.customProperty('postgrest:endpoint') == endpoint_value:
-                        existing_layer = layer
-                        break
-
-                if not db_data:
-                    # No data from API, skip updating (don't create empty layers)
-                    if not existing_layer:
-                        self.show_warning(
-                            self.tr(u'Avertissement'),
-                            self.tr(u'Pas de données disponibles pour {0}').format(endpoint_value)
-                        )
+                if update_existing_only and not existing_layer:
+                    skipped_count += 1
                     continue
 
-                # Prepare style and visibility preservation
-                preserved_style = None
-                preserved_visibility = True
-                preserved_opacity = 1.0
-                layer_tree_index = None
+                if not db_data:
+                    skipped_count += 1
+                    continue
 
-                if existing_layer:
-                    # Save style from existing layer
-                    style_doc = QgsMapLayerStyle()
-                    style_doc.readFromLayer(existing_layer)
-                    preserved_style = style_doc
-                    preserved_opacity = existing_layer.opacity()
+                new_layer = self._create_api_layer_from_data(db_data, display_name, geom_field, endpoint_value)
+                if not new_layer or not new_layer.isValid():
+                    skipped_count += 1
+                    continue
 
-                    # Get position in layer tree (root group)
-                    root = QgsProject.instance().layerTreeRoot()
-                    existing_node = root.findLayer(existing_layer.id())
-                    if existing_node:
-                        preserved_visibility = existing_node.itemVisibilityChecked()
-                    for i, child in enumerate(root.children()):
-                        if hasattr(child, 'layer') and child.layer() and child.layer().id() == existing_layer.id():
-                            layer_tree_index = i
-                            break
+                self._replace_or_add_api_layer(new_layer, existing_layer, endpoint_value, geom_field, mapping)
+                updated_count += 1
 
-                if is_geojson(db_data):
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as f:
-                        json.dump(db_data, f)
-                        temp_file = f.name
-
-                    new_layer = QgsVectorLayer(temp_file, display_name, 'ogr')
-                    if not new_layer.isValid():
-                        QMessageBox.critical(self.iface.mainWindow(), "Erreur", f"GéoJSON invalide pour {endpoint_value}.")
-                        os.unlink(temp_file)
-                        continue
-
-                    if existing_layer:
-                        # Remove old layer first
-                        QgsProject.instance().removeMapLayer(existing_layer.id())
-                        
-                        # Set custom properties before adding
-                        new_layer.setCustomProperty('postgrest:endpoint', endpoint_value)
-                        new_layer.setCustomProperty('postgrest:geom_field', geom_field)
-                        new_layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
-                        
-                        # Add layer back (at the same position if available)
-                        if layer_tree_index is not None:
-                            root = QgsProject.instance().layerTreeRoot()
-                            QgsProject.instance().addMapLayer(new_layer, False)
-                            new_node = root.insertLayer(layer_tree_index, new_layer)
-                        else:
-                            QgsProject.instance().addMapLayer(new_layer)
-                            new_node = QgsProject.instance().layerTreeRoot().findLayer(new_layer.id())
-                        
-                        # Restore style, visibility, and opacity
-                        if preserved_style:
-                            preserved_style.writeToLayer(new_layer)
-                        if new_node:
-                            new_node.setItemVisibilityChecked(preserved_visibility)
-                        new_layer.setOpacity(preserved_opacity)
-                        
-                        updated_count += 1
-                    else:
-                        # Skip creating new layers during refresh - only update existing ones
-                        continue
-                    os.unlink(temp_file)
-                else:
-                    new_layer = create_vector_layer(db_data, display_name, geom_field)
-                    if not new_layer or not new_layer.isValid():
-                        continue
-
-                    if existing_layer:
-                        # Remove old layer first
-                        QgsProject.instance().removeMapLayer(existing_layer.id())
-                        
-                        # Set custom properties before adding
-                        new_layer.setCustomProperty('postgrest:endpoint', endpoint_value)
-                        new_layer.setCustomProperty('postgrest:geom_field', geom_field)
-                        new_layer.setCustomProperty('postgrest:pk_field', mapping.get('pk_field', 'id'))
-                        
-                        # Add layer back (at the same position if available)
-                        if layer_tree_index is not None:
-                            root = QgsProject.instance().layerTreeRoot()
-                            QgsProject.instance().addMapLayer(new_layer, False)
-                            new_node = root.insertLayer(layer_tree_index, new_layer)
-                        else:
-                            QgsProject.instance().addMapLayer(new_layer)
-                            new_node = QgsProject.instance().layerTreeRoot().findLayer(new_layer.id())
-                        
-                        # Restore style, visibility, and opacity
-                        if preserved_style:
-                            preserved_style.writeToLayer(new_layer)
-                        if new_node:
-                            new_node.setItemVisibilityChecked(preserved_visibility)
-                        new_layer.setOpacity(preserved_opacity)
-                        
-                        updated_count += 1
-                    else:
-                        # Skip creating new layers during refresh - only update existing ones
-                        continue
-
+            title = self.tr(u'Actualisation terminée') if update_existing_only else self.tr(u'Chargement terminé')
+            action = self.tr(u'mise(s) à jour') if update_existing_only else self.tr(u'chargée(s)')
+            message = self.tr(u'{0} couche(s) {1} depuis l\'API.').format(updated_count, action)
+            if skipped_count:
+                message += self.tr(u'\n{0} table(s) ignorée(s): aucune couche existante ou aucune donnée disponible.').format(skipped_count)
             self.show_info(
-                self.tr(u'Chargement terminé'),
-                self.tr(u'{0} couche(s) mise(s) à jour depuis PostgREST.').format(updated_count)
+                title,
+                message
             )
         except Exception as exc:
             self.show_error(self.tr(u'Erreur'), exc)
@@ -2141,7 +2214,12 @@ class MrvTeraka:
         commune_context = self.build_commune_filters()
         
         if selected:
-            requested_endpoints = {ep: self.get_mapping_for_endpoint(ep) for ep in selected}
+            requested_endpoints = {
+                name: mapping
+                for name in selected
+                for mapping in [self.get_layer_mapping(name)]
+                if mapping and mapping.get('endpoint')
+            }
         else:
             requested_endpoints = self.get_project_layer_endpoints()
 

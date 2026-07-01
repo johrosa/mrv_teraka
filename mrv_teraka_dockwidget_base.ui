@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>955</height>
+    <width>431</width>
+    <height>940</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -35,7 +35,7 @@
       <property name="minimumSize">
        <size>
         <width>0</width>
-        <height>40</height>
+        <height>35</height>
        </size>
       </property>
       <property name="autoFillBackground">
@@ -257,7 +257,7 @@
                <item>
                 <widget class="QLabel" name="labelEndpoint">
                  <property name="text">
-                  <string>Couches :</string>
+                  <string>Données :</string>
                  </property>
                 </widget>
                </item>
@@ -277,7 +277,7 @@
                <item>
                 <widget class="QCheckBox" name="selectAllEndpointsCheckBox">
                  <property name="text">
-                  <string>Toutes les couches</string>
+                  <string>Toutes les tables</string>
                  </property>
                 </widget>
                </item>
@@ -301,7 +301,7 @@
                <item>
                 <widget class="QPushButton" name="loadDbButton">
                  <property name="text">
-                  <string>Charger</string>
+                  <string>Charger API</string>
                  </property>
                 </widget>
                </item>
@@ -312,16 +312,16 @@
                  </property>
                 </widget>
                </item>
+               <item>
+                <widget class="QPushButton" name="refreshFromApiButton">
+                 <property name="text">
+                  <string>Actualiser</string>
+                 </property>
+                </widget>
+               </item>
               </layout>
              </item>
             </layout>
-           </item>
-           <item>
-            <widget class="QPushButton" name="refreshFromApiButton">
-             <property name="text">
-              <string>Actualiser</string>
-             </property>
-            </widget>
            </item>
            <item>
             <widget class="QPushButton" name="processProjectButton">
@@ -344,7 +344,7 @@
              <property name="maximumSize">
               <size>
                <width>16777215</width>
-               <height>60</height>
+               <height>50</height>
               </size>
              </property>
              <property name="readOnly">

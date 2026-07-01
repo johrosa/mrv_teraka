@@ -59,9 +59,12 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.districtComboBox.lineEdit().setPlaceholderText("Sélectionner un district...")
 
         # Tooltips métier
-        self.compareButton.setToolTip("Vérifier les différences avec la base centrale")
-        self.loadDbButton.setToolTip("Importer les données de la couche choisie")
-        self.refreshFromApiButton.setToolTip("Mettre à jour les données depuis le serveur")
+        self.loadDbButton.setText("Charger API")
+        self.refreshFromApiButton.setText("Actualiser")
+        self.compareButton.setText("Vérifier")
+        self.loadDbButton.setToolTip("Charger les tables sélectionnées depuis l'API, même si les couches ne sont pas encore dans QGIS")
+        self.refreshFromApiButton.setToolTip("Actualiser les couches QGIS existantes avec les données de l'API")
+        self.compareButton.setToolTip("Vérifier les différences entre les sélections et la base centrale")
         self.processProjectButton.setText("Assistant Projet")
         self.processProjectButton.setToolTip("Diagnostiquer les couches, confirmer les mappings et choisir une action")
 
@@ -258,17 +261,16 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.refreshMappingsButton.setText("🔄 Synchroniser les Listes")
 
     def on_refresh_from_api_clicked(self):
-        """Open layer selection dialog before refreshing data from API."""
+        """Open layer selection dialog before refreshing existing QGIS layers from API."""
         if not self.plugin:
             return
 
-        # Get current layer mappings
-        mappings = self.plugin.load_layer_mappings()
+        mappings = self.plugin.get_project_layer_endpoints()
         if not mappings:
             QtWidgets.QMessageBox.warning(
                 self,
                 "Erreur",
-                "Aucun mapping de couche trouvé. Veuillez d'abord configurer les couches."
+                "Aucune couche QGIS mappée n'est chargée. Utilisez d'abord Charger API ou configurez les mappings."
             )
             return
 

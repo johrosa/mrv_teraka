@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import json
 from qgis.PyQt import uic, QtWidgets, QtCore
 from qgis.core import QgsProject, QgsMapLayer
 
@@ -98,7 +99,7 @@ class LayerMappingDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowTitle("Mapping des Couches vers l'API")
-        self.resize(850, 450)
+        self.resize(1050, 450)
 
         self.layout = QtWidgets.QVBoxLayout(self)
 
@@ -106,12 +107,14 @@ class LayerMappingDialog(QtWidgets.QDialog):
         self.layout.addWidget(self.label)
 
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
             "",
             "Couche QGIS",
             "Type",
             "Table API (Endpoint)",
+            "Clé primaire",
+            "Géométrie",
             "Field Mappings",
         ])
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
@@ -119,6 +122,8 @@ class LayerMappingDialog(QtWidgets.QDialog):
         self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeToContents)
         self.layout.addWidget(self.table)
 
         # Bouton sous le tableau
@@ -141,6 +146,7 @@ class LayerMappingDialog(QtWidgets.QDialog):
 
         self.layers = layers or []
         self.endpoints = sorted(endpoints or [])
+        self._all_mappings = self._load_all_mappings()
         self._field_maps = {}
 
         self.populate_table()
@@ -153,6 +159,48 @@ class LayerMappingDialog(QtWidgets.QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.layout.addWidget(self.button_box)
+
+    def _load_all_mappings(self):
+        plugin_dir = os.path.dirname(__file__)
+        path = os.path.join(plugin_dir, "layer_table_mapping.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f).get("mappings", {})
+            except Exception:
+                pass
+        return {}
+
+    def _mapping_for_endpoint(self, endpoint):
+        if not endpoint or endpoint == "-- Ignorer --":
+            return {}
+        for mapping in self._all_mappings.values():
+            if mapping.get('endpoint') == endpoint:
+                return mapping
+        return {}
+
+    def _set_endpoint_metadata(self, row, endpoint):
+        mapping = self._mapping_for_endpoint(endpoint)
+        pk_field = mapping.get('pk_field') or "id"
+        geom_field = mapping.get('geom_field') or ""
+        geom_text = geom_field if geom_field else "Aucune"
+
+        pk_item = QtWidgets.QTableWidgetItem(pk_field if endpoint != "-- Ignorer --" else "—")
+        pk_item.setFlags(pk_item.flags() ^ QtCore.Qt.ItemIsEditable)
+        self.table.setItem(row, 4, pk_item)
+
+        geom_item = QtWidgets.QTableWidgetItem(geom_text if endpoint != "-- Ignorer --" else "—")
+        geom_item.setFlags(geom_item.flags() ^ QtCore.Qt.ItemIsEditable)
+        self.table.setItem(row, 5, geom_item)
+
+    def _on_endpoint_changed(self, row, endpoint):
+        self._set_endpoint_metadata(row, endpoint)
+        if row in self._field_maps:
+            del self._field_maps[row]
+            btn = self.table.cellWidget(row, 6)
+            if isinstance(btn, QtWidgets.QPushButton):
+                btn.setText("Configurer…")
+        self._on_selection_changed()
 
     def populate_table(self):
         self.table.setRowCount(len(self.layers))
@@ -197,13 +245,15 @@ class LayerMappingDialog(QtWidgets.QDialog):
             if not found:
                 combo.setCurrentIndex(0)
 
+            combo.currentTextChanged.connect(lambda text, row=i: self._on_endpoint_changed(row, text))
             self.table.setCellWidget(i, 3, combo)
+            self._set_endpoint_metadata(i, combo.currentText())
 
-            # Colonne 4 : bouton "Configurer…"
+            # Colonne 6 : bouton "Configurer…"
             btn = QtWidgets.QPushButton("Configurer…")
             btn.setToolTip("Définir le mapping des champs pour cette couche")
             btn.clicked.connect(lambda checked, row=i: self._open_field_mapping(row))
-            self.table.setCellWidget(i, 4, btn)
+            self.table.setCellWidget(i, 6, btn)
 
     def _on_selection_changed(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -226,7 +276,7 @@ class LayerMappingDialog(QtWidgets.QDialog):
         if dlg.exec_():
             field_map = dlg.get_field_map()
             self._field_maps[row] = field_map
-            btn = self.table.cellWidget(row, 4)
+            btn = self.table.cellWidget(row, 6)
             btn.setText(f"✓ {len(field_map)} champ(s)" if field_map else "Configurer…")
         self._on_selection_changed()
 

@@ -20,6 +20,45 @@ class PostgRESTMode(Enum):
     DJANGO = "django"              # PostgREST via Django (http://localhost:8000/api)
 
 
+class PostgRESTError(RuntimeError):
+    """Erreur PostgREST structurée avec le corps JSON d'origine si disponible."""
+
+    def __init__(
+        self,
+        status_code: int,
+        reason: str,
+        url: str,
+        method: str,
+        endpoint: str,
+        error_body: str,
+        error_json: Optional[Dict[str, Any]] = None,
+    ):
+        self.status_code = status_code
+        self.reason = reason
+        self.url = url
+        self.method = method.upper()
+        self.endpoint = endpoint
+        self.error_body = error_body
+        self.error_json = error_json or {}
+        self.code = self.error_json.get('code')
+        self.message = self.error_json.get('message') or error_body.strip()
+        self.details = self.error_json.get('details')
+        self.hint = self.error_json.get('hint')
+        super().__init__(self._build_message())
+
+    def _build_message(self) -> str:
+        parts = [f"PostgREST HTTP {self.status_code} : {self.reason}"]
+        if self.code:
+            parts.append(f"Code: {self.code}")
+        if self.message:
+            parts.append(f"Message: {self.message}")
+        if self.details:
+            parts.append(f"Details: {self.details}")
+        if self.hint:
+            parts.append(f"Hint: {self.hint}")
+        return "\n".join(parts)
+
+
 class PostgREST:
     """Client PostgREST avec authentification JWT
     
@@ -196,7 +235,22 @@ class PostgREST:
             error_body = e.read().decode('utf-8', errors='ignore')
             if show_error_ui:
                 self._show_django_error(e, url, error_body, method=method)
-            raise RuntimeError(f"PostgREST HTTP {e.code} : {e.reason}\n{error_body}") from e
+            error_json = None
+            try:
+                parsed_body = json.loads(error_body)
+                if isinstance(parsed_body, dict):
+                    error_json = parsed_body
+            except (TypeError, ValueError):
+                error_json = None
+            raise PostgRESTError(
+                status_code=e.code,
+                reason=e.reason,
+                url=url,
+                method=method,
+                endpoint=endpoint,
+                error_body=error_body,
+                error_json=error_json,
+            ) from e
         except Exception as exc:
             raise RuntimeError(f"Erreur PostgREST : {exc}") from exc
     
