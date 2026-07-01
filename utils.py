@@ -4,6 +4,17 @@ import re
 
 class Utils:
     @staticmethod
+    def resolve_postgrest_geom_field(mapping_geom_field, layer_is_spatial):
+        """Retourne le nom du champ géométrie à envoyer vers PostgREST, ou None si la couche est alphanumérique."""
+        if not layer_is_spatial:
+            return None
+
+        value = str(mapping_geom_field or "").strip()
+        if not value:
+            return 'geom'
+        return value.lower()
+
+    @staticmethod
     def flatten_json(data, parent_key='', sep='_'):
         """Aplatit un dictionnaire JSON récursivement."""
         if not isinstance(data, dict):

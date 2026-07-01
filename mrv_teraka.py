@@ -18,6 +18,7 @@ from .resources import *
 from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes, QgsRasterLayer, QgsDefaultValue
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
 from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
+from .utils import Utils
 
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode, PostgRESTError
 from .config_postgrest import load_layer_mapping
@@ -1941,16 +1942,21 @@ class MrvTeraka:
 
             api_columns = [str(col).lower() for col in mapping.get('columns', [])]
             endpoint_name = mapping['endpoint'].lower()
-            geom_field = (mapping.get('geom_field') or 'geom').lower()
+            layer_is_spatial = bool(layers[0].isSpatial())
+            geom_field = Utils.resolve_postgrest_geom_field(mapping.get('geom_field'), layer_is_spatial)
             field_override = HARD_MAPPINGS.get(endpoint_name, {})
             pk_field = mapping.get('pk_field', 'id').lower()
             data_to_push = []
 
             for idx, row in enumerate(raw_data, start=1):
-                raw_geom = row.get(geom_field) or row.get('geom') or row.get('geometry')
-                geom_value = raw_geom.asWkt() if hasattr(raw_geom, 'asWkt') else (
-                    raw_geom if isinstance(raw_geom, (str, dict)) else str(raw_geom) if raw_geom else None
-                )
+                raw_geom = None
+                if geom_field:
+                    raw_geom = row.get(geom_field) or row.get('geom') or row.get('geometry')
+                geom_value = None
+                if raw_geom is not None:
+                    geom_value = raw_geom.asWkt() if hasattr(raw_geom, 'asWkt') else (
+                        raw_geom if isinstance(raw_geom, (str, dict)) else str(raw_geom) if raw_geom else None
+                    )
 
                 row_mapped = {}
                 for k, v in row.items():
@@ -1968,7 +1974,8 @@ class MrvTeraka:
                     fid_val = row_mapped.get('fid') or row_mapped.get('id_0') or row_mapped.get('gid')
                     filtered_row[pk_field] = fid_val if fid_val is not None else idx
 
-                filtered_row[geom_field] = geom_value
+                if geom_field:
+                    filtered_row[geom_field] = geom_value
 
                 if 'uuid_operateur' in api_columns and user_uuid and not filtered_row.get('uuid_operateur'):
                     filtered_row['uuid_operateur'] = user_uuid
