@@ -1473,10 +1473,16 @@ class MrvTeraka:
             gpkg_name = self.unique_gpkg_layer_name(endpoint, used_names)
             layer_specs[gpkg_name] = {'layer': layer, 'endpoint': endpoint, 'mapped': True}
 
+        support_layer_ids = self.collect_form_support_layer_ids(selected_layer_ids)
+        skipped_support_count = 0
+
         for layer in project.mapLayers().values():
             if layer.type() != QgsMapLayer.VectorLayer:
                 continue
             if layer.id() in selected_layer_ids:
+                continue
+            if layer.id() not in support_layer_ids:
+                skipped_support_count += 1
                 continue
             if not layer.isValid():
                 continue
@@ -1488,8 +1494,73 @@ class MrvTeraka:
             self.dockwidget.merginResultsTextEdit.append(
                 f"🔗 {support_count} couches support non mappées conservées pour les formulaires."
             )
+        if skipped_support_count and self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"⚡ {skipped_support_count} couches non utilisées ignorées pour accélérer l'export terrain."
+            )
 
         return layer_specs
+
+    def collect_form_support_layer_ids(self, selected_layer_ids):
+        """
+        Retourne les couches non mappées réellement nécessaires aux formulaires.
+
+        QGIS stocke les couches de widgets comme ValueRelation dans la config
+        des champs, souvent sous une cle "Layer". Exporter seulement ces
+        couches evite de copier tout le projet dans le GeoPackage terrain.
+        """
+        project = QgsProject.instance()
+        support_ids = set()
+        visited_ids = set()
+        pending_ids = list(selected_layer_ids)
+
+        while pending_ids:
+            layer_id = pending_ids.pop()
+            if layer_id in visited_ids:
+                continue
+            visited_ids.add(layer_id)
+
+            layer = project.mapLayer(layer_id)
+            if not layer or layer.type() != QgsMapLayer.VectorLayer:
+                continue
+
+            for ref_id in self.form_referenced_layer_ids(layer):
+                if ref_id in visited_ids or not project.mapLayer(ref_id):
+                    continue
+                if ref_id not in selected_layer_ids:
+                    support_ids.add(ref_id)
+                pending_ids.append(ref_id)
+
+        return support_ids
+
+    def form_referenced_layer_ids(self, layer):
+        referenced_ids = set()
+        for idx in range(layer.fields().count()):
+            try:
+                setup = layer.editorWidgetSetup(idx)
+                self.collect_layer_ids_from_value(setup.config(), referenced_ids)
+            except Exception:
+                continue
+        return referenced_ids
+
+    def collect_layer_ids_from_value(self, value, referenced_ids):
+        project = QgsProject.instance()
+
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key).lower()
+                if key_text in ('layer', 'layerid', 'layer_id'):
+                    if isinstance(item, str):
+                        ref_layer = project.mapLayer(item)
+                        if ref_layer:
+                            referenced_ids.add(ref_layer.id())
+                    continue
+                self.collect_layer_ids_from_value(item, referenced_ids)
+            return
+
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                self.collect_layer_ids_from_value(item, referenced_ids)
 
     def unique_gpkg_layer_name(self, name, used_names):
         base_name = self.mergin_bridge.safe_project_name(name)
