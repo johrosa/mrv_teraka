@@ -90,10 +90,11 @@ class MrvTeraka:
 
     def _apply_field_map(self, data, field_map):
         """
-        Renomme les clés d'une liste de dicts selon le field_map.
+        Renomme ou exclut les clés d'une liste de dicts selon le field_map.
           field_map = { 'qgis_field': 'api_column' }
           - clé absente du map  → conservée telle quelle
           - valeur vide ('')    → nom identique (conservé)
+          - valeur False/None   → champ exclu
         """
         if not field_map:
             return data
@@ -104,7 +105,11 @@ class MrvTeraka:
                 if qgis_col not in field_map:
                     new_row[qgis_col] = value
                     continue
+
                 api_col = field_map[qgis_col]
+                if api_col is False or api_col is None:
+                    continue
+
                 new_row[api_col if api_col else qgis_col] = value
             result.append(new_row)
         return result
@@ -1910,7 +1915,7 @@ class MrvTeraka:
         ) != QMessageBox.Yes:
             return
 
-        EXECUTION_ORDER = ["communes", "pg_gps", "pg_infos", "membre", "bosquet_gps", "arbre_gps", "arbre_baseline"]
+        EXECUTION_ORDER = ["communes", "pg_infos","pg_gps", "membre", "bosquet_gps", "arbre_gps", "arbre_baseline"]
 
         def get_priority(pair):
             name = pair[1].get('endpoint', '').lower()
@@ -1980,18 +1985,17 @@ class MrvTeraka:
                 if 'uuid_operateur' in api_columns and user_uuid and not filtered_row.get('uuid_operateur'):
                     filtered_row['uuid_operateur'] = user_uuid
 
-                for k, v in list(filtered_row.items()):
-                    if ('uuid' in k or k == 'id' or '_id' in k) and (
-                        v and isinstance(v, str) and "-" not in v and not v.isdigit()
-                    ):
-                        dest_col = 'username' if 'username' in api_columns else (
-                            'nom' if 'nom' in api_columns else 'libelle'
-                        )
-                        if dest_col in api_columns:
-                            filtered_row[dest_col] = v
-                        if k == 'c_com':
-                            continue
-                        filtered_row[k] = None
+                # Ne jamais réécrire ni déplacer les colonnes UUID/PK vers d'autres champs.
+                # Les valeurs de uuid_pg, uuid_membre, uuid_arbre_gps, etc. doivent rester
+                # dans la colonne qui a été explicitement mappée dans le payload.
+                for key in list(filtered_row.keys()):
+                    key_lower = str(key).lower()
+                    if key_lower == 'c_com':
+                        continue
+                    if key_lower in {'uuid_operateur', 'uuid_verificateur'}:
+                        continue
+                    if key_lower.startswith('uuid') or key_lower == 'id' or key_lower.endswith('_id'):
+                        continue
 
                 data_to_push.append(filtered_row)
 
@@ -2001,6 +2005,12 @@ class MrvTeraka:
         if not migration_data:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
             return
+
+        QMessageBox.information(
+            self.iface.mainWindow(),
+            self.tr(u'Migration'),
+            self.tr(u"Les données de {count} couches vont être migrées vers la base de données.").format(count=migration_data)
+        )
 
         self.active_migration_task = QgsTask.fromFunction(
             self.tr(u'Migration des données MrvTeraka'), self._do_migration_task,

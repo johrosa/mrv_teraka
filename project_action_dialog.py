@@ -115,10 +115,12 @@ class FieldMappingDialog(QtWidgets.QDialog):
         result = {}
         for i in range(self.table.rowCount()):
             included = self.table.item(i, 0).checkState() == QtCore.Qt.Checked
-            if not included:
-                continue
             qgis_name = self.table.item(i, 1).text()
-            
+
+            if not included:
+                result[qgis_name] = False
+                continue
+
             # Récupérer la valeur API (Widget ou Item)
             widget = self.table.cellWidget(i, 2)
             if isinstance(widget, QtWidgets.QComboBox):
@@ -126,7 +128,7 @@ class FieldMappingDialog(QtWidgets.QDialog):
             else:
                 item = self.table.item(i, 2)
                 api_name = item.text().strip() if item else ""
-                
+
             result[qgis_name] = api_name
         return result
 
