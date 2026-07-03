@@ -127,7 +127,12 @@ class PostgREST:
                 endpoint = endpoint[len('data/'):]
 
         base_url = self.postgrest_api_url.rstrip('/')
-        url = f"{base_url}/{endpoint}" if endpoint else base_url
+        # Pour éviter les redirects 301 (HEAD /api/data -> 301, puis GET /api/data/ avec données),
+        # ajouter un trailing slash si l'endpoint est vide
+        if endpoint:
+            url = f"{base_url}/{endpoint}"
+        else:
+            url = f"{base_url}/"
         if params:
             query_string = urllib.parse.urlencode(params)
             url = f"{url}?{query_string}"
@@ -442,21 +447,19 @@ class PostgREST:
         return self._make_request('GET', '', show_error_ui=True)
 
     def verify_token(self) -> bool:
-        """Vérifie que le jeton actuel est accepté par le serveur via une requête HEAD légère."""
+        """Vérifie que le jeton actuel est accepté par le serveur via une requête HEAD légère sur la racine API."""
         if not self.jwt_token:
             return False
         try:
-            # Utiliser HEAD au lieu de GET pour éviter de télécharger tout le schéma (700Ko+)
+            # Requête HEAD sur la racine API pour vérifier le token sans charger aucune donnée
             self._make_request('HEAD', '', show_error_ui=False, timeout=5)
             return True
         except RuntimeError as exc:
             message = str(exc)
             if 'HTTP 401' in message or 'HTTP 403' in message:
                 return False
-            # Si le serveur ne supporte pas HEAD, on peut avoir une 405 Method Not Allowed
-            # Dans ce cas on considère que le token est valide (puisqu'on a atteint le serveur)
-            # ou on pourrait fallback sur un petit GET, mais HEAD est généralement supporté
-            return True
+            # Autres erreurs = pas de connexion
+            return False
         except Exception:
             return False
 

@@ -1942,7 +1942,7 @@ class MrvTeraka:
                 continue
 
             # ← Appliquer le field_map avant le nettoyage strict
-            field_map = mapping.pop('_field_map', {})
+            field_map = mapping.get('_field_map', {})
             raw_data = self._apply_field_map(raw_data, field_map)
 
             api_columns = [str(col).lower() for col in mapping.get('columns', [])]
@@ -1974,8 +1974,27 @@ class MrvTeraka:
                 for col in api_columns:
                     val = row_mapped.get(col)
                     filtered_row[col] = None if val == "" else val
+                
+                # Préserver les champs UUID/ID qui ont été mappés via field_map
+                # Prendre la valeur du champ ORIGINAL (avant renommage) pour les UUID
+                for original_field, mapped_field in field_map.items():
+                    if mapped_field:  # Champ inclus dans le mapping
+                        mapped_lower = mapped_field.lower()
+                        # Vérifier si c'est un UUID ou un champ d'ID qui doit être préservé
+                        is_special_field = (mapped_lower.startswith('uuid') or 
+                                          mapped_lower == 'id' or 
+                                          mapped_lower.endswith('_id') or
+                                          mapped_lower.endswith('_uuid'))
+                        
+                        if is_special_field and mapped_lower in [c.lower() for c in api_columns]:
+                            # Prendre la valeur du champ original dans row (pas row_mapped)
+                            val = row.get(original_field)
+                            if val is not None:
+                                filtered_row[mapped_lower] = val
 
-                if pk_field in api_columns and filtered_row.get('id') is None:
+                # Ne pas remplir le pk_field si c'est un UUID explicitement mappé
+                is_uuid_field = pk_field.startswith('uuid') or pk_field.endswith('_uuid')
+                if pk_field in api_columns and not is_uuid_field and filtered_row.get(pk_field) is None:
                     fid_val = row_mapped.get('fid') or row_mapped.get('id_0') or row_mapped.get('gid')
                     filtered_row[pk_field] = fid_val if fid_val is not None else idx
 
@@ -2001,6 +2020,7 @@ class MrvTeraka:
 
             conflict_field = self.conflict_field_for_mapping(mapping)
             migration_data.append((layer_name, mapping['endpoint'], conflict_field, data_to_push))
+
 
         if not migration_data:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
