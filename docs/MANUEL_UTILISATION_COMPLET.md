@@ -188,8 +188,6 @@ Les filtres sont appliques aux endpoints qui contiennent des colonnes compatible
 
 - `secteur`
 - `district`
-- `nom_secteur`
-- `nom_district`
 - `commune`
 
 Si des communes sont selectionnees, le plugin construit un filtre PostgREST de type `c_com=in.(...)`. Si aucune commune n'est selectionnee mais qu'un district est defini, le plugin peut interroger `communes` pour deduire les codes communes.
@@ -427,7 +425,6 @@ Le moteur `BusinessRulesEngine` contient des regles pour certaines tables :
 - `communes` : nom present, code commune valide.
 - `pg_gps` : code PG present, commune valide.
 - `membre` : UUID membre present, nom membre present.
-- `parcelle` : surface positive, proprietaire renseigne.
 
 Lorsqu'une anomalie est trouvee :
 
@@ -546,8 +543,8 @@ Le plugin :
 Ordre prioritaire :
 
 1. `communes`
-2. `pg_gps`
-3. `pg_infos`
+2. `pg_infos`
+3. `pg_gps`
 4. `membre`
 5. `bosquet_gps`
 6. `arbre_gps`
