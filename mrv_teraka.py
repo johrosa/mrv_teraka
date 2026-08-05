@@ -2036,6 +2036,8 @@ class MrvTeraka:
 
                 if 'uuid_operateur' in api_columns and user_uuid and not filtered_row.get('uuid_operateur'):
                     filtered_row['uuid_operateur'] = user_uuid
+                if 'uuid_verificateur' in api_columns and user_uuid and not filtered_row.get('uuid_verificateur'):
+                    filtered_row['uuid_verificateur'] = user_uuid
 
                 # Ne jamais réécrire ni déplacer les colonnes UUID/PK vers d'autres champs.
                 # Les valeurs de uuid_pg, uuid_membre, uuid_arbre_gps, etc. doivent rester
