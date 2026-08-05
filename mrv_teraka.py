@@ -2500,8 +2500,6 @@ class MrvTeraka:
             sync_payloads.append((mapping, self.current_validated_data))
 
         # Utiliser un worker thread pour ne pas bloquer l'interface
-        from .worker_thread import create_backend_sync_worker
-        
         self.dockwidget.set_status_message("🚀 Synchronisation en cours...", color="blue")
         self.dockwidget.autoSyncButton.setEnabled(False)
         
@@ -2510,11 +2508,16 @@ class MrvTeraka:
             self.set_progress(100, "✅ Synchronisation terminée")
             self.set_sync_ready(False)
             self.current_validated_data = None
+            total_actions = sum(len(r.get('actions', [])) for r in (results or []))
+            self.show_info(
+                self.tr(u'Synchronisation terminée'),
+                self.tr(f"{total_actions} action(s) effectuée(s) vers le backend.")
+            )
             
-        def on_sync_error(error_msg):
+        def on_sync_error(exc, tb):
             self.dockwidget.autoSyncButton.setEnabled(True)
             self.dockwidget.set_status_message("❌ Erreur de synchronisation", color="red")
-            self.show_error("Erreur de synchronisation", error_msg)
+            self.show_error("Erreur de synchronisation", f"{exc}\n\n{tb}")
 
         # On traite les payloads l'un après l'autre ou on adapte le worker
         # Pour simplifier on garde la logique séquentielle mais dans le worker
@@ -2534,6 +2537,9 @@ class MrvTeraka:
 
             total = len(sync_payloads)
             for i, (mapping, validated_data) in enumerate(sync_payloads):
+                if not isinstance(mapping, dict):
+                    continue
+
                 endpoint = mapping.get('endpoint')
                 if not endpoint:
                     continue
@@ -2556,7 +2562,7 @@ class MrvTeraka:
                     filters = {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else None
                     original_data = self.postgrest.select(endpoint, filters=filters)
 
-                merge_results = self.merge_validated_data(mapping, original_data, validated_data)
+                merge_results = self.merge_validated_data_no_ui(mapping, original_data, validated_data)
                 if merge_results:
                     all_merge_results.append(merge_results)
 
@@ -2571,10 +2577,20 @@ class MrvTeraka:
 
         from .worker_thread import Worker
         self.sync_worker = Worker(multi_sync_task)
-        self.sync_worker.signals.result.connect(on_sync_finished)
+        self.sync_worker.signals.finished.connect(on_sync_finished)
         self.sync_worker.signals.error.connect(on_sync_error)
         self.sync_worker.signals.progress.connect(lambda val, msg: self.set_progress(val, msg))
         self.sync_worker.start()
+
+    def merge_validated_data_no_ui(self, mapping, original, validated):
+        """Fusionne les données validées sans ouvrir de widget depuis un worker."""
+        table = mapping.get('endpoint') if isinstance(mapping, dict) else str(mapping)
+        pk_field = mapping.get('pk_field', 'id') if isinstance(mapping, dict) else 'id'
+        merger = MerginDataMerger(self.postgrest)
+        merge_results = merger.merge(table, original or [], validated or [], strategy='merge', pk_field=pk_field)
+        if self.current_project_id:
+            self.mergin_manager.merge_data(self.current_project_id, merge_results)
+        return merge_results
 
     def merge_validated_data(self, mapping, original, validated):
         try:

@@ -4,7 +4,7 @@ Formulaire de validation des données au retour du terrain
 Permet de vérifier, corriger et fusionner les données collectées avec Mergin
 """
 
-from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal, QVariant
+from qgis.PyQt.QtCore import Qt, QSize, pyqtSignal, QVariant, QSignalBlocker
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
@@ -45,6 +45,13 @@ class DataValidationDialog(QDialog):
         # Table active
         self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
         self.current_record_index = -1
+        self._refreshing_ui = False
+        self.page_size = 200
+        self.current_page = 0
+        self.data_page = 0
+        self.large_table_threshold = 500
+        self._loaded_tabs = set()
+        self.validation_errors = {}
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -98,6 +105,7 @@ class DataValidationDialog(QDialog):
         
         # Onglet 4: Validation ligne par ligne
         self.tabs.addTab(self.create_validation_tab(), "Validation")
+        self.tabs.currentChanged.connect(self.on_main_tab_changed)
         
         layout.addWidget(self.tabs)
         
@@ -142,14 +150,16 @@ class DataValidationDialog(QDialog):
 
     def switch_table(self, table_name):
         """Change la table active et rafraîchit l'UI."""
+        if not table_name or table_name == self.current_table:
+            return
+
         self.current_table = table_name
         self.collected_data = self.full_collected_data.get(table_name, [])
         self.original_data = self.full_original_data.get(table_name, [])
         self.current_record_index = -1
-        if hasattr(self, 'table_diff'):
-            self.table_diff.setRowCount(0)
-        if hasattr(self, 'table_before'):
-            self.table_before.setRowCount(0)
+        self.current_page = 0
+        self.data_page = 0
+        self._loaded_tabs = set()
 
         # Rafraîchir toutes les vues
         self.populate_data()
@@ -178,10 +188,18 @@ class DataValidationDialog(QDialog):
         # Nouvelles entrées
         new_entries = total_collected - total_original
         
-        layout.addRow("Total collecté:", QLabel(str(total_collected)))
-        layout.addRow("Total original:", QLabel(str(total_original)))
-        layout.addRow("Nouvelles entrées:", QLabel(f"<b style='color:blue'>{new_entries}</b>"))
-        layout.addRow("Modifiées/Supprimées:", QLabel(f"<b style='color:orange'>À analyser</b>"))
+        self.total_collected_label = QLabel(str(total_collected))
+        self.total_original_label = QLabel(str(total_original))
+        self.new_entries_label = QLabel(f"<b style='color:blue'>{new_entries}</b>")
+        self.modified_label = QLabel(f"<b style='color:orange'>À analyser</b>")
+        self.large_table_label = QLabel("")
+        self.large_table_label.setStyleSheet("color: #cc6600; font-weight: bold;")
+
+        layout.addRow("Total collecté:", self.total_collected_label)
+        layout.addRow("Total original:", self.total_original_label)
+        layout.addRow("Nouvelles entrées:", self.new_entries_label)
+        layout.addRow("Modifiées/Supprimées:", self.modified_label)
+        layout.addRow("Affichage:", self.large_table_label)
         
         # Statut validation
         layout.addRow("Statut:", QLabel("<b style='color:red'>En attente de validation</b>"))
@@ -199,22 +217,35 @@ class DataValidationDialog(QDialog):
         """Onglet contenant les données originales et collectées"""
         layout = QVBoxLayout()
         data_tabs = QTabWidget()
+        self.data_subtabs = data_tabs
 
         # Sous-onglet: Original (Base)
         self.table_before = QTableWidget()
         self.table_before.setAlternatingRowColors(True)
         self.table_before.setColumnCount(0)
-        self.populate_table_from_data(self.table_before, self.original_data)
         data_tabs.addTab(self.table_before, "Données Originales (Base)")
 
         # Sous-onglet: Collecté (Terrain)
         self.table_collected = QTableWidget()
         self.table_collected.setAlternatingRowColors(True)
         self.table_collected.setColumnCount(0)
-        self.populate_table_from_data(self.table_collected, self.collected_data)
         data_tabs.addTab(self.table_collected, "Données Collectées (Terrain)")
 
         layout.addWidget(data_tabs)
+
+        pager_layout = QHBoxLayout()
+        self.data_prev_button = QPushButton("Précédent")
+        self.data_prev_button.clicked.connect(self.previous_data_page)
+        self.data_next_button = QPushButton("Suivant")
+        self.data_next_button.clicked.connect(self.next_data_page)
+        self.data_page_label = QLabel("")
+        pager_layout.addWidget(self.data_prev_button)
+        pager_layout.addWidget(self.data_next_button)
+        pager_layout.addWidget(self.data_page_label)
+        pager_layout.addStretch()
+        layout.addLayout(pager_layout)
+        data_tabs.currentChanged.connect(lambda _: self.populate_data_tables_page())
+
         widget = QWidget()
         widget.setLayout(layout)
         return widget
@@ -226,13 +257,19 @@ class DataValidationDialog(QDialog):
         # Contrôles de comparaison
         ctrl_layout = QHBoxLayout()
         
-        l_sel = QLabel("Sélectionner l'enregistrement à comparer :")
+        l_sel = QLabel("Enregistrement à comparer :")
         l_sel.setStyleSheet("font-weight: bold;")
         ctrl_layout.addWidget(l_sel)
 
+        self.record_spin = QSpinBox()
+        self.record_spin.setMinimum(1)
+        self.record_spin.setMaximum(max(1, len(self.collected_data)))
+        self.record_spin.valueChanged.connect(lambda value: self.show_comparison(value - 1))
+        ctrl_layout.addWidget(self.record_spin)
+
         self.combo_records = QComboBox()
-        self.combo_records.setMinimumWidth(300)
-        self.combo_records.currentIndexChanged.connect(self.show_comparison)
+        self.combo_records.setMinimumWidth(280)
+        self.combo_records.currentIndexChanged.connect(self.show_comparison_from_combo)
         ctrl_layout.addWidget(self.combo_records)
         
         ctrl_layout.addStretch()
@@ -257,6 +294,18 @@ class DataValidationDialog(QDialog):
 
         self.table_validation = self._setup_validation_table()
         layout.addWidget(self.table_validation)
+
+        pager_layout = QHBoxLayout()
+        self.validation_prev_button = QPushButton("Précédent")
+        self.validation_prev_button.clicked.connect(self.previous_validation_page)
+        self.validation_next_button = QPushButton("Suivant")
+        self.validation_next_button.clicked.connect(self.next_validation_page)
+        self.validation_page_label = QLabel("")
+        pager_layout.addWidget(self.validation_prev_button)
+        pager_layout.addWidget(self.validation_next_button)
+        pager_layout.addWidget(self.validation_page_label)
+        pager_layout.addStretch()
+        layout.addLayout(pager_layout)
         
         layout.addWidget(QLabel("<b>Détails de la ligne sélectionnée:</b>"))
         self.detail_text = QTextEdit()
@@ -275,41 +324,42 @@ class DataValidationDialog(QDialog):
         table.setColumnCount(6)
         table.setHorizontalHeaderLabels(["ID", "Statut", "Changements", "Type", "Action", "Commentaire"])
         table.itemSelectionChanged.connect(self.on_validation_row_selected)
-        table.setRowCount(len(self.collected_data))
-
-        for row, item in enumerate(self.collected_data):
-            self._fill_validation_row(table, row, item)
 
         table.resizeColumnsToContents()
         return table
 
-    def _fill_validation_row(self, table, row, item):
+    def _fill_validation_row(self, table, row, item, data_index=None):
         """Remplit une ligne du tableau de validation."""
+        data_index = row if data_index is None else data_index
         item_id = item.get('id', row)
         table.setItem(row, 0, QTableWidgetItem(str(item_id)))
 
-        status_combo = QComboBox()
-        status_combo.addItems(['✓ Valide', '⚠️ À Réviser', '❌ Rejeter', '🆕 Nouveau'])
-        status_combo.setCurrentIndex(3 if row >= len(self.original_data) else 0)
-        table.setCellWidget(row, 1, status_combo)
+        status_label = '🆕 Nouveau' if data_index >= len(self.original_data) else '✓ Valide'
+        table.setItem(row, 1, QTableWidgetItem(status_label))
 
-        changes = self.detect_changes(item, row)
+        changes = self.detect_changes(item, data_index)
         changes_item = QTableWidgetItem(changes)
         if "🆕" in changes: changes_item.setBackground(QColor(200, 255, 200))
         elif "❌" in changes: changes_item.setBackground(QColor(255, 100, 100))
         elif "✏️" in changes or "⚠️" in changes: changes_item.setBackground(QColor(255, 220, 100))
         table.setItem(row, 2, changes_item)
 
-        type_label = "NOUVEAU" if row >= len(self.original_data) else "MODIFIÉ" if self.has_changes(item, row) else "INCHANGÉ"
+        type_label = "NOUVEAU" if data_index >= len(self.original_data) else "MODIFIÉ" if self.has_changes(item, data_index) else "INCHANGÉ"
         table.setItem(row, 3, QTableWidgetItem(type_label))
 
-        action_combo = QComboBox()
-        action_combo.addItems(['Fusionner', 'Remplacer', 'Archiver', 'Manuel'])
-        table.setCellWidget(row, 4, action_combo)
+        table.setItem(row, 4, QTableWidgetItem("Fusionner"))
+        table.setItem(row, 5, QTableWidgetItem(""))
 
-        comment = QLineEdit()
-        comment.setPlaceholderText("Ajouter un commentaire...")
-        table.setCellWidget(row, 5, comment)
+        error_msgs = self.validation_errors.get(self.current_table, {}).get(data_index, [])
+        if error_msgs:
+            for col in range(table.columnCount()):
+                tbl_item = table.item(row, col)
+                if tbl_item:
+                    tbl_item.setBackground(QColor(255, 165, 0, 150))
+                    tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
+            comment_item = table.item(row, 5)
+            if comment_item:
+                comment_item.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
     
     def has_changes(self, item, index):
         """Vérifie si l'item a des changements"""
@@ -325,13 +375,17 @@ class DataValidationDialog(QDialog):
 
     def on_validation_row_selected(self):
         """Affiche les détails de la ligne sélectionnée"""
+        if self._refreshing_ui:
+            return
+
         selected_rows = self.table_validation.selectedIndexes()
         if not selected_rows:
             return
 
         row = selected_rows[0].row()
-        if 0 <= row < len(self.collected_data):
-            self.show_row_details(row)
+        data_index = self.current_page * self.page_size + row
+        if 0 <= data_index < len(self.collected_data):
+            self.show_row_details(data_index)
 
     def show_row_details(self, row):
         """Affiche les détails complets d'une ligne"""
@@ -377,19 +431,25 @@ class DataValidationDialog(QDialog):
 
         self.detail_text.setText("\n".join(details))
 
-    def populate_table_from_data(self, table, data):
+    def populate_table_from_data(self, table, data, page=0):
         """Remplit une table à partir des données"""
+        table.clearContents()
         if not data:
+            table.setRowCount(0)
+            table.setColumnCount(0)
             return
         
         first_item = data[0]
         columns = list(first_item.keys())
+        start = max(0, page * self.page_size)
+        end = min(start + self.page_size, len(data))
+        page_data = data[start:end]
         
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
-        table.setRowCount(len(data))
+        table.setRowCount(len(page_data))
         
-        for row, item in enumerate(data):
+        for row, item in enumerate(page_data):
             for col, key in enumerate(columns):
                 value = item.get(key, '')
                 if isinstance(value, (dict, list)):
@@ -400,30 +460,173 @@ class DataValidationDialog(QDialog):
     
     def populate_data(self):
         """Remplit les tables avec les données de la table active."""
-        # Vider les onglets
-        self.table_collected.setRowCount(0)
-        self.table_before.setRowCount(0)
-        if hasattr(self, 'table_diff'):
+        self._refreshing_ui = True
+        blockers = [
+            QSignalBlocker(self.table_collected),
+            QSignalBlocker(self.table_before),
+            QSignalBlocker(self.table_validation),
+            QSignalBlocker(self.table_diff),
+            QSignalBlocker(self.combo_records),
+            QSignalBlocker(self.record_spin),
+        ]
+
+        try:
+            # Vider les onglets sans déclencher les slots connectés aux tables.
+            self.table_collected.clearContents()
+            self.table_collected.setRowCount(0)
+            self.table_before.clearContents()
+            self.table_before.setRowCount(0)
+            self.table_diff.clearContents()
             self.table_diff.setRowCount(0)
-        self.combo_records.clear()
+            self.combo_records.clear()
+            self.detail_text.clear()
+            self.table_validation.clearContents()
+            self.table_validation.setRowCount(0)
+            self.record_spin.setMaximum(max(1, len(self.collected_data)))
+            self.record_spin.setValue(1)
+        finally:
+            del blockers
+            self._refreshing_ui = False
 
-        # Recréer la table de validation car sa structure peut changer
-        self.table_validation.setRowCount(0)
-        self.table_validation.setRowCount(len(self.collected_data))
-        for row, item in enumerate(self.collected_data):
-            self._fill_validation_row(self.table_validation, row, item)
-
-        # Remplir les onglets
-        self.populate_table_from_data(self.table_collected, self.collected_data)
-        self.populate_table_from_data(self.table_before, self.original_data)
-        
-        # Remplir combo de sélection
-        for i, item in enumerate(self.collected_data):
-            label = f"Enregistrement {i+1} (ID: {item.get('id', 'N/A')})"
-            self.combo_records.addItem(label, i)
-        
+        self.update_overview_stats()
+        self.update_lazy_tab()
         # Générer recommandations
         self.generate_recommendations()
+
+    def update_overview_stats(self):
+        """Met à jour le résumé sans reconstruire les widgets."""
+        total_collected = len(self.collected_data)
+        total_original = len(self.original_data)
+        new_entries = total_collected - total_original
+
+        self.total_collected_label.setText(str(total_collected))
+        self.total_original_label.setText(str(total_original))
+        self.new_entries_label.setText(f"<b style='color:blue'>{new_entries}</b>")
+        self.modified_label.setText(f"<b style='color:orange'>À analyser</b>")
+
+        if total_collected > self.large_table_threshold:
+            self.large_table_label.setText(
+                f"Table volumineuse : affichage paginé à {self.page_size} lignes."
+            )
+        else:
+            self.large_table_label.setText(f"Affichage direct, {self.page_size} lignes maximum par page.")
+
+    def on_main_tab_changed(self, index):
+        """Charge les onglets lourds uniquement quand ils deviennent visibles."""
+        self.update_lazy_tab(index)
+
+    def update_lazy_tab(self, index=None):
+        """Charge la vue active selon l'onglet courant."""
+        if index is None:
+            index = self.tabs.currentIndex()
+
+        if index == 1:
+            self.populate_data_tables_page()
+            self._loaded_tabs.add(index)
+        elif index == 2:
+            self.populate_comparison_controls()
+            if self.collected_data:
+                self.show_comparison(self.record_spin.value() - 1)
+            self._loaded_tabs.add(index)
+        elif index == 3:
+            self.populate_validation_page()
+            self._loaded_tabs.add(index)
+
+    def _page_bounds(self, data, page):
+        total = len(data)
+        start = min(max(0, page * self.page_size), max(0, total - 1))
+        if total:
+            start = (start // self.page_size) * self.page_size
+        end = min(start + self.page_size, total)
+        return start, end
+
+    def _max_page(self, data):
+        if not data:
+            return 0
+        return (len(data) - 1) // self.page_size
+
+    def populate_data_tables_page(self):
+        """Remplit l'onglet Données avec une page seulement."""
+        visible_data = self.original_data if self.data_subtabs.currentIndex() == 0 else self.collected_data
+        self.data_page = min(self.data_page, self._max_page(visible_data))
+        table = self.table_before if self.data_subtabs.currentIndex() == 0 else self.table_collected
+
+        blocker = QSignalBlocker(table)
+        try:
+            self.populate_table_from_data(table, visible_data, self.data_page)
+        finally:
+            del blocker
+
+        start, end = self._page_bounds(visible_data, self.data_page)
+        total = len(visible_data)
+        self.data_page_label.setText(f"Lignes {start + 1 if total else 0}-{end} sur {total}")
+        self.data_prev_button.setEnabled(self.data_page > 0)
+        self.data_next_button.setEnabled(self.data_page < self._max_page(visible_data))
+
+    def previous_data_page(self):
+        if self.data_page > 0:
+            self.data_page -= 1
+            self.populate_data_tables_page()
+
+    def next_data_page(self):
+        visible_data = self.original_data if self.data_subtabs.currentIndex() == 0 else self.collected_data
+        if self.data_page < self._max_page(visible_data):
+            self.data_page += 1
+            self.populate_data_tables_page()
+
+    def populate_validation_page(self):
+        """Remplit la validation détaillée avec une page seulement."""
+        self.current_page = min(self.current_page, self._max_page(self.collected_data))
+        start, end = self._page_bounds(self.collected_data, self.current_page)
+        page_data = self.collected_data[start:end]
+
+        blocker = QSignalBlocker(self.table_validation)
+        try:
+            self.table_validation.clearContents()
+            self.table_validation.setRowCount(len(page_data))
+            for row, item in enumerate(page_data):
+                self._fill_validation_row(self.table_validation, row, item, start + row)
+            self.table_validation.resizeColumnsToContents()
+        finally:
+            del blocker
+
+        total = len(self.collected_data)
+        self.validation_page_label.setText(f"Lignes {start + 1 if total else 0}-{end} sur {total}")
+        self.validation_prev_button.setEnabled(self.current_page > 0)
+        self.validation_next_button.setEnabled(self.current_page < self._max_page(self.collected_data))
+
+    def previous_validation_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.populate_validation_page()
+
+    def next_validation_page(self):
+        if self.current_page < self._max_page(self.collected_data):
+            self.current_page += 1
+            self.populate_validation_page()
+
+    def populate_comparison_controls(self):
+        """Limite la liste déroulante de comparaison à la page courante."""
+        blocker = QSignalBlocker(self.combo_records)
+        try:
+            self.combo_records.clear()
+            start, end = self._page_bounds(self.collected_data, self.current_page)
+            for i, item in enumerate(self.collected_data[start:end], start):
+                label = f"Enregistrement {i + 1} (ID: {item.get('id', 'N/A')})"
+                self.combo_records.addItem(label, i)
+        finally:
+            del blocker
+
+    def show_comparison_from_combo(self, combo_index):
+        """Affiche la comparaison depuis la liste paginée."""
+        if self._refreshing_ui or combo_index < 0:
+            return
+        data_index = self.combo_records.itemData(combo_index)
+        if data_index is not None:
+            self.record_spin.blockSignals(True)
+            self.record_spin.setValue(data_index + 1)
+            self.record_spin.blockSignals(False)
+            self.show_comparison(data_index)
     
     def generate_recommendations(self):
         """Génère des recommandations basées sur les données"""
@@ -453,8 +656,7 @@ class DataValidationDialog(QDialog):
     def run_validation_rules(self):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
-        row_count = self.table_validation.rowCount()
-        if row_count == 0:
+        if not self.collected_data:
             return
 
         # Optimization: Initialize QgsFields and context once outside the loop
@@ -474,8 +676,11 @@ class DataValidationDialog(QDialog):
         feat = QgsFeature(fields)
         sorted_keys = sorted(all_keys)
 
-        for row in range(row_count):
-            item_data = self.collected_data[row]
+        visible_start = self.current_page * self.page_size
+        visible_end = visible_start + self.table_validation.rowCount()
+        table_errors = {}
+
+        for data_index, item_data in enumerate(self.collected_data):
 
             # Update all feature attributes to prevent leakage from previous rows
             # Performance: setAttributes with a list is faster than multiple setAttribute calls
@@ -488,23 +693,27 @@ class DataValidationDialog(QDialog):
             if errors:
                 invalid_count += 1
                 error_msgs = [e['message'] for e in errors]
+                table_errors[data_index] = error_msgs
 
-                # Marquer en orange et ajouter le commentaire d'erreur
-                for col in range(self.table_validation.columnCount()):
-                    tbl_item = self.table_validation.item(row, col)
-                    if tbl_item:
-                        tbl_item.setBackground(QColor(255, 165, 0, 150))
+                if visible_start <= data_index < visible_end:
+                    row = data_index - visible_start
+                    # Marquer en orange et ajouter le commentaire d'erreur
+                    for col in range(self.table_validation.columnCount()):
+                        tbl_item = self.table_validation.item(row, col)
+                        if tbl_item:
+                            tbl_item.setBackground(QColor(255, 165, 0, 150))
 
-                # Mettre à jour le champ commentaire
-                comment_widget = self.table_validation.cellWidget(row, 5)
-                if isinstance(comment_widget, QLineEdit):
-                    comment_widget.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
-                
-                # Ajouter un tooltip avec les erreurs détaillées sur toute la ligne
-                for col in range(self.table_validation.columnCount()):
-                    tbl_item = self.table_validation.item(row, col)
-                    if tbl_item:
-                        tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
+                    comment_item = self.table_validation.item(row, 5)
+                    if comment_item:
+                        comment_item.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
+                    
+                    # Ajouter un tooltip avec les erreurs détaillées sur toute la ligne
+                    for col in range(self.table_validation.columnCount()):
+                        tbl_item = self.table_validation.item(row, col)
+                        if tbl_item:
+                            tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
+
+        self.validation_errors[self.current_table] = table_errors
 
         if invalid_count > 0:
             msg = f"{invalid_count} enregistrements présentent des anomalies métier."
@@ -522,6 +731,9 @@ class DataValidationDialog(QDialog):
     
     def show_comparison(self, index):
         """Affiche la comparaison avec sélection interactive de la valeur finale"""
+        if self._refreshing_ui:
+            return
+
         if index < 0 or index >= len(self.collected_data):
             return
 
@@ -564,12 +776,15 @@ class DataValidationDialog(QDialog):
 
     def on_diff_item_changed(self, item):
         """Met à jour les données quand la valeur finale ou une checkbox est modifiée"""
-        if self.current_record_index == -1:
+        if self._refreshing_ui or self.current_record_index == -1 or item is None:
             return
 
         row = item.row()
         col = item.column()
-        field_name = self.table_diff.item(row, 0).text()
+        field_item = self.table_diff.item(row, 0)
+        if field_item is None:
+            return
+        field_name = field_item.text()
 
         # Logique des cases à cocher (Colonnes 1: Base, 2: Terrain)
         if col in [1, 2]:
@@ -577,11 +792,16 @@ class DataValidationDialog(QDialog):
                 self.table_diff.blockSignals(True)
                 # Décocher l'autre colonne
                 other_col = 2 if col == 1 else 1
-                self.table_diff.item(row, other_col).setCheckState(Qt.Unchecked)
+                other_item = self.table_diff.item(row, other_col)
+                final_item = self.table_diff.item(row, 3)
+                if other_item is None or final_item is None:
+                    self.table_diff.blockSignals(False)
+                    return
+                other_item.setCheckState(Qt.Unchecked)
 
                 # Mettre à jour la valeur finale
                 chosen_val = item.text()
-                self.table_diff.item(row, 3).setText(chosen_val)
+                final_item.setText(chosen_val)
                 # Synchroniser avec les données collectées
                 self.collected_data[self.current_record_index][field_name] = chosen_val
                 print(f"DEBUG: Choix pour {field_name} -> {chosen_val}")
