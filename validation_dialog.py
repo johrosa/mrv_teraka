@@ -16,6 +16,59 @@ from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionCo
 import json
 import os
 from .business_rules import BusinessRulesEngine
+from .utils import Utils
+
+
+DISPLAY_VALUE_MAX_LENGTH = 180
+TOOLTIP_VALUE_MAX_LENGTH = 1000
+GEOMETRY_FIELD_NAMES = {"geom", "geometry", "the_geom"}
+FULL_VALUE_ROLE_MARKER = "__mrv_full_value__"
+
+
+def _is_geometry_field(field_name):
+    return str(field_name or "").strip().lower() in GEOMETRY_FIELD_NAMES
+
+
+def _compact_value_for_display(value, field_name=None, max_length=DISPLAY_VALUE_MAX_LENGTH):
+    """Retourne une valeur courte pour l'UI sans modifier la donnée source."""
+    if value is None:
+        text = ""
+    elif _is_geometry_field(field_name) and isinstance(value, dict):
+        geom_type = value.get("type", "géométrie")
+        coords = value.get("coordinates")
+        if coords is not None:
+            text = f"{geom_type} - coordonnées masquées"
+        else:
+            text = str(geom_type)
+    elif isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+
+    if _is_geometry_field(field_name) and len(text) > max_length:
+        return "Géométrie - coordonnées masquées"
+
+    if len(text) <= max_length:
+        return text
+
+    return f"{text[:max_length]}... ({len(text)} caractères)"
+
+
+def _compact_value_for_tooltip(value, field_name=None):
+    if _is_geometry_field(field_name):
+        return "Valeur complète masquée pour éviter une boîte de dialogue trop longue."
+
+    return _compact_value_for_display(value, field_name, TOOLTIP_VALUE_MAX_LENGTH)
+
+
+def _pack_full_value(value):
+    return (FULL_VALUE_ROLE_MARKER, value)
+
+
+def _unpack_full_value(packed, fallback):
+    if isinstance(packed, tuple) and len(packed) == 2 and packed[0] == FULL_VALUE_ROLE_MARKER:
+        return packed[1]
+    return fallback
 
 
 class DataValidationDialog(QDialog):
@@ -419,8 +472,8 @@ class DataValidationDialog(QDialog):
             if original_value != collected_value:
                 change_count += 1
                 details.append(f"\n🔹 CHAMP: {key}")
-                details.append(f"   AVANT:  {original_value}")
-                details.append(f"   APRÈS:  {collected_value}")
+                details.append(f"   AVANT:  {_compact_value_for_display(original_value, key)}")
+                details.append(f"   APRÈS:  {_compact_value_for_display(collected_value, key)}")
 
         if change_count == 0:
             details.append("\n✓ Aucun changement détecté")
@@ -452,9 +505,11 @@ class DataValidationDialog(QDialog):
         for row, item in enumerate(page_data):
             for col, key in enumerate(columns):
                 value = item.get(key, '')
-                if isinstance(value, (dict, list)):
-                    value = json.dumps(value)[:50]
-                table.setItem(row, col, QTableWidgetItem(str(value)))
+                display_value = _compact_value_for_display(value, key, max_length=80)
+                table_item = QTableWidgetItem(display_value)
+                table_item.setData(Qt.UserRole, _pack_full_value(value))
+                table_item.setToolTip(_compact_value_for_tooltip(value, key))
+                table.setItem(row, col, table_item)
         
         table.resizeColumnsToContents()
     
@@ -643,15 +698,15 @@ class DataValidationDialog(QDialog):
 
     def show_info(self, title, message):
         """Affiche une information."""
-        QMessageBox.information(self, title, message)
+        QMessageBox.information(self, title, Utils.compact_dialog_message(message))
 
     def show_warning(self, title, message):
         """Affiche un avertissement."""
-        QMessageBox.warning(self, title, message)
+        QMessageBox.warning(self, title, Utils.compact_dialog_message(message))
 
     def show_error(self, title, message):
         """Affiche une erreur."""
-        QMessageBox.critical(self, title, message)
+        QMessageBox.critical(self, title, Utils.compact_dialog_message(message))
 
     def run_validation_rules(self):
         """Exécute les règles métier automatisées sur les données collectées."""
@@ -754,19 +809,25 @@ class DataValidationDialog(QDialog):
             self.table_diff.setItem(row, 0, QTableWidgetItem(key))
 
             # Case à cocher pour BASE
-            base_item = QTableWidgetItem(str(orig_val))
+            base_item = QTableWidgetItem(_compact_value_for_display(orig_val, key))
+            base_item.setData(Qt.UserRole, _pack_full_value(orig_val))
+            base_item.setToolTip(_compact_value_for_tooltip(orig_val, key))
             base_item.setFlags(base_item.flags() | Qt.ItemIsUserCheckable)
             base_item.setCheckState(Qt.Unchecked)
             self.table_diff.setItem(row, 1, base_item)
 
             # Case à cocher pour TERRAIN (par défaut)
-            coll_item = QTableWidgetItem(str(coll_val))
+            coll_item = QTableWidgetItem(_compact_value_for_display(coll_val, key))
+            coll_item.setData(Qt.UserRole, _pack_full_value(coll_val))
+            coll_item.setToolTip(_compact_value_for_tooltip(coll_val, key))
             coll_item.setFlags(coll_item.flags() | Qt.ItemIsUserCheckable)
             coll_item.setCheckState(Qt.Checked)
             self.table_diff.setItem(row, 2, coll_item)
 
             # Valeur finale (Éditable)
-            final_item = QTableWidgetItem(str(coll_val))
+            final_item = QTableWidgetItem(_compact_value_for_display(coll_val, key))
+            final_item.setData(Qt.UserRole, _pack_full_value(coll_val))
+            final_item.setToolTip(_compact_value_for_tooltip(coll_val, key))
             final_item.setFlags(final_item.flags() | Qt.ItemIsEditable)
             if orig_val != coll_val:
                 final_item.setBackground(QColor(255, 255, 200)) # Highlight
@@ -800,8 +861,10 @@ class DataValidationDialog(QDialog):
                 other_item.setCheckState(Qt.Unchecked)
 
                 # Mettre à jour la valeur finale
-                chosen_val = item.text()
-                final_item.setText(chosen_val)
+                chosen_val = _unpack_full_value(item.data(Qt.UserRole), item.text())
+                final_item.setData(Qt.UserRole, _pack_full_value(chosen_val))
+                final_item.setText(_compact_value_for_display(chosen_val, field_name))
+                final_item.setToolTip(_compact_value_for_tooltip(chosen_val, field_name))
                 # Synchroniser avec les données collectées
                 self.collected_data[self.current_record_index][field_name] = chosen_val
                 print(f"DEBUG: Choix pour {field_name} -> {chosen_val}")
@@ -811,6 +874,7 @@ class DataValidationDialog(QDialog):
         # Mise à jour manuelle de la valeur finale (Colonne 3)
         if col == 3:
             new_value = item.text()
+            item.setData(Qt.UserRole, _pack_full_value(new_value))
             print(f"DEBUG: Mise à jour {field_name} = {new_value}")
             self.collected_data[self.current_record_index][field_name] = new_value
 

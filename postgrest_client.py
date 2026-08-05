@@ -41,7 +41,12 @@ class PostgRESTError(RuntimeError):
         self.error_body = error_body
         self.error_json = error_json or {}
         self.code = self.error_json.get('code')
-        self.message = self.error_json.get('message') or error_body.strip()
+        self.message = (
+            self.error_json.get('message')
+            or self.error_json.get('detail')
+            or self.error_json.get('error')
+            or error_body.strip()
+        )
         self.details = self.error_json.get('details')
         self.hint = self.error_json.get('hint')
         super().__init__(self._build_message())
@@ -56,6 +61,21 @@ class PostgRESTError(RuntimeError):
             parts.append(f"Details: {self.details}")
         if self.hint:
             parts.append(f"Hint: {self.hint}")
+        return "\n".join(parts)
+
+    def user_message(self) -> str:
+        parts = [
+            f"Requête {self.method} {self.endpoint}",
+            f"HTTP {self.status_code} {self.reason}",
+        ]
+        if self.code:
+            parts.append(f"Code base/PostgREST: {self.code}")
+        if self.message:
+            parts.append(f"Message: {self.message}")
+        if self.details:
+            parts.append(f"Détails: {self.details}")
+        if self.hint:
+            parts.append(f"Indice: {self.hint}")
         return "\n".join(parts)
 
 
@@ -238,15 +258,13 @@ class PostgREST:
                 
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8', errors='ignore')
-            if show_error_ui:
+            content_type = e.headers.get('Content-Type', '').lower()
+            is_html_error = 'text/html' in content_type or bool(
+                re.search(r'<(?:!DOCTYPE|html|head|body)', error_body, re.IGNORECASE)
+            )
+            if show_error_ui and is_html_error:
                 self._show_django_error(e, url, error_body, method=method)
-            error_json = None
-            try:
-                parsed_body = json.loads(error_body)
-                if isinstance(parsed_body, dict):
-                    error_json = parsed_body
-            except (TypeError, ValueError):
-                error_json = None
+            error_json = self._parse_error_json(error_body)
             raise PostgRESTError(
                 status_code=e.code,
                 reason=e.reason,
@@ -262,7 +280,7 @@ class PostgREST:
     def _show_django_error(self, http_error, url, error_body, method='GET'):
         """Affiche une erreur Django avec rendu HTML"""
         try:
-            from django_error_viewer import show_django_error
+            from .django_error_viewer import show_django_error
 
             # Extraire les en-têtes
             headers = dict(http_error.headers)
@@ -290,6 +308,29 @@ class PostgREST:
         except Exception:
             # Fallback si django_error_viewer n'est pas disponible
             pass
+
+    @staticmethod
+    def _parse_error_json(error_body: str) -> Optional[Dict[str, Any]]:
+        try:
+            parsed_body = json.loads(error_body)
+        except (TypeError, ValueError):
+            return None
+
+        if not isinstance(parsed_body, dict):
+            return None
+
+        nested_message = parsed_body.get('message')
+        if isinstance(nested_message, str):
+            try:
+                nested_json = json.loads(nested_message)
+                if isinstance(nested_json, dict):
+                    merged = dict(nested_json)
+                    merged.setdefault('proxy_message', nested_message)
+                    return merged
+            except (TypeError, ValueError):
+                pass
+
+        return parsed_body
 
     def select(
         self,
@@ -362,7 +403,8 @@ class PostgREST:
         table: str,
         data: Dict[str, Any] | List[Dict[str, Any]],
         upsert: bool = False,
-        on_conflict: Optional[str] = None
+        on_conflict: Optional[str] = None,
+        show_error_ui: bool = True
     ):
         """
         Insère ou met à jour un ou plusieurs enregistrements.
@@ -386,7 +428,7 @@ class PostgREST:
             if conflict_field:
                 params['on_conflict'] = conflict_field
 
-        return self._make_request('POST', endpoint, params=params or None, data=payload, show_error_ui=True, headers=headers)
+        return self._make_request('POST', endpoint, params=params or None, data=payload, show_error_ui=show_error_ui, headers=headers)
     
     def update(
         self,

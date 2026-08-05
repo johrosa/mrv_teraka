@@ -1,8 +1,62 @@
 # -*- coding: utf-8 -*-
+import json
 import re
 
 
 class Utils:
+    DIALOG_MESSAGE_MAX_LENGTH = 1200
+    DIALOG_MESSAGE_DETAIL_MAX_LENGTH = 4000
+
+    @staticmethod
+    def compact_dialog_message(message, max_length=None):
+        """Prépare un message court pour QMessageBox en masquant les géométries volumineuses."""
+        max_length = max_length or Utils.DIALOG_MESSAGE_MAX_LENGTH
+        text = str(message or "")
+
+        stripped = text.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                text = json.dumps(Utils._mask_coordinates(json.loads(stripped)), ensure_ascii=False)
+            except Exception:
+                pass
+
+        text = re.sub(
+            r'("coordinates"\s*:\s*)\[[\s\S]{120,}?\](?=\s*[,}])',
+            r'\1[coordonnées masquées]',
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r'\b(MULTIPOLYGON|POLYGON|MULTILINESTRING|LINESTRING|MULTIPOINT)\s*\(\s*\([^)]{120,}',
+            r'\1(coordonnées masquées',
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if len(text) <= max_length:
+            return text
+
+        return (
+            text[:max_length].rstrip()
+            + f"\n\n... message tronqué ({len(text)} caractères au total). "
+              "Voir le journal ou le panneau de résultats pour le détail complet."
+        )
+
+    @staticmethod
+    def compact_dialog_detail(message):
+        return Utils.compact_dialog_message(message, Utils.DIALOG_MESSAGE_DETAIL_MAX_LENGTH)
+
+    @staticmethod
+    def _mask_coordinates(value):
+        if isinstance(value, dict):
+            return {
+                key: "[coordonnées masquées]" if str(key).lower() == "coordinates" else Utils._mask_coordinates(val)
+                for key, val in value.items()
+            }
+        if isinstance(value, list):
+            return [Utils._mask_coordinates(item) for item in value]
+        return value
+
     @staticmethod
     def resolve_postgrest_geom_field(mapping_geom_field, layer_is_spatial):
         """Retourne le nom du champ géométrie à envoyer vers PostgREST, ou None si la couche est alphanumérique."""

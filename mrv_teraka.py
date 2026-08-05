@@ -128,11 +128,36 @@ class MrvTeraka:
     # ─────────────────────────────────────────────────────────────────────
 
     def show_api_error_view(self, exc):
-        """Affiche une erreur Django/PostgREST HTML si possible."""
+        """Affiche une erreur Django/PostgREST structurée si possible."""
         try:
             from .django_error_viewer import show_django_error
         except ImportError:
             return False
+
+        if isinstance(exc, PostgRESTError):
+            body = exc.error_body or exc.user_message()
+            headers = {}
+            if exc.error_json:
+                body = json.dumps(exc.error_json, indent=2, ensure_ascii=False)
+                headers['Content-Type'] = 'application/json'
+
+            try:
+                show_django_error(
+                    parent=self.iface.mainWindow(),
+                    error_code=exc.status_code,
+                    error_reason=exc.reason,
+                    html_content='',
+                    error_message=MrvTeraka._format_postgrest_error(
+                        exc, "Requête API", exc.endpoint, 0, 0, []
+                    ),
+                    url=exc.url,
+                    method=exc.method,
+                    headers=headers,
+                    text_content=body
+                )
+                return True
+            except Exception:
+                return False
 
         error_text = str(exc)
         if not error_text:
@@ -209,7 +234,7 @@ class MrvTeraka:
         reply = QMessageBox.question(
             self.iface.mainWindow(),
             title,
-            message,
+            Utils.compact_dialog_message(message),
             QMessageBox.Yes | QMessageBox.No
         )
         return reply == QMessageBox.Yes
@@ -224,6 +249,8 @@ class MrvTeraka:
 
     def show_message(self, title, message, icon=QMessageBox.Information):
         """Affiche un message en texte brut ou HTML selon le contenu."""
+        display_message = Utils.compact_dialog_message(message)
+        detail_message = Utils.compact_dialog_detail(message)
         msg_box = QMessageBox(self.iface.mainWindow())
         msg_box.setWindowFlags(
             msg_box.windowFlags() |
@@ -233,12 +260,14 @@ class MrvTeraka:
         )
         msg_box.setIcon(icon)
         msg_box.setWindowTitle(title)
-        if self.is_html_content(message):
+        if self.is_html_content(display_message):
             msg_box.setTextFormat(Qt.RichText)
-            msg_box.setText(message)
+            msg_box.setText(display_message)
         else:
             msg_box.setTextFormat(Qt.PlainText)
-            msg_box.setText(message)
+            msg_box.setText(display_message)
+        if detail_message != display_message:
+            msg_box.setDetailedText(detail_message)
         msg_box.exec_()
 
     def is_html_content(self, text):
@@ -2082,8 +2111,14 @@ class MrvTeraka:
     def _format_postgrest_error(exc, layer_name, endpoint, start_idx, end_idx, rows):
         if isinstance(exc, PostgRESTError):
             code = exc.code or "Inconnu"
+            if not rows:
+                packet_label = "Requête"
+            elif len(rows) == 1:
+                packet_label = f"Ligne {start_idx + 1}"
+            else:
+                packet_label = f"Paquet {start_idx}-{end_idx}"
             lines = [
-                f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]",
+                f"{layer_name} -> {endpoint} [{packet_label}]",
                 f"HTTP {exc.status_code} {exc.reason}",
                 f"Code: {code}",
             ]
@@ -2104,10 +2139,62 @@ class MrvTeraka:
 
             sample_id = MrvTeraka._sample_row_identifier(rows)
             if sample_id:
-                lines.append(f"Première ligne du paquet: {sample_id}")
+                row_label = "Ligne concernée" if len(rows) == 1 else "Première ligne du paquet"
+                lines.append(f"{row_label}: {sample_id}")
             return "\n".join(lines)
 
         return f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]\n{str(exc)}"
+
+    @staticmethod
+    def _is_probably_row_level_postgrest_error(exc):
+        if not isinstance(exc, PostgRESTError):
+            return False
+        return str(exc.code or '') in {'23503', '23502', '22P02', '22007', '22008', '22003', '23514'}
+
+    @staticmethod
+    def _insert_rows_with_diagnostics(
+        postgrest_client, endpoint, rows, conflict_field, layer_name, start_idx, results
+    ):
+        if not rows:
+            return 0, 0
+
+        try:
+            postgrest_client.insert(
+                endpoint,
+                rows,
+                upsert=True,
+                on_conflict=conflict_field,
+                show_error_ui=False,
+            )
+            return len(rows), 0
+        except Exception as exc:
+            if len(rows) == 1 or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
+                error_msg = MrvTeraka._format_postgrest_error(
+                    exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
+                )
+                results.append(f"❌ {error_msg}")
+                return 0, 1
+
+            midpoint = len(rows) // 2
+            left_ok, left_errors = MrvTeraka._insert_rows_with_diagnostics(
+                postgrest_client,
+                endpoint,
+                rows[:midpoint],
+                conflict_field,
+                layer_name,
+                start_idx,
+                results,
+            )
+            right_ok, right_errors = MrvTeraka._insert_rows_with_diagnostics(
+                postgrest_client,
+                endpoint,
+                rows[midpoint:],
+                conflict_field,
+                layer_name,
+                start_idx + midpoint,
+                results,
+            )
+            return left_ok + right_ok, left_errors + right_errors
 
     @staticmethod
     def _do_migration_task(task, migration_data, postgrest_client):
@@ -2122,16 +2209,20 @@ class MrvTeraka:
                     return {'results': results, 'status': 'canceled'}
                 end_idx = min(start_idx + CHUNK_SIZE, len(data))
                 chunk_data = data[start_idx:end_idx]
-                try:
-                    postgrest_client.insert(endpoint, chunk_data, upsert=True, on_conflict=conflict_field)
-                    migrated_count += len(chunk_data)
-                except Exception as e:
-                    layer_errors += 1
-                    errors_count += 1
-                    error_msg = MrvTeraka._format_postgrest_error(
-                        e, layer_name, endpoint, start_idx, end_idx, chunk_data
-                    )
-                    results.append(f"❌ {error_msg}")
+                inserted, row_errors = MrvTeraka._insert_rows_with_diagnostics(
+                    postgrest_client, endpoint, chunk_data, conflict_field, layer_name, start_idx, results
+                )
+                migrated_count += inserted
+                layer_errors += row_errors
+                errors_count += row_errors
+
+            if layer_errors:
+                results.append(
+                    f"⚠️ {layer_name} -> {endpoint}: {migrated_count}/{len(data)} ligne(s) migrée(s), "
+                    f"{layer_errors} erreur(s) de données."
+                )
+            else:
+                results.append(f"✅ {layer_name} -> {endpoint}: {migrated_count} ligne(s) migrée(s).")
 
             task.setProgress((i + 1) / len(migration_data) * 100)
         return {'results': results, 'errors_count': errors_count, 'status': 'completed'}
@@ -2604,7 +2695,7 @@ class MrvTeraka:
             reply = QMessageBox.question(
                 self.iface.mainWindow(),
                 self.tr(u'Confirmation Fusion'),
-                f"Résumé des changements:\n{summary}\n\nProcéder?",
+                Utils.compact_dialog_message(f"Résumé des changements:\n{summary}\n\nProcéder?"),
                 QMessageBox.Yes | QMessageBox.No
             )
 

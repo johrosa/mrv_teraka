@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtCore import Qt, QSettings
 from qgis.PyQt.QtGui import QIcon, QPixmap
+from .utils import Utils
 
 
 class AuthDialog(QDialog):
@@ -200,7 +201,7 @@ class AuthDialog(QDialog):
             except Exception:
                 pass
 
-        QMessageBox.critical(self, "Erreur d'authentification", message)
+        QMessageBox.critical(self, "Erreur d'authentification", Utils.compact_dialog_message(message))
 
     def show_success(self, message):
         """Affiche un message de succès"""

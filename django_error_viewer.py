@@ -13,6 +13,7 @@ from qgis.PyQt.QtGui import QFont, QColor
 from qgis.PyQt.QtWebEngineWidgets import QWebEngineView
 import json
 import html
+from .utils import Utils
 
 
 class DjangoErrorViewer(QDialog):
@@ -278,9 +279,9 @@ class DjangoErrorViewer(QDialog):
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(text_export)
                 
-                QMessageBox.information(self, "Exporté", f"Erreur exportée: {file_path}")
+                QMessageBox.information(self, "Exporté", Utils.compact_dialog_message(f"Erreur exportée: {file_path}"))
             except Exception as e:
-                QMessageBox.critical(self, "Erreur", f"Impossible d'exporter: {e}")
+                QMessageBox.critical(self, "Erreur", Utils.compact_dialog_message(f"Impossible d'exporter: {e}"))
     
     def _generate_error_report(self):
         """Génère un rapport d'erreur en texte brut"""
