@@ -1955,6 +1955,10 @@ class MrvTeraka:
 
         project = QgsProject.instance()
         migration_data = []
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.setPlainText(
+                self.tr(u"Préparation des données locales pour la migration initiale...")
+            )
         user_uuid = None
         try:
             user_uuid = self.token_manager.get_user_id()
@@ -2055,10 +2059,12 @@ class MrvTeraka:
             self.show_message(self.tr(u'Migration'), self.tr(u"Aucune donnée valide à migrer."))
             return
 
-        QMessageBox.information(
-            self.iface.mainWindow(),
+        total_rows = sum(len(data) for _, _, _, data in migration_data)
+        self.show_info(
             self.tr(u'Migration'),
-            self.tr(u"Les données de {count} couches vont être migrées vers la base de données.").format(count=migration_data)
+            self.tr(
+                u"Les données de {count} couche(s), soit {rows} ligne(s), vont être migrées vers la base de données."
+            ).format(count=len(migration_data), rows=total_rows)
         )
 
         self.active_migration_task = QgsTask.fromFunction(
