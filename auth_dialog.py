@@ -61,8 +61,8 @@ class AuthDialog(QDialog):
         l_url.setMinimumWidth(120)
         url_layout.addWidget(l_url)
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("http://localhost:8050")
-        self.url_input.setText("http://localhost:8050")
+        self.url_input.setPlaceholderText("http://127.0.0.1:8050")
+        self.url_input.setText("http://127.0.0.1:8050")
         url_layout.addWidget(self.url_input)
         layout.addLayout(url_layout)
         
@@ -131,7 +131,7 @@ class AuthDialog(QDialog):
         settings = QSettings('iTeraka', 'MrvTeraka')
         
         saved_username = settings.value('auth/username', '')
-        saved_url = settings.value('auth/url', 'http://localhost:8050')
+        saved_url = settings.value('auth/url', 'http://127.0.0.1:8050')
         remember = settings.value('auth/remember', False, type=bool)
         saved_mode = settings.value('auth/mode', 'Django')
         

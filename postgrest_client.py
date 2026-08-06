@@ -12,6 +12,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional
 from enum import Enum
 import re
+import requests
 
 
 class PostgRESTMode(Enum):
@@ -102,6 +103,7 @@ class PostgREST:
         self.jwt_token: Optional[str] = None
         self.headers: Dict[str, str] = {}
         self.postgrest_api_url = self.api_base_url
+        self.session = requests.Session()
 
         # Pour Django, normaliser l'URL de proxy vers /api/data
         if mode == PostgRESTMode.DJANGO:
@@ -245,17 +247,37 @@ class PostgREST:
             request_headers['Prefer'] = 'resolution=merge'
 
         try:
-            request = urllib.request.Request(
+            response = self.session.request(
+                method.upper(),
                 url,
                 data=request_data,
                 headers=request_headers,
-                method=method.upper(),
+                timeout=timeout,
             )
-            
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                response_text = response.read().decode('utf-8')
-                return json.loads(response_text) if response_text else {}
-                
+            response_text = response.text or ""
+            if response.status_code >= 400:
+                content_type = response.headers.get('Content-Type', '').lower()
+                is_html_error = 'text/html' in content_type or bool(
+                    re.search(r'<(?:!DOCTYPE|html|head|body)', response_text, re.IGNORECASE)
+                )
+                if show_error_ui and is_html_error:
+                    self._show_django_error(response, url, response_text, method=method)
+                error_json = self._parse_error_json(response_text)
+                raise PostgRESTError(
+                    status_code=response.status_code,
+                    reason=response.reason,
+                    url=url,
+                    method=method,
+                    endpoint=endpoint,
+                    error_body=response_text,
+                    error_json=error_json,
+                )
+            return json.loads(response_text) if response_text else {}
+
+        except PostgRESTError:
+            raise
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Erreur PostgREST : {exc}") from exc
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8', errors='ignore')
             content_type = e.headers.get('Content-Type', '').lower()
@@ -283,7 +305,7 @@ class PostgREST:
             from .django_error_viewer import show_django_error
 
             # Extraire les en-têtes
-            headers = dict(http_error.headers)
+            headers = dict(getattr(http_error, 'headers', {}) or {})
 
             # Déterminer si c'est du HTML
             is_html = 'text/html' in headers.get('Content-Type', '').lower()
@@ -296,8 +318,8 @@ class PostgREST:
             # Afficher le visionneur
             show_django_error(
                 parent=None,
-                error_code=http_error.code,
-                error_reason=http_error.reason,
+                error_code=getattr(http_error, 'code', getattr(http_error, 'status_code', '')),
+                error_reason=getattr(http_error, 'reason', ''),
                 html_content=html_content,
                 error_message=(error_body if not is_html else ""),
                 url=url,
@@ -341,7 +363,7 @@ class PostgREST:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         auto_paginate: bool = True,
-        page_size: int = 1000
+        page_size: int = 5000
     ) -> List[Dict[str, Any]]:
         """
         Récupère des enregistrements d'une table avec support optionnel de la pagination automatique.

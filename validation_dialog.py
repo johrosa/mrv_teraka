@@ -15,6 +15,7 @@ from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
 import json
 import os
+import re
 from .business_rules import BusinessRulesEngine
 from .utils import Utils
 
@@ -71,6 +72,23 @@ def _unpack_full_value(packed, fallback):
     return fallback
 
 
+def _normalize_uuid(value):
+    if value is None:
+        return None
+    text = str(value).strip().replace('{', '').replace('}', '')
+    if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', text, re.IGNORECASE):
+        return text.lower()
+    return None
+
+
+def _stamp_verifier_uuid(row, user_uuid):
+    if not isinstance(row, dict) or not user_uuid:
+        return
+    row['uuid_verificateur'] = user_uuid
+    if 'uuid_validateur' in row:
+        row['uuid_validateur'] = user_uuid
+
+
 class DataValidationDialog(QDialog):
     """Formulaire de validation et fusion des données collectées"""
     
@@ -105,12 +123,14 @@ class DataValidationDialog(QDialog):
         self.large_table_threshold = 500
         self._loaded_tabs = set()
         self.validation_errors = {}
+        self.excluded_rows = {}
+        self.included_error_rows = {}
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
 
         self.validated_data = []
-        self.setWindowTitle("Validation des Données Collectées")
+        self.setWindowTitle("Validation simplifiée des données collectées")
         self.setGeometry(100, 100, 800, 500)
         self.initUI()
     
@@ -130,17 +150,14 @@ class DataValidationDialog(QDialog):
             layout.addLayout(table_selector_layout)
 
         # --- Titre et Description ---
-        title = QLabel("Validation des Données Collectées au Terrain")
+        title = QLabel("Validation des données collectées")
         title_font = QFont()
         title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         layout.addWidget(title)
         
-        desc = QLabel(
-            "Vérifiez et validez les données collectées avec Mergin Map.\n"
-            "Comparez avec les données originales et décidez de la fusion."
-        )
+        desc = QLabel("Traitez les anomalies, puis validez les lignes correctes sur une ou plusieurs tables.")
         desc.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(desc)
         
@@ -148,15 +165,18 @@ class DataValidationDialog(QDialog):
         self.tabs = QTabWidget()
         
         # Onglet 1: Vue d'ensemble
-        self.tabs.addTab(self.create_overview_tab(), "Vue d'ensemble")
+        self.tabs.addTab(self.create_overview_tab(), "Résumé")
+
+        # Onglet 2: Problèmes à traiter
+        self.tabs.addTab(self.create_issues_tab(), "Problèmes")
         
-        # Onglet 2: Données avant/après
+        # Onglet 3: Données avant/après
         self.tabs.addTab(self.create_data_tabs(), "Données")
         
-        # Onglet 3: Comparaison
+        # Onglet 4: Comparaison
         self.tabs.addTab(self.create_comparison_tab(), "Comparaison")
         
-        # Onglet 4: Validation ligne par ligne
+        # Onglet 5: Validation ligne par ligne
         self.tabs.addTab(self.create_validation_tab(), "Validation")
         self.tabs.currentChanged.connect(self.on_main_tab_changed)
         
@@ -170,13 +190,13 @@ class DataValidationDialog(QDialog):
         # --- Boutons d'action ---
         button_layout = QHBoxLayout()
         
-        self.btn_auto_merge = QPushButton("🔄 Fusion Automatique")
+        self.btn_auto_merge = QPushButton("Valider les lignes correctes")
         self.btn_auto_merge.clicked.connect(self.auto_merge)
         
-        self.btn_manual_review = QPushButton("👁️ Révision Manuelle")
+        self.btn_manual_review = QPushButton("Voir les problèmes")
         self.btn_manual_review.clicked.connect(self.manual_review)
         
-        self.btn_export_report = QPushButton("📊 Exporter Rapport")
+        self.btn_export_report = QPushButton("Exporter rapport")
         self.btn_export_report.clicked.connect(self.export_report)
         
         button_layout.addWidget(self.btn_auto_merge)
@@ -187,7 +207,7 @@ class DataValidationDialog(QDialog):
         self.btn_cancel = QPushButton("Annuler")
         self.btn_cancel.clicked.connect(self.reject)
         
-        self.btn_validate = QPushButton("✓ Valider et Fusionner")
+        self.btn_validate = QPushButton("Valider les tables retenues")
         self.btn_validate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.btn_validate.setDefault(True)  # Permet d'utiliser 'Entrée'
         self.btn_validate.clicked.connect(self.accept)
@@ -200,6 +220,7 @@ class DataValidationDialog(QDialog):
         self.setLayout(layout)
         self.table_diff.itemChanged.connect(self.on_diff_item_changed)
         self.populate_data()
+        self.run_validation_rules(show_messages=False)
 
     def switch_table(self, table_name):
         """Change la table active et rafraîchit l'UI."""
@@ -231,7 +252,7 @@ class DataValidationDialog(QDialog):
         layout.addRow("Règles métier :", self.rules_edit)
 
         self.btn_run_rules = QPushButton("🚀 Lancer vérification")
-        self.btn_run_rules.clicked.connect(self.run_validation_rules)
+        self.btn_run_rules.clicked.connect(lambda: self.run_validation_rules())
         layout.addRow("", self.btn_run_rules)
 
         # Statistiques
@@ -245,17 +266,28 @@ class DataValidationDialog(QDialog):
         self.total_original_label = QLabel(str(total_original))
         self.new_entries_label = QLabel(f"<b style='color:blue'>{new_entries}</b>")
         self.modified_label = QLabel(f"<b style='color:orange'>À analyser</b>")
+        self.tables_label = QLabel("")
+        self.ok_rows_label = QLabel("")
+        self.blocking_errors_label = QLabel("")
+        self.warning_rows_label = QLabel("")
         self.large_table_label = QLabel("")
         self.large_table_label.setStyleSheet("color: #cc6600; font-weight: bold;")
+        self.blocking_errors_label.setStyleSheet("color: #b00020; font-weight: bold;")
+        self.ok_rows_label.setStyleSheet("color: #1b5e20; font-weight: bold;")
 
+        layout.addRow("Tables:", self.tables_label)
         layout.addRow("Total collecté:", self.total_collected_label)
         layout.addRow("Total original:", self.total_original_label)
         layout.addRow("Nouvelles entrées:", self.new_entries_label)
         layout.addRow("Modifiées/Supprimées:", self.modified_label)
+        layout.addRow("Lignes correctes:", self.ok_rows_label)
+        layout.addRow("Erreurs bloquantes:", self.blocking_errors_label)
+        layout.addRow("À vérifier:", self.warning_rows_label)
         layout.addRow("Affichage:", self.large_table_label)
         
         # Statut validation
-        layout.addRow("Statut:", QLabel("<b style='color:red'>En attente de validation</b>"))
+        self.validation_status_label = QLabel("<b style='color:red'>En attente de validation</b>")
+        layout.addRow("Statut:", self.validation_status_label)
         
         # Actions recommandées
         self.recommendation = QTextEdit()
@@ -300,6 +332,27 @@ class DataValidationDialog(QDialog):
         data_tabs.currentChanged.connect(lambda _: self.populate_data_tables_page())
 
         widget = QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def create_issues_tab(self):
+        """Vue simplifiée des anomalies à traiter."""
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("<b>Lignes avec problème</b>"))
+
+        self.issues_table = QTableWidget()
+        self.issues_table.setAlternatingRowColors(True)
+        self.issues_table.setColumnCount(6)
+        self.issues_table.setHorizontalHeaderLabels(["Publier", "Table", "Ligne", "ID", "Type", "Problème"])
+        self.issues_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.issues_table.itemChanged.connect(self.on_issue_item_changed)
+        layout.addWidget(self.issues_table)
+
+        self.issues_hint = QLabel("")
+        self.issues_hint.setStyleSheet("color: gray;")
+        layout.addWidget(self.issues_hint)
+
+        widget = QGroupBox("Exceptions à traiter")
         widget.setLayout(layout)
         return widget
     
@@ -521,6 +574,7 @@ class DataValidationDialog(QDialog):
             QSignalBlocker(self.table_before),
             QSignalBlocker(self.table_validation),
             QSignalBlocker(self.table_diff),
+            QSignalBlocker(self.issues_table),
             QSignalBlocker(self.combo_records),
             QSignalBlocker(self.record_spin),
         ]
@@ -537,6 +591,8 @@ class DataValidationDialog(QDialog):
             self.detail_text.clear()
             self.table_validation.clearContents()
             self.table_validation.setRowCount(0)
+            self.issues_table.clearContents()
+            self.issues_table.setRowCount(0)
             self.record_spin.setMaximum(max(1, len(self.collected_data)))
             self.record_spin.setValue(1)
         finally:
@@ -544,20 +600,88 @@ class DataValidationDialog(QDialog):
             self._refreshing_ui = False
 
         self.update_overview_stats()
+        self.populate_issues_table()
         self.update_lazy_tab()
         # Générer recommandations
         self.generate_recommendations()
+
+    def _table_counts(self, table_name):
+        collected = self.full_collected_data.get(table_name, [])
+        original = self.full_original_data.get(table_name, [])
+        errors = self.validation_errors.get(table_name, {})
+        excluded = self.excluded_rows.get(table_name, set())
+        included_errors = self.included_error_rows.get(table_name, set())
+        new_count = max(0, len(collected) - len(original))
+        modified_count = sum(
+            1
+            for idx, item in enumerate(collected[:len(original)])
+            if item != original[idx]
+        )
+        error_count = max(0, len(errors) - len(included_errors))
+        excluded_count = len(excluded)
+        ok_count = max(0, len(collected) - error_count - excluded_count)
+        return {
+            'collected': len(collected),
+            'original': len(original),
+            'new': new_count,
+            'modified': modified_count,
+            'errors': error_count,
+            'excluded': excluded_count,
+            'ok': ok_count,
+        }
+
+    def _global_counts(self):
+        totals = {
+            'tables': len(self.full_collected_data),
+            'collected': 0,
+            'original': 0,
+            'new': 0,
+            'modified': 0,
+            'errors': 0,
+            'excluded': 0,
+            'ok': 0,
+        }
+        for table_name in self.full_collected_data:
+            counts = self._table_counts(table_name)
+            for key in counts:
+                totals[key] += counts[key]
+        return totals
+
+    def _build_validated_payload(self, exclude_errors=True):
+        payload = {}
+        for table_name, rows in self.full_collected_data.items():
+            error_rows = set(self.validation_errors.get(table_name, {}).keys()) if exclude_errors else set()
+            included_errors = self.included_error_rows.get(table_name, set())
+            excluded = self.excluded_rows.get(table_name, set())
+            payload[table_name] = [
+                row
+                for idx, row in enumerate(rows)
+                if (idx not in error_rows or idx in included_errors) and idx not in excluded
+            ]
+
+        if len(payload) == 1 and 'default' in payload:
+            return payload['default']
+        return payload
 
     def update_overview_stats(self):
         """Met à jour le résumé sans reconstruire les widgets."""
         total_collected = len(self.collected_data)
         total_original = len(self.original_data)
         new_entries = total_collected - total_original
+        global_counts = self._global_counts()
 
+        self.tables_label.setText(str(global_counts['tables']))
         self.total_collected_label.setText(str(total_collected))
         self.total_original_label.setText(str(total_original))
         self.new_entries_label.setText(f"<b style='color:blue'>{new_entries}</b>")
-        self.modified_label.setText(f"<b style='color:orange'>À analyser</b>")
+        self.modified_label.setText(f"<b style='color:orange'>{global_counts['modified']}</b>")
+        self.ok_rows_label.setText(str(global_counts['ok']))
+        self.blocking_errors_label.setText(str(global_counts['errors']))
+        self.warning_rows_label.setText(str(global_counts['modified'] + global_counts['new']))
+        if global_counts['errors']:
+            self.validation_status_label.setText("<b style='color:#b00020'>Anomalies à traiter</b>")
+        else:
+            self.validation_status_label.setText("<b style='color:#1b5e20'>Prêt pour validation</b>")
 
         if total_collected > self.large_table_threshold:
             self.large_table_label.setText(
@@ -565,6 +689,58 @@ class DataValidationDialog(QDialog):
             )
         else:
             self.large_table_label.setText(f"Affichage direct, {self.page_size} lignes maximum par page.")
+
+    def populate_issues_table(self):
+        """Remplit la vue globale des lignes problématiques."""
+        blocker = QSignalBlocker(self.issues_table)
+        try:
+            rows = []
+            for table_name in sorted(self.full_collected_data.keys()):
+                table_errors = self.validation_errors.get(table_name, {})
+                for data_index, messages in sorted(table_errors.items()):
+                    item = self.full_collected_data.get(table_name, [])[data_index]
+                    rows.append((table_name, data_index, item, messages))
+
+            self.issues_table.clearContents()
+            self.issues_table.setRowCount(len(rows))
+            for row, (table_name, data_index, item, messages) in enumerate(rows):
+                publish_item = QTableWidgetItem("")
+                publish_item.setFlags(publish_item.flags() | Qt.ItemIsUserCheckable)
+                is_included = data_index in self.included_error_rows.get(table_name, set())
+                publish_item.setCheckState(Qt.Checked if is_included else Qt.Unchecked)
+                publish_item.setData(Qt.UserRole, (table_name, data_index))
+                self.issues_table.setItem(row, 0, publish_item)
+                self.issues_table.setItem(row, 1, QTableWidgetItem(str(table_name)))
+                self.issues_table.setItem(row, 2, QTableWidgetItem(str(data_index + 1)))
+                self.issues_table.setItem(row, 3, QTableWidgetItem(str(item.get('id', 'N/A'))))
+                self.issues_table.setItem(row, 4, QTableWidgetItem("Erreur métier"))
+                msg = "; ".join(messages)
+                msg_item = QTableWidgetItem(Utils.compact_dialog_message(msg, max_length=220))
+                msg_item.setToolTip(Utils.compact_dialog_message(msg, max_length=1000))
+                self.issues_table.setItem(row, 5, msg_item)
+            self.issues_table.resizeColumnsToContents()
+            if rows:
+                self.issues_hint.setText(
+                    "Les lignes en anomalie sont bloquées par défaut. Cochez Publier seulement après correction ou décision métier."
+                )
+            else:
+                self.issues_hint.setText("Aucune anomalie détectée. Les lignes correctes peuvent être validées.")
+        finally:
+            del blocker
+
+    def on_issue_item_changed(self, item):
+        if self._refreshing_ui or item is None or item.column() != 0:
+            return
+        marker = item.data(Qt.UserRole)
+        if not marker:
+            return
+        table_name, data_index = marker
+        included = self.included_error_rows.setdefault(table_name, set())
+        if item.checkState() == Qt.Checked:
+            included.add(data_index)
+        else:
+            included.discard(data_index)
+        self.update_overview_stats()
 
     def on_main_tab_changed(self, index):
         """Charge les onglets lourds uniquement quand ils deviennent visibles."""
@@ -576,14 +752,17 @@ class DataValidationDialog(QDialog):
             index = self.tabs.currentIndex()
 
         if index == 1:
-            self.populate_data_tables_page()
+            self.populate_issues_table()
             self._loaded_tabs.add(index)
         elif index == 2:
+            self.populate_data_tables_page()
+            self._loaded_tabs.add(index)
+        elif index == 3:
             self.populate_comparison_controls()
             if self.collected_data:
                 self.show_comparison(self.record_spin.value() - 1)
             self._loaded_tabs.add(index)
-        elif index == 3:
+        elif index == 4:
             self.populate_validation_page()
             self._loaded_tabs.add(index)
 
@@ -686,13 +865,18 @@ class DataValidationDialog(QDialog):
     def generate_recommendations(self):
         """Génère des recommandations basées sur les données"""
         recs = []
-        
-        if len(self.collected_data) > len(self.original_data):
-            recs.append(f"✓ {len(self.collected_data) - len(self.original_data)} nouveaux enregistrements détectés")
-        
-        recs.append("✓ Vérifier les géométries")
-        recs.append("✓ Valider les attributs obligatoires")
-        recs.append("✓ Résoudre les doublons potentiels")
+        counts = self._global_counts()
+
+        recs.append(f"Tables prêtes: {counts['tables']}")
+        recs.append(f"Lignes correctes validables: {counts['ok']}")
+        if counts['new']:
+            recs.append(f"{counts['new']} nouveaux enregistrements détectés")
+        if counts['modified']:
+            recs.append(f"{counts['modified']} lignes à vérifier")
+        if counts['errors']:
+            recs.append(f"{counts['errors']} anomalies à traiter avant publication")
+        if not counts['errors']:
+            recs.append("Aucune anomalie métier détectée")
         
         self.recommendation.setText("\n".join(recs))
 
@@ -708,81 +892,63 @@ class DataValidationDialog(QDialog):
         """Affiche une erreur."""
         QMessageBox.critical(self, title, Utils.compact_dialog_message(message))
 
-    def run_validation_rules(self):
+    def run_validation_rules(self, show_messages=True):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
-        if not self.collected_data:
+        if not self.full_collected_data:
             return
-
-        # Optimization: Initialize QgsFields and context once outside the loop
-        # We collect all unique keys from the entire dataset to ensure compatibility
-        all_keys = set()
-        for item in self.collected_data:
-            all_keys.update(item.keys())
-
-        fields = QgsFields()
-        for key in sorted(all_keys):
-            fields.append(QgsField(key, QVariant.String))
 
         context = QgsExpressionContext()
         context.appendScope(QgsExpressionContextUtils.globalScope())
 
-        # Reuse a single QgsFeature object
-        feat = QgsFeature(fields)
-        sorted_keys = sorted(all_keys)
+        self.validation_errors = {}
+        self.excluded_rows = {}
+        self.included_error_rows = {}
+        for table_name, table_data in self.full_collected_data.items():
+            if not table_data:
+                self.validation_errors[table_name] = {}
+                continue
 
-        visible_start = self.current_page * self.page_size
-        visible_end = visible_start + self.table_validation.rowCount()
-        table_errors = {}
+            all_keys = set()
+            for item in table_data:
+                all_keys.update(item.keys())
 
-        for data_index, item_data in enumerate(self.collected_data):
+            fields = QgsFields()
+            sorted_keys = sorted(all_keys)
+            for key in sorted_keys:
+                fields.append(QgsField(key, QVariant.String))
 
-            # Update all feature attributes to prevent leakage from previous rows
-            # Performance: setAttributes with a list is faster than multiple setAttribute calls
-            feat.setAttributes([item_data.get(key) for key in sorted_keys])
-
-            # Utiliser le moteur de règles avec le contexte réutilisé
-            # Optimization: Combining QgsExpression caching with Context reuse gives >90% speedup
-            errors = BusinessRulesEngine.validate_feature(self.current_table, feat, context=context)
-
-            if errors:
-                invalid_count += 1
-                error_msgs = [e['message'] for e in errors]
-                table_errors[data_index] = error_msgs
-
-                if visible_start <= data_index < visible_end:
-                    row = data_index - visible_start
-                    # Marquer en orange et ajouter le commentaire d'erreur
-                    for col in range(self.table_validation.columnCount()):
-                        tbl_item = self.table_validation.item(row, col)
-                        if tbl_item:
-                            tbl_item.setBackground(QColor(255, 165, 0, 150))
-
-                    comment_item = self.table_validation.item(row, 5)
-                    if comment_item:
-                        comment_item.setText(f"ERREUR METIER: {', '.join(error_msgs)}")
-                    
-                    # Ajouter un tooltip avec les erreurs détaillées sur toute la ligne
-                    for col in range(self.table_validation.columnCount()):
-                        tbl_item = self.table_validation.item(row, col)
-                        if tbl_item:
-                            tbl_item.setToolTip(f"Anomalies détectées :\n- " + "\n- ".join(error_msgs))
-
-        self.validation_errors[self.current_table] = table_errors
+            feat = QgsFeature(fields)
+            table_errors = {}
+            for data_index, item_data in enumerate(table_data):
+                feat.setAttributes([item_data.get(key) for key in sorted_keys])
+                errors = BusinessRulesEngine.validate_feature(table_name, feat, context=context)
+                if errors:
+                    invalid_count += 1
+                    table_errors[data_index] = [e['message'] for e in errors]
+            self.validation_errors[table_name] = table_errors
 
         if invalid_count > 0:
-            msg = f"{invalid_count} enregistrements présentent des anomalies métier."
-            self.show_warning("Contrôle Qualité Automatisé", msg)
+            if show_messages:
+                msg = f"{invalid_count} enregistrements présentent des anomalies métier."
+                self.show_warning("Contrôle Qualité Automatisé", msg)
             
             # Mettre à jour les recommandations dans l'onglet 0
-            current_recs = self.recommendation.toPlainText()
-            error_details = f"\n⚠️ {invalid_count} anomalies métier détectées dans la table '{self.current_table}'."
-            self.recommendation.setText(current_recs + error_details)
+            self.generate_recommendations()
             
-            self.tabs.setCurrentIndex(3)
+            self.populate_validation_page()
+            self.populate_issues_table()
+            self.update_overview_stats()
+            if show_messages:
+                self.tabs.setCurrentIndex(1)
         else:
-            self.show_info("Contrôle Qualité Automatisé",
-                                    "Félicitations ! Aucune anomalie métier détectée.")
+            self.populate_validation_page()
+            self.populate_issues_table()
+            self.update_overview_stats()
+            self.generate_recommendations()
+            if show_messages:
+                self.show_info("Contrôle Qualité Automatisé",
+                                        "Félicitations ! Aucune anomalie métier détectée.")
     
     def show_comparison(self, index):
         """Affiche la comparaison avec sélection interactive de la valeur finale"""
@@ -918,26 +1084,21 @@ class DataValidationDialog(QDialog):
     def accept(self):
         """S'assure que les données sont marquées comme validées avant de fermer."""
         if not self.validated_data:
-            # Si auto_merge n'a pas été appelé, on prend les données actuelles
-            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
-                self.validated_data = self.full_collected_data
-            else:
-                self.validated_data = self.collected_data
+            self.validated_data = self._build_validated_payload(exclude_errors=True)
 
-        # Remplir uuid_verificateur avec l'utilisateur actuel
+        # Remplir uuid_verificateur avec l'utilisateur actuel au clic Valider.
         try:
-            # On tente de récupérer le token_manager
             from .token_manager import TokenManager
             tm = TokenManager()
-            user_uuid = tm.get_user_id()
+            user_uuid = _normalize_uuid(tm.get_user_id())
             if user_uuid:
                 if isinstance(self.validated_data, dict):
                     for table_data in self.validated_data.values():
                         for row in table_data:
-                            row['uuid_verificateur'] = user_uuid
+                            _stamp_verifier_uuid(row, user_uuid)
                 elif isinstance(self.validated_data, list):
                     for row in self.validated_data:
-                        row['uuid_verificateur'] = user_uuid
+                        _stamp_verifier_uuid(row, user_uuid)
         except Exception:
             pass
 
@@ -945,39 +1106,41 @@ class DataValidationDialog(QDialog):
 
     def auto_merge(self):
         """Fusion automatique des données pour toutes les tables."""
+        counts = self._global_counts()
         reply = QMessageBox.question(
-            self, "Fusion Automatique",
-            "Fusionner automatiquement toutes les données de TOUTES les tables ?\n"
-            "Les nouveaux enregistrements seront ajoutés."
+            self, "Valider les lignes correctes",
+            f"Valider les lignes correctes de {counts['tables']} table(s) ?\n"
+            f"{counts['ok']} ligne(s) seront retenues."
+            + (f"\n{counts['errors']} ligne(s) avec anomalie seront exclues." if counts['errors'] else "")
         )
         
         if reply == QMessageBox.Yes:
-            if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
-                self.validated_data = self.full_collected_data
-            else:
-                self.validated_data = self.collected_data
+            self.validated_data = self._build_validated_payload(exclude_errors=True)
 
             self.progress.setValue(100)
-            self.show_info("Succès", "Données prêtes à fusionner")
+            self.show_info("Succès", "Lignes correctes prêtes à publier")
             self.accept()
     
     def manual_review(self):
         """Révision manuelle"""
-        self.tabs.setCurrentIndex(3)  # Aller à l'onglet validation
-        self.show_info(
-            "Révision Manuelle",
-            "Veuillez réviser chaque enregistrement\n"
-            "dans l'onglet 'Validation'"
-        )
+        self.populate_issues_table()
+        self.tabs.setCurrentIndex(1)
     
     def export_report(self):
         """Exporte un rapport de validation"""
         report = {
             'date': str(__import__('datetime').datetime.now()),
-            'total_collected': len(self.collected_data),
-            'total_original': len(self.original_data),
-            'new_entries': len(self.collected_data) - len(self.original_data),
-            'data': self.collected_data
+            'summary': self._global_counts(),
+            'errors': self.validation_errors,
+            'excluded_rows': {table: sorted(rows) for table, rows in self.excluded_rows.items()},
+            'included_error_rows': {table: sorted(rows) for table, rows in self.included_error_rows.items()},
+            'tables': {
+                table_name: {
+                    'collected': len(self.full_collected_data.get(table_name, [])),
+                    'original': len(self.full_original_data.get(table_name, [])),
+                }
+                for table_name in self.full_collected_data
+            }
         }
         
         import tempfile

@@ -37,6 +37,9 @@ from .mergin_plugin_bridge import MerginPluginBridge
 class MrvTeraka:
     """Implémentation du Plugin QGIS MrvTeraka."""
 
+    SYSTEM_ENDPOINTS = {'spatial_ref_sys', 'geometry_columns', 'geography_columns'}
+    EMPTY_FILTER_MARKER = '__mrv_empty_filter__'
+
     def __init__(self, iface):
         self.iface = iface
 
@@ -59,6 +62,7 @@ class MrvTeraka:
         self.current_original_data = None
         self.current_data_mapping = None
         self.current_validated_data = None
+        self._geo_filter_cache = {}
 
         self.plugin_dir = os.path.dirname(__file__)
         self.default_project_file = os.path.join(self.plugin_dir, 'Q_v17_7_7_ITASY2026_WP.qgz')
@@ -513,6 +517,8 @@ class MrvTeraka:
             if schema and 'definitions' in schema:
                 new_mappings = {}
                 for table_name, definition in schema['definitions'].items():
+                    if self.is_system_endpoint(table_name):
+                        continue
                     geom_field = None
                     props = definition.get('properties', {})
                     for p_name, p_data in props.items():
@@ -525,11 +531,12 @@ class MrvTeraka:
                         'pk_field': 'id',
                         'columns': list(props.keys())
                     }
-                self.layer_mappings = new_mappings
+                self.layer_mappings = self.filter_system_mappings(new_mappings)
+                self._geo_filter_cache.clear()
                 mapping_path = os.path.join(self.plugin_dir, 'layer_table_mapping.json')
                 # Sanitize mappings: don't store geom_field when it's None
                 save_mappings = {}
-                for name, cfg in new_mappings.items():
+                for name, cfg in self.layer_mappings.items():
                     cfg_to_save = {k: v for k, v in cfg.items() if not (k == 'geom_field' and v is None)}
                     save_mappings[name] = cfg_to_save
                 with open(mapping_path, 'w', encoding='utf-8') as f:
@@ -559,6 +566,7 @@ class MrvTeraka:
 
     def load_layer_mappings(self):
         if getattr(self, 'layer_mappings', None) is not None:
+            self.layer_mappings = self.filter_system_mappings(self.layer_mappings)
             return self.layer_mappings
 
         if self.postgrest:
@@ -567,6 +575,8 @@ class MrvTeraka:
                 if schema and 'definitions' in schema:
                     mappings = {}
                     for table_name, definition in schema['definitions'].items():
+                        if self.is_system_endpoint(table_name):
+                            continue
                         geom_field = None
                         props = definition.get('properties', {})
                         for p_name, p_data in props.items():
@@ -585,6 +595,9 @@ class MrvTeraka:
                     
                     # Pour chaque mapping du JSON, mettre à jour complètement (pas juste fusionner)
                     for table_name, json_mapping in json_mappings.items():
+                        endpoint = json_mapping.get('endpoint', table_name) if isinstance(json_mapping, dict) else table_name
+                        if self.is_system_endpoint(table_name) or self.is_system_endpoint(endpoint):
+                            continue
                         if table_name in mappings:
                             # Fusionner intelligemment: garder columns du schema, utiliser pk du JSON
                             schema_columns = mappings[table_name].get('columns', [])
@@ -596,17 +609,33 @@ class MrvTeraka:
                             # Mapping nouveau dans JSON
                             mappings[table_name] = json_mapping
                     
-                    self.layer_mappings = mappings
-                    return mappings
+                    self.layer_mappings = self.filter_system_mappings(mappings)
+                    return self.layer_mappings
             except Exception:
                 pass
 
-        self.layer_mappings = load_layer_mapping(self.plugin_dir)
+        self.layer_mappings = self.filter_system_mappings(load_layer_mapping(self.plugin_dir))
         return self.layer_mappings
+
+    def filter_system_mappings(self, mappings):
+        if not isinstance(mappings, dict):
+            return {}
+        return {
+            name: mapping
+            for name, mapping in mappings.items()
+            if not self.is_system_endpoint(name)
+            and not self.is_system_endpoint(mapping.get('endpoint') if isinstance(mapping, dict) else None)
+        }
+
+    @classmethod
+    def is_system_endpoint(cls, name):
+        return str(name or '').strip().lower() in cls.SYSTEM_ENDPOINTS
 
     def get_layer_mapping(self, layer_name):
         mappings = self.load_layer_mappings()
         if layer_name in mappings and mappings[layer_name].get('endpoint'):
+            if self.is_system_endpoint(layer_name) or self.is_system_endpoint(mappings[layer_name].get('endpoint')):
+                return None
             return mappings[layer_name]
         return None
 
@@ -710,6 +739,8 @@ class MrvTeraka:
                 endpoint = layer.customProperty('postgrest:endpoint')
                 mapping = self.get_mapping_for_endpoint(endpoint, include_project=False, fallback=False) if endpoint else None
             if mapping and mapping.get('endpoint'):
+                if self.is_system_endpoint(layer_name) or self.is_system_endpoint(mapping.get('endpoint')):
+                    continue
                 endpoints[layer_name] = mapping
         return endpoints
 
@@ -780,9 +811,66 @@ class MrvTeraka:
 
     def current_user_uuid(self):
         try:
-            return self.token_manager.get_user_id()
+            return self.normalize_uuid_value(self.token_manager.get_user_id())
         except Exception:
             return None
+
+    @staticmethod
+    def normalize_uuid_value(value):
+        if value is None:
+            return None
+        text = str(value).strip().replace('{', '').replace('}', '')
+        if not text:
+            return None
+        if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', text, re.IGNORECASE):
+            return text.lower()
+        return None
+
+    @staticmethod
+    def is_uuid_column(field_name):
+        field = str(field_name or '').lower()
+        return field.startswith('uuid') or field.endswith('_uuid')
+
+    @staticmethod
+    def today_iso_date():
+        return __import__('datetime').date.today().isoformat()
+
+    def normalize_backend_defaults(self, row, mapping, user_uuid=None):
+        """Nettoie les valeurs connues avant PostgREST pour éviter les erreurs 23502/22P02."""
+        if not isinstance(row, dict):
+            return row
+
+        prepared = dict(row)
+        columns = self.mapping_columns(mapping)
+        user_uuid = self.normalize_uuid_value(user_uuid) or self.current_user_uuid()
+
+        if 'date_saisie' in columns and not prepared.get('date_saisie'):
+            prepared['date_saisie'] = self.today_iso_date()
+
+        for key in list(prepared.keys()):
+            key_lower = str(key).lower()
+            if not self.is_uuid_column(key_lower):
+                continue
+            value = prepared.get(key)
+            if value in (None, ''):
+                prepared[key] = None
+                continue
+            normalized = self.normalize_uuid_value(value)
+            if normalized:
+                prepared[key] = normalized
+            elif key_lower in {'uuid_operateur', 'uuid_verificateur', 'uuid_validateur'} and user_uuid:
+                prepared[key] = user_uuid
+            else:
+                prepared[key] = None
+
+        if 'uuid_operateur' in columns and user_uuid and not prepared.get('uuid_operateur'):
+            prepared['uuid_operateur'] = user_uuid
+        if 'uuid_verificateur' in columns and user_uuid and not prepared.get('uuid_verificateur'):
+            prepared['uuid_verificateur'] = user_uuid
+        if 'uuid_validateur' in columns and user_uuid and not prepared.get('uuid_validateur'):
+            prepared['uuid_validateur'] = user_uuid
+
+        return prepared
 
     def field_index_by_name(self, layer, field_name):
         if not layer:
@@ -818,6 +906,7 @@ class MrvTeraka:
                 prepared['uuid_operateur'] = user_uuid
             if should_stamp_verifier and not prepared.get('uuid_verificateur'):
                 prepared['uuid_verificateur'] = user_uuid
+            prepared = self.normalize_backend_defaults(prepared, mapping, user_uuid=user_uuid)
             prepared_rows.append(prepared)
 
         return prepared_rows
@@ -896,14 +985,22 @@ class MrvTeraka:
         if c_com_values:
             return {'c_com': 'in.({})'.format(','.join(c_com_values))}
 
-        return {'c_com': 'in.(-1)'}
+        return {self.EMPTY_FILTER_MARKER: True}
+
+    def is_empty_filter(self, filters):
+        return isinstance(filters, dict) and bool(filters.get(self.EMPTY_FILTER_MARKER))
 
     def fetch_unique_regions(self):
         if not self.postgrest:
             return []
+        cache_key = ('regions',)
+        if cache_key in self._geo_filter_cache:
+            return self._geo_filter_cache[cache_key]
         try:
             rows = self.postgrest.select('communes', select='region', order='region.asc', auto_paginate=True)
-            return sorted(list(set(r.get('region') for r in rows if r.get('region'))))
+            values = sorted(list(set(r.get('region') for r in rows if r.get('region'))))
+            self._geo_filter_cache[cache_key] = values
+            return values
         except Exception as e:
             print(f"Erreur fetch regions: {e}")
             return []
@@ -911,10 +1008,15 @@ class MrvTeraka:
     def fetch_unique_districts(self, region_name=None):
         if not self.postgrest:
             return []
+        cache_key = ('districts', region_name or '')
+        if cache_key in self._geo_filter_cache:
+            return self._geo_filter_cache[cache_key]
         filters = {'region': f'eq.{region_name}'} if region_name else None
         try:
             rows = self.postgrest.select('communes', select='district', filters=filters, order='district.asc', auto_paginate=True)
-            return sorted(list(set(d.get('district') for d in rows if d.get('district'))))
+            values = sorted(list(set(d.get('district') for d in rows if d.get('district'))))
+            self._geo_filter_cache[cache_key] = values
+            return values
         except Exception as e:
             print(f"Erreur fetch districts: {e}")
             return []
@@ -922,10 +1024,15 @@ class MrvTeraka:
     def fetch_communes_by_district(self, district_name=None):
         if not self.postgrest:
             return []
+        cache_key = ('communes', district_name or '')
+        if cache_key in self._geo_filter_cache:
+            return self._geo_filter_cache[cache_key]
         filters = {'district': f'eq.{district_name}'} if district_name else None
         try:
             rows = self.postgrest.select('communes', select='commune,c_com', filters=filters, order='commune.asc', auto_paginate=True)
-            return [(r.get('commune'), r.get('c_com')) for r in rows if r.get('commune') and r.get('c_com')]
+            values = [(r.get('commune'), r.get('c_com')) for r in rows if r.get('commune') and r.get('c_com')]
+            self._geo_filter_cache[cache_key] = values
+            return values
         except Exception as e:
             print(f"Erreur fetch communes: {e}")
             return []
@@ -1030,7 +1137,7 @@ class MrvTeraka:
             try:
                 mapping = self.get_mapping_for_endpoint(table)
                 filters = self.build_sector_filters(mapping, commune_context)
-                db_data = self.postgrest.select(table, filters=filters)
+                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(table, filters=filters)
                 display_name = f"{table} (API)"
                 geom_field = mapping.get('geom_field', 'geom')
 
@@ -1061,11 +1168,11 @@ class MrvTeraka:
     def set_validation_ready(self, ready: bool):
         self.mergin_validation_ready = ready
         if self.dockwidget and hasattr(self.dockwidget, 'autoValidateButton'):
-            self.dockwidget.autoValidateButton.setEnabled(ready)
+            self.dockwidget.autoValidateButton.setEnabled(ready and self.is_current_user_validator())
 
     def set_sync_ready(self, ready: bool):
         if self.dockwidget and hasattr(self.dockwidget, 'autoSyncButton'):
-            self.dockwidget.autoSyncButton.setEnabled(ready)
+            self.dockwidget.autoSyncButton.setEnabled(ready and self.is_current_user_validator())
 
     def refresh_data_via_api(self, selected_endpoints=None):
         if not self.dockwidget or not self.check_api_auth():
@@ -1176,7 +1283,7 @@ class MrvTeraka:
 
                 try:
                     filters = self.build_sector_filters(mapping, commune_context)
-                    original_payload[endpoint] = self.postgrest.select(endpoint, filters=filters)
+                    original_payload[endpoint] = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint, filters=filters)
                 except Exception:
                     original_payload[endpoint] = []
 
@@ -1233,7 +1340,7 @@ class MrvTeraka:
         for layer_name, mapping in project_endpoints.items():
             try:
                 filters = self.build_sector_filters(mapping, commune_context)
-                db_data = self.postgrest.select(mapping['endpoint'], filters=filters)
+                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(mapping['endpoint'], filters=filters)
                 layer = create_vector_layer(db_data, layer_name, mapping.get('geom_field'))
                 if layer and layer.isValid():
                     layer.setCustomProperty('postgrest:endpoint', mapping['endpoint'])
@@ -1372,7 +1479,7 @@ class MrvTeraka:
             try:
                 mapping = self.get_mapping_for_endpoint(endpoint)
                 filters = self.build_sector_filters(mapping, commune_context)
-                db_data = self.postgrest.select(endpoint, filters=filters)
+                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint, filters=filters)
 
                 if not db_data:
                     layer.startEditing()
@@ -1825,7 +1932,7 @@ class MrvTeraka:
                 target_root.insertChildNode(0, target_root.findLayer(target_layer.id()) or target_root.addLayer(target_layer))
                 added_layer_ids.add(target_layer.id())
 
-    def auto_import_mission(self):
+    def auto_import_mission(self, open_validation=False):
         self.dockwidget.merginResultsTextEdit.append("📥 Récupération des données terrain...")
 
         analyzer = ProjectAnalyzer(self.load_layer_mappings())
@@ -1860,7 +1967,7 @@ class MrvTeraka:
 
             try:
                 filters = self.build_sector_filters(mapping, commune_context)
-                original_payload[endpoint] = self.postgrest.select(endpoint, filters=filters)
+                original_payload[endpoint] = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint, filters=filters)
             except Exception:
                 original_payload[endpoint] = []
 
@@ -1873,7 +1980,8 @@ class MrvTeraka:
         self.dockwidget.merginResultsTextEdit.append(
             f"✅ Analyse terminée. {len(collected_payload)} tables prêtes pour validation."
         )
-        self.auto_validate_mission()
+        if open_validation:
+            self.auto_validate_mission()
 
     def auto_validate_mission(self):
         if not self.check_api_auth():
@@ -1887,7 +1995,7 @@ class MrvTeraka:
             return
 
         if not self.mergin_validation_ready:
-            self.auto_import_mission()
+            self.auto_import_mission(open_validation=True)
             return
         self.open_validation_form(self.current_collected_data, self.current_original_data)
 
@@ -1959,11 +2067,7 @@ class MrvTeraka:
             self.dockwidget.merginResultsTextEdit.setPlainText(
                 self.tr(u"Préparation des données locales pour la migration initiale...")
             )
-        user_uuid = None
-        try:
-            user_uuid = self.token_manager.get_user_id()
-        except Exception:
-            pass
+        user_uuid = self.current_user_uuid()
 
         for layer_name, mapping in sorted_endpoints:
             layers = project.mapLayersByName(layer_name)
@@ -2038,6 +2142,7 @@ class MrvTeraka:
                     filtered_row['uuid_operateur'] = user_uuid
                 if 'uuid_verificateur' in api_columns and user_uuid and not filtered_row.get('uuid_verificateur'):
                     filtered_row['uuid_verificateur'] = user_uuid
+                filtered_row = self.normalize_backend_defaults(filtered_row, mapping, user_uuid=user_uuid)
 
                 # Ne jamais réécrire ni déplacer les colonnes UUID/PK vers d'autres champs.
                 # Les valeurs de uuid_pg, uuid_membre, uuid_arbre_gps, etc. doivent rester
@@ -2149,6 +2254,11 @@ class MrvTeraka:
             if sample_id:
                 row_label = "Ligne concernée" if len(rows) == 1 else "Première ligne du paquet"
                 lines.append(f"{row_label}: {sample_id}")
+            if rows and len(rows) > 1:
+                lines.append(
+                    "Note: ce paquet est conservé groupé pour accélérer la migration; "
+                    "une des lignes du paquet contient probablement l'erreur."
+                )
             return "\n".join(lines)
 
         return f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]\n{str(exc)}"
@@ -2161,7 +2271,8 @@ class MrvTeraka:
 
     @staticmethod
     def _insert_rows_with_diagnostics(
-        postgrest_client, endpoint, rows, conflict_field, layer_name, start_idx, results
+        postgrest_client, endpoint, rows, conflict_field, layer_name, start_idx, results,
+        min_diagnostic_batch_size=100
     ):
         if not rows:
             return 0, 0
@@ -2176,7 +2287,7 @@ class MrvTeraka:
             )
             return len(rows), 0
         except Exception as exc:
-            if len(rows) == 1 or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
+            if len(rows) <= min_diagnostic_batch_size or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
                 error_msg = MrvTeraka._format_postgrest_error(
                     exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
                 )
@@ -2192,6 +2303,7 @@ class MrvTeraka:
                 layer_name,
                 start_idx,
                 results,
+                min_diagnostic_batch_size,
             )
             right_ok, right_errors = MrvTeraka._insert_rows_with_diagnostics(
                 postgrest_client,
@@ -2201,12 +2313,15 @@ class MrvTeraka:
                 layer_name,
                 start_idx + midpoint,
                 results,
+                min_diagnostic_batch_size,
             )
             return left_ok + right_ok, left_errors + right_errors
 
     @staticmethod
     def _do_migration_task(task, migration_data, postgrest_client):
-        results, errors_count, CHUNK_SIZE = [], 0, 5000
+        results, errors_count = [], 0
+        CHUNK_SIZE = 1000
+        MIN_DIAGNOSTIC_BATCH_SIZE = 100
         for i, (layer_name, endpoint, conflict_field, data) in enumerate(migration_data):
             if task.isCanceled():
                 return {'results': results, 'status': 'canceled'}
@@ -2218,7 +2333,14 @@ class MrvTeraka:
                 end_idx = min(start_idx + CHUNK_SIZE, len(data))
                 chunk_data = data[start_idx:end_idx]
                 inserted, row_errors = MrvTeraka._insert_rows_with_diagnostics(
-                    postgrest_client, endpoint, chunk_data, conflict_field, layer_name, start_idx, results
+                    postgrest_client,
+                    endpoint,
+                    chunk_data,
+                    conflict_field,
+                    layer_name,
+                    start_idx,
+                    results,
+                    MIN_DIAGNOSTIC_BATCH_SIZE,
                 )
                 migrated_count += inserted
                 layer_errors += row_errors
@@ -2258,17 +2380,18 @@ class MrvTeraka:
                 for layer_name, mapping in selected_endpoints.items():
                     if isinstance(mapping, dict):
                         endpoint = mapping.get('endpoint')
-                        if endpoint:
+                        if endpoint and not self.is_system_endpoint(endpoint) and not self.is_system_endpoint(layer_name):
                             requested[layer_name] = mapping
                     elif mapping:
-                        requested[layer_name] = self.get_mapping_for_endpoint(mapping)
+                        if not self.is_system_endpoint(mapping):
+                            requested[layer_name] = self.get_mapping_for_endpoint(mapping)
                 return requested
 
             return {
                 name: mapping
                 for name in selected_endpoints
                 for mapping in [self.get_layer_mapping(name)]
-                if mapping and mapping.get('endpoint')
+                if mapping and mapping.get('endpoint') and not self.is_system_endpoint(mapping.get('endpoint'))
             }
 
         selected = self.dockwidget.get_selected_endpoints() if self.dockwidget else []
@@ -2277,7 +2400,7 @@ class MrvTeraka:
                 name: mapping
                 for name in selected
                 for mapping in [self.get_layer_mapping(name)]
-                if mapping and mapping.get('endpoint')
+                if mapping and mapping.get('endpoint') and not self.is_system_endpoint(mapping.get('endpoint'))
             }
 
         return self.get_project_layer_endpoints() if fallback_to_project else {}
@@ -2395,8 +2518,11 @@ class MrvTeraka:
             skipped_count = 0
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
+                if self.is_system_endpoint(layer_name) or self.is_system_endpoint(endpoint_value):
+                    skipped_count += 1
+                    continue
                 filters = self.build_sector_filters(mapping, commune_context)
-                db_data = self.postgrest.select(endpoint_value, filters=filters)
+                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint_value, filters=filters, page_size=5000)
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
                 existing_layer = self._find_existing_api_layer(layer_name, endpoint_value)
@@ -2467,7 +2593,7 @@ class MrvTeraka:
             for layer_name, mapping in requested_endpoints.items():
                 endpoint_value = mapping['endpoint']
                 filters = self.build_sector_filters(mapping, commune_context)
-                count = len(self.postgrest.select(endpoint_value, select="id", filters=filters))
+                count = 0 if self.is_empty_filter(filters) else len(self.postgrest.select(endpoint_value, select="id", filters=filters))
                 report.append(f"{layer_name} -> {endpoint_value} : {count} enregistrements")
 
             qgis_layers = [l.name() for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
@@ -2498,11 +2624,12 @@ class MrvTeraka:
             return
 
         try:
+            provided_original_data = original_data
             if collected_data is None:
                 mapping = self.get_mapping_for_endpoint(endpoint)
                 commune_context = self.build_commune_filters()
                 filters = self.build_sector_filters(mapping, commune_context)
-                collected_data = self.postgrest.select(mapping['endpoint'], filters=filters)
+                collected_data = [] if self.is_empty_filter(filters) else self.postgrest.select(mapping['endpoint'], filters=filters)
                 self.current_data_mapping = mapping
             else:
                 if isinstance(collected_data, dict) and len(collected_data) == 1:
@@ -2514,8 +2641,8 @@ class MrvTeraka:
 
             self.current_collected_data = collected_data
 
-            original_data = []
-            if self.current_project_id:
+            original_data = provided_original_data if provided_original_data is not None else []
+            if provided_original_data is None and self.current_project_id:
                 metadata_file = os.path.join(
                     self.mergin_manager.projects_dir,
                     self.current_project_id,
@@ -2560,7 +2687,9 @@ class MrvTeraka:
 
                 validation_results = {
                     'status': 'approved',
-                    'data_count': len(validated_data),
+                    'data_count': sum(len(rows) for rows in validated_data.values())
+                    if isinstance(validated_data, dict) and not is_geojson(validated_data)
+                    else len(validated_data),
                     'timestamp': str(__import__('datetime').datetime.now())
                 }
 
@@ -2659,7 +2788,7 @@ class MrvTeraka:
                         if isinstance(row, dict) and row.get('c_com') not in (None, "")
                     })
                     filters = {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else None
-                    original_data = self.postgrest.select(endpoint, filters=filters)
+                    original_data = self.postgrest.select(endpoint, filters=filters) if filters else []
 
                 merge_results = self.merge_validated_data_no_ui(mapping, original_data, validated_data)
                 if merge_results:

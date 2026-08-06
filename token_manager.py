@@ -6,6 +6,7 @@ Gère le stockage, validation et expiration des jetons
 
 import base64
 import json
+import re
 import time
 from datetime import datetime, timedelta
 from qgis.PyQt.QtCore import QSettings
@@ -144,10 +145,19 @@ class TokenManager:
 
     def get_user_id(self):
         """Retourne l'ID/UUID de l'utilisateur à partir du jeton."""
+        if not self.token:
+            self.load_token()
+
         payload = self.get_jwt_payload(self.token) if self.token else None
         if payload:
             # Essayer différents noms de champs communs pour l'ID utilisateur
-            return payload.get('user_id') or payload.get('sub') or payload.get('uuid')
+            for claim in ('user_id', 'uuid', 'uuid_user', 'user_uuid', 'uid', 'sub'):
+                value = payload.get(claim)
+                if value is None:
+                    continue
+                text = str(value).strip().replace('{', '').replace('}', '')
+                if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', text, re.IGNORECASE):
+                    return text.lower()
         return None
 
     def get_user_role(self):

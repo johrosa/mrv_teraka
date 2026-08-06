@@ -285,13 +285,35 @@ class MerginDataMerger:
     def __init__(self, postgrest_client):
         self.postgrest = postgrest_client
 
+    @staticmethod
+    def _chunks(items, size):
+        for start in range(0, len(items), size):
+            yield items[start:start + size]
+
+    @staticmethod
+    def _postgrest_in_value(value):
+        text = str(value)
+        if any(ch in text for ch in [',', '(', ')', '"', ' ']):
+            text = '"' + text.replace('"', '\\"') + '"'
+        return text
+
     def detect_conflicts(self, original, collected, pk_field='id'):
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
         # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        original_by_id = {
+            item.get(pk_field): item
+            for item in original
+            if isinstance(item, dict) and item.get(pk_field) is not None
+        }
+        collected_by_id = {
+            item.get(pk_field): item
+            for item in collected
+            if isinstance(item, dict) and item.get(pk_field) is not None
+        }
+        original_ids = set(original_by_id.keys())
+        collected_ids = set(collected_by_id.keys())
 
         deleted_ids = original_ids - collected_ids
         conflicts.append({
@@ -311,7 +333,7 @@ class MerginDataMerger:
         # Entrées modifiées
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            orig_item = original_by_id.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
@@ -371,60 +393,49 @@ class MerginDataMerger:
                 if c['type'] == 'added':
                     added_ids.update(c['ids'])
 
-            # 2. Traiter les ajouts en batch
+            # 2. Traiter les ajouts et modifications en upsert batch
             items_to_insert = [item for item in collected if item.get(pk_field) in added_ids]
-            if items_to_insert:
+            items_to_update = [item for item in collected if item.get(pk_field) in modified_ids]
+            items_to_upsert = items_to_insert + items_to_update
+            for items_chunk in self._chunks(items_to_upsert, 1000):
                 try:
-                    self.postgrest.insert(table, items_to_insert)
-                    for item in items_to_insert:
-                        results['actions'].append({'type': 'inserted', 'id': item.get(pk_field)})
+                    self.postgrest.insert(table, items_chunk, upsert=True, on_conflict=pk_field)
+                    for item in items_chunk:
+                        action_type = 'inserted' if item.get(pk_field) in added_ids else 'updated'
+                        results['actions'].append({'type': action_type, 'id': item.get(pk_field)})
                 except Exception as e:
-                    results['actions'].append({'type': 'error', 'msg': f"Erreur insertion batch: {str(e)}"})
+                    results['actions'].append({'type': 'error', 'msg': f"Erreur upsert batch: {str(e)}"})
 
-            # 3. Traiter les modifications (individuellement car PATCH nécessite souvent des filtres distincts)
-            for item in collected:
-                item_id = item.get(pk_field)
-                if item_id in modified_ids:
-                    try:
-                        self.postgrest.update(table, item, {pk_field: f'eq.{item_id}'})
-                        results['actions'].append({'type': 'updated', 'id': item_id})
-                    except Exception as e:
-                        results['actions'].append({'type': 'error', 'id': item_id, 'error': str(e)})
-
-            # 4. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
+            # 3. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
             deleted_ids = []
             for c in conflicts:
                 if c['type'] == 'deleted':
                     deleted_ids.extend(c['ids'])
 
-            for d_id in deleted_ids:
+            deleted_ids = [d_id for d_id in deleted_ids if d_id is not None]
+            for ids_chunk in self._chunks(deleted_ids, 200):
                 try:
-                    self.postgrest.delete(table, {pk_field: f'eq.{d_id}'})
-                    results['actions'].append({'type': 'deleted', 'id': d_id})
+                    id_list = ",".join(self._postgrest_in_value(d_id) for d_id in ids_chunk)
+                    self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
+                    for d_id in ids_chunk:
+                        results['actions'].append({'type': 'deleted', 'id': d_id})
                 except Exception as e:
-                    results['actions'].append({'type': 'error', 'id': d_id, 'error': str(e)})
+                    results['actions'].append({'type': 'error', 'ids': ids_chunk, 'error': str(e)})
 
         elif strategy == 'replace':
             # Stratégie radicale : supprimer tout et réinsérer
             try:
                 # On utilise 'in' pour supprimer en une seule requête si possible
-                original_ids = [str(o.get(pk_field)) for o in original if o.get(pk_field) is not None]
-                if original_ids:
+                original_ids = [o.get(pk_field) for o in original if o.get(pk_field) is not None]
+                for ids_chunk in self._chunks(original_ids, 200):
                     # Syntaxe PostgREST: id=in.(1,2,3)
-                    id_list = ",".join(original_ids)
+                    id_list = ",".join(self._postgrest_in_value(o_id) for o_id in ids_chunk)
                     self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
 
                 self.postgrest.insert(table, collected)
                 results['actions'].append({'type': 'replace_all', 'count': len(collected)})
             except Exception as e:
-                # Fallback sur suppression individuelle si le 'in.' échoue (ex: trop long)
-                try:
-                    for o_id in [o.get(pk_field) for o in original]:
-                        self.postgrest.delete(table, {pk_field: f'eq.{o_id}'})
-                    self.postgrest.insert(table, collected)
-                    results['actions'].append({'type': 'replace_all', 'count': len(collected)})
-                except Exception as e2:
-                    results['actions'].append({'type': 'error', 'msg': str(e2)})
+                results['actions'].append({'type': 'error', 'msg': str(e)})
 
         return results
 
