@@ -393,20 +393,30 @@ class MerginDataMerger:
                 if c['type'] == 'added':
                     added_ids.update(c['ids'])
 
-            # 2. Traiter les ajouts et modifications en upsert batch
+            # 2. Traiter les ajouts en insertion simple.
+            # Un POST avec on_conflict exige une contrainte unique côté PostgreSQL.
+            # Pour les nouvelles lignes détectées localement, l'upsert est inutile
+            # et peut provoquer un 400 si la colonne UUID métier n'est pas unique.
             items_to_insert = [item for item in collected if item.get(pk_field) in added_ids]
             items_to_update = [item for item in collected if item.get(pk_field) in modified_ids]
-            items_to_upsert = items_to_insert + items_to_update
-            for items_chunk in self._chunks(items_to_upsert, 1000):
+            for items_chunk in self._chunks(items_to_insert, 1000):
+                try:
+                    self.postgrest.insert(table, items_chunk, upsert=False)
+                    for item in items_chunk:
+                        results['actions'].append({'type': 'inserted', 'id': item.get(pk_field)})
+                except Exception as e:
+                    results['actions'].append({'type': 'error', 'msg': f"Erreur insertion batch: {str(e)}"})
+
+            # 3. Traiter les modifications en upsert batch.
+            for items_chunk in self._chunks(items_to_update, 1000):
                 try:
                     self.postgrest.insert(table, items_chunk, upsert=True, on_conflict=pk_field)
                     for item in items_chunk:
-                        action_type = 'inserted' if item.get(pk_field) in added_ids else 'updated'
-                        results['actions'].append({'type': action_type, 'id': item.get(pk_field)})
+                        results['actions'].append({'type': 'updated', 'id': item.get(pk_field)})
                 except Exception as e:
-                    results['actions'].append({'type': 'error', 'msg': f"Erreur upsert batch: {str(e)}"})
+                    results['actions'].append({'type': 'error', 'msg': f"Erreur mise à jour batch: {str(e)}"})
 
-            # 3. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
+            # 4. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
             deleted_ids = []
             for c in conflicts:
                 if c['type'] == 'deleted':

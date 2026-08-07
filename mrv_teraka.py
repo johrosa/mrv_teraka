@@ -3091,10 +3091,28 @@ class MrvTeraka:
             self.set_sync_ready(False)
             self.current_validated_data = None
             total_actions = sum(len(r.get('actions', [])) for r in (results or []))
-            self.show_info(
-                self.tr(u'Synchronisation terminée'),
-                self.tr(f"{total_actions} action(s) effectuée(s) vers le backend.")
-            )
+            error_actions = [
+                action
+                for result in (results or [])
+                for action in result.get('actions', [])
+                if action.get('type') == 'error'
+            ]
+            if error_actions:
+                report = "\n".join(
+                    str(action.get('msg') or action.get('error') or action)
+                    for action in error_actions[:10]
+                )
+                if len(error_actions) > 10:
+                    report += f"\n... et {len(error_actions) - 10} autre(s)."
+                self.show_warning(
+                    self.tr(u'Synchronisation terminée avec erreurs'),
+                    self.tr(f"{total_actions} action(s) traitée(s), {len(error_actions)} erreur(s).\n\n{report}")
+                )
+            else:
+                self.show_info(
+                    self.tr(u'Synchronisation terminée'),
+                    self.tr(f"{total_actions} action(s) effectuée(s) vers le backend.")
+                )
             
         def on_sync_error(exc, tb):
             self.dockwidget.autoSyncButton.setEnabled(True)
