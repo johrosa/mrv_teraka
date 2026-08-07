@@ -188,7 +188,7 @@ def layer_to_list_of_dicts(layer, geom_field='geom'):
         data_list.append(item)
     return data_list
 
-def export_to_geopackage(layers_map, output_path):
+def export_to_geopackage(layers_map, output_path, continue_on_error=False):
     """
     Exporte une collection de couches vers un GeoPackage.
 
@@ -200,11 +200,11 @@ def export_to_geopackage(layers_map, output_path):
     options.driverName = "GPKG"
 
     first = True
+    errors = []
     for name, layer in layers_map.items():
         options.layerName = name
         if first:
             options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
-            first = False
         else:
             options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
 
@@ -233,7 +233,18 @@ def export_to_geopackage(layers_map, output_path):
             )
             error_msg = "Erreur lors de l'export GeoPackage (V2)"
 
-        if error != QgsVectorFileWriter.NoError:
+        if error == QgsVectorFileWriter.NoError:
+            first = False
+            continue
+
+        errors.append("{}: {}".format(name, error_msg))
+        if not continue_on_error:
             return False, error_msg
+
+    if errors:
+        detail = "; ".join(errors[:5])
+        if len(errors) > 5:
+            detail += "; ... {} autre(s)".format(len(errors) - 5)
+        return False, detail
 
     return True, "Export réussi"

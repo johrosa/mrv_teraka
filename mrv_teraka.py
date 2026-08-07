@@ -1515,6 +1515,11 @@ class MrvTeraka:
         if not self.check_api_auth():
             return
 
+        active_task = getattr(self, 'active_prepare_mission_task', None)
+        if active_task is not None:
+            self.show_info("Préparer Terrain", "Une préparation de mission est déjà en cours.")
+            return
+
         self.set_progress(10, "🚀 Début du déploiement automatisé...")
 
         selected_mappings = self.get_or_confirm_terrain_mappings(selected_mappings)
@@ -1525,6 +1530,27 @@ class MrvTeraka:
 
         if not selected_mappings:
             self.show_error("Erreur", "Aucune couche mappée sélectionnée pour le déploiement.")
+            return
+
+        selected_mappings, precheck_report = self.prepare_terrain_selected_mappings(selected_mappings)
+        if precheck_report.get('errors'):
+            self.show_error(
+                "Préparer Terrain",
+                "Certaines couches ne peuvent pas être préparées :\n\n{}".format(
+                    "\n".join(precheck_report['errors'][:12])
+                )
+            )
+            self.set_progress(0)
+            return
+
+        if not selected_mappings:
+            skipped = "\n".join(precheck_report.get('skipped', [])[:12])
+            detail = "\n\n{}".format(skipped) if skipped else ""
+            self.show_error(
+                "Préparer Terrain",
+                "Aucune couche mappée valide n'est prête pour la mission terrain.{}".format(detail)
+            )
+            self.set_progress(0)
             return
 
         timestamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1545,6 +1571,12 @@ class MrvTeraka:
             self.set_progress(0)
             return
 
+        summary = self.prepare_terrain_summary(project_name, selected_mappings, precheck_report)
+        if not self.ask_confirmation("Confirmer Préparer Terrain", summary):
+            self.dockwidget.merginResultsTextEdit.append("⚠️ Déploiement annulé par l'utilisateur.")
+            self.set_progress(0)
+            return
+
         # Normaliser selected_mappings vers {layer_id: endpoint} pour build_mission_layer_specs
         normalized_mappings = {}
         for lid, mapping_result in selected_mappings.items():
@@ -1554,17 +1586,123 @@ class MrvTeraka:
         project_id = self.mergin_manager.create_project(project_name, list(normalized_mappings.values()))
         self.current_project_id = project_id
 
-        from .layer_utils import export_to_geopackage
         project_dir = os.path.join(self.mergin_manager.projects_dir, project_id)
         gpkg_path = os.path.join(project_dir, f"mission_data.gpkg")
 
         layer_specs = self.build_mission_layer_specs(normalized_mappings)
         layers_to_export = {gpkg_name: spec['layer'] for gpkg_name, spec in layer_specs.items()}
+        archive_payload = self.prepare_project_layers_archive(project_dir, set(normalized_mappings.keys()))
 
-        success, err = export_to_geopackage(layers_to_export, gpkg_path)
+        self.set_progress(25, "Préparation des GeoPackages...")
+        if self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                "⏳ Préparation des GeoPackages en arrière-plan..."
+            )
+
+        self.active_prepare_mission_context = {
+            'project_name': project_name,
+            'project_id': project_id,
+            'project_dir': project_dir,
+            'gpkg_path': gpkg_path,
+            'layer_specs': layer_specs,
+            'layers_to_export': layers_to_export,
+        }
+        self.active_prepare_mission_task = QgsTask.fromFunction(
+            "Préparation des GeoPackages MrvTeraka",
+            self._prepare_mission_geopackages_task,
+            mission_layers=layers_to_export,
+            gpkg_path=gpkg_path,
+            archive_layers=archive_payload.get('layers', {}),
+            archive_gpkg_path=archive_payload.get('gpkg_path'),
+            archive_manifest=archive_payload.get('manifest', []),
+            archive_manifest_path=archive_payload.get('manifest_path'),
+            on_finished=self._on_prepare_mission_geopackages_finished
+        )
+        QgsApplication.taskManager().addTask(self.active_prepare_mission_task)
+
+    @staticmethod
+    def _prepare_mission_geopackages_task(
+        task, mission_layers, gpkg_path, archive_layers, archive_gpkg_path,
+        archive_manifest, archive_manifest_path
+    ):
+        from .layer_utils import export_to_geopackage
+
+        task.setProgress(5)
+        if task.isCanceled():
+            return {'status': 'canceled'}
+        success, err = export_to_geopackage(mission_layers, gpkg_path)
         if not success:
-            self.show_error("Erreur Export GPKG", err)
+            return {'status': 'error', 'message': err}
+
+        task.setProgress(55)
+        if task.isCanceled():
+            return {'status': 'canceled'}
+        archive_success = True
+        archive_error = ""
+        if archive_layers and archive_gpkg_path:
+            archive_success, archive_error = export_to_geopackage(
+                archive_layers,
+                archive_gpkg_path,
+                continue_on_error=True
+            )
+
+        task.setProgress(85)
+        if task.isCanceled():
+            return {'status': 'canceled'}
+        if archive_manifest_path:
+            with open(archive_manifest_path, 'w', encoding='utf-8') as fh:
+                json.dump(archive_manifest, fh, ensure_ascii=False, indent=2)
+
+        task.setProgress(100)
+        return {
+            'status': 'completed',
+            'archive_success': archive_success,
+            'archive_error': archive_error,
+            'archive_report': {
+                'gpkg_path': archive_gpkg_path if archive_layers else None,
+                'manifest_path': archive_manifest_path,
+                'vector_count': len(archive_layers or {}),
+                'manifest_count': len(archive_manifest or [])
+            }
+        }
+
+    def _on_prepare_mission_geopackages_finished(self, exception, result=None):
+        self.active_prepare_mission_task = None
+        context = getattr(self, 'active_prepare_mission_context', None)
+        self.active_prepare_mission_context = None
+
+        if exception:
+            self.set_progress(0)
+            self.show_error("Erreur préparation GeoPackage", exception)
             return
+        if not result or result.get('status') == 'canceled':
+            self.set_progress(0)
+            self.show_info("Préparer Terrain", "Préparation annulée.")
+            return
+        if result.get('status') == 'error':
+            self.set_progress(0)
+            self.show_error("Erreur Export GPKG", result.get('message', 'Erreur inconnue'))
+            return
+        if not context:
+            self.set_progress(0)
+            self.show_error("Préparer Terrain", "Contexte de mission perdu après la préparation des GeoPackages.")
+            return
+
+        self.finish_prepare_mission_after_geopackages(context, result)
+
+    def finish_prepare_mission_after_geopackages(self, context, result):
+        project_name = context['project_name']
+        project_id = context['project_id']
+        project_dir = context['project_dir']
+        gpkg_path = context['gpkg_path']
+        layer_specs = context['layer_specs']
+        layers_to_export = context['layers_to_export']
+        archive_report = result.get('archive_report', {})
+
+        if not result.get('archive_success', True) and self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"⚠️ Archive couches projet incomplète : {result.get('archive_error', '')}"
+            )
 
         self.mergin_manager.save_exported_gpkg(project_id, gpkg_path)
 
@@ -1585,6 +1723,19 @@ class MrvTeraka:
         self.dockwidget.merginResultsTextEdit.append(
             f"📦 Projet QGIS + GeoPackage créés : {len(layers_to_export)} couches."
         )
+        if archive_report.get('vector_count'):
+            self.dockwidget.merginResultsTextEdit.append(
+                "🗂️ Archive du projet source : {} couche(s) vectorielle(s) conservée(s), {} couche(s) décrite(s) dans le manifeste.".format(
+                    archive_report.get('vector_count', 0),
+                    archive_report.get('manifest_count', 0)
+                )
+            )
+        elif archive_report.get('manifest_count'):
+            self.dockwidget.merginResultsTextEdit.append(
+                "🗂️ Manifeste du projet source créé : {} couche(s) décrite(s).".format(
+                    archive_report.get('manifest_count', 0)
+                )
+            )
 
         if self.mergin_bridge.is_connected():
             self.dockwidget.merginResultsTextEdit.append(
@@ -1604,6 +1755,17 @@ class MrvTeraka:
                 if self.mergin_api.create_project(namespace, project_name):
                     self.mergin_api.upload_file(namespace, project_name, gpkg_path, "mission_data.gpkg")
                     self.mergin_api.upload_file(namespace, project_name, project_file, os.path.basename(project_file))
+                    for local_path in (
+                        archive_report.get('gpkg_path'),
+                        archive_report.get('manifest_path')
+                    ):
+                        if not local_path or not os.path.exists(local_path):
+                            continue
+                        remote_path = os.path.relpath(local_path, project_dir).replace(os.sep, '/')
+                        if not self.mergin_api.upload_file(namespace, project_name, local_path, remote_path):
+                            self.dockwidget.merginResultsTextEdit.append(
+                                f"⚠️ Fichier d'archive non envoyé sur Mergin : {remote_path}"
+                            )
                     self.dockwidget.merginResultsTextEdit.append(f"✅ Projet '{project_name}' prêt sur Mergin !")
                 else:
                     self.dockwidget.merginResultsTextEdit.append("❌ Échec création projet Mergin.")
@@ -1617,6 +1779,132 @@ class MrvTeraka:
         self.set_progress(100, f"La mission '{project_name}' est prête.")
         self.show_info("Déploiement Réussi",
                                 f"La mission '{project_name}' est prête.")
+
+    def prepare_terrain_selected_mappings(self, selected_mappings):
+        """Contrôles légers avant création de la mission terrain."""
+        project = QgsProject.instance()
+        clean_mappings = {}
+        report = {'skipped': [], 'errors': []}
+
+        for lid, mapping_result in selected_mappings.items():
+            endpoint, _ = self._extract_endpoint_and_field_map(mapping_result)
+            layer = project.mapLayer(lid)
+            label = endpoint or lid
+
+            if not endpoint or self.is_system_endpoint(endpoint):
+                report['skipped'].append(f"- {label} : table système ou endpoint absent.")
+                continue
+            if not layer:
+                report['errors'].append(f"- {label} : couche introuvable dans le projet QGIS.")
+                continue
+            if layer.type() != QgsMapLayer.VectorLayer:
+                report['skipped'].append(f"- {layer.name()} : couche non vectorielle.")
+                continue
+            if not layer.isValid():
+                report['errors'].append(f"- {layer.name()} : couche invalide.")
+                continue
+
+            clean_mappings[lid] = mapping_result
+
+        return clean_mappings, report
+
+    def prepare_terrain_summary(self, project_name, selected_mappings, precheck_report):
+        project = QgsProject.instance()
+        all_layers = list(project.mapLayers().values())
+        vector_count = sum(
+            1 for layer in all_layers
+            if layer.type() == QgsMapLayer.VectorLayer and layer.isValid()
+        )
+        support_count = len(self.collect_form_support_layer_ids(set(selected_mappings.keys())))
+        skipped_count = len(precheck_report.get('skipped', []))
+
+        lines = [
+            f"Projet : {project_name}",
+            f"Couches mappées exportées dans la mission : {len(selected_mappings)}",
+            f"Couches support de formulaire incluses dans la mission : {support_count}",
+            f"Couches vectorielles conservées dans l'archive du dossier projet : {vector_count}",
+        ]
+        if skipped_count:
+            lines.append(f"Couches mappées ignorées car invalides/non compatibles : {skipped_count}")
+            lines.extend(precheck_report.get('skipped', [])[:6])
+            if skipped_count > 6:
+                lines.append(f"... et {skipped_count - 6} autre(s).")
+        lines.append("")
+        lines.append("Continuer ?")
+        return "\n".join(lines)
+
+    def prepare_project_layers_archive(self, project_dir, mapped_layer_ids=None):
+        """Prépare l'archive complète du projet sans lancer l'export GeoPackage."""
+        mapped_layer_ids = mapped_layer_ids or set()
+        archive_dir = os.path.join(project_dir, "source_project_layers")
+        os.makedirs(archive_dir, exist_ok=True)
+        gpkg_path = os.path.join(archive_dir, "all_project_layers.gpkg")
+        manifest_path = os.path.join(archive_dir, "manifest.json")
+
+        layers_to_archive = {}
+        manifest = []
+        used_names = set()
+        for layer in QgsProject.instance().mapLayers().values():
+            entry = {
+                'id': layer.id(),
+                'name': layer.name(),
+                'provider': layer.providerType() if hasattr(layer, 'providerType') else '',
+                'source': self.safe_layer_source(layer),
+                'mapped_for_mission': layer.id() in mapped_layer_ids,
+                'archived_as': None,
+                'archive_status': 'manifest_only'
+            }
+
+            if layer.type() == QgsMapLayer.VectorLayer and layer.isValid():
+                archive_name = self.unique_gpkg_layer_name(layer.name(), used_names)
+                layers_to_archive[archive_name] = layer
+                entry['archived_as'] = archive_name
+                entry['archive_status'] = 'geopackage'
+
+            manifest.append(entry)
+
+        return {
+            'layers': layers_to_archive,
+            'gpkg_path': gpkg_path,
+            'manifest': manifest,
+            'manifest_path': manifest_path
+        }
+
+    def archive_all_project_layers(self, project_dir, mapped_layer_ids=None):
+        """Conserve toutes les couches du projet source dans le dossier de mission."""
+        from .layer_utils import export_to_geopackage
+
+        archive_payload = self.prepare_project_layers_archive(project_dir, mapped_layer_ids)
+        layers_to_archive = archive_payload.get('layers', {})
+        gpkg_path = archive_payload.get('gpkg_path')
+        manifest = archive_payload.get('manifest', [])
+        manifest_path = archive_payload.get('manifest_path')
+
+        if layers_to_archive:
+            success, err = export_to_geopackage(layers_to_archive, gpkg_path, continue_on_error=True)
+            if not success and self.dockwidget:
+                self.dockwidget.merginResultsTextEdit.append(f"⚠️ Archive couches projet incomplète : {err}")
+
+        try:
+            with open(manifest_path, 'w', encoding='utf-8') as fh:
+                json.dump(manifest, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            if self.dockwidget:
+                self.dockwidget.merginResultsTextEdit.append(f"⚠️ Impossible d'écrire le manifeste des couches : {exc}")
+
+        return {
+            'gpkg_path': gpkg_path if layers_to_archive else None,
+            'manifest_path': manifest_path,
+            'vector_count': len(layers_to_archive),
+            'manifest_count': len(manifest)
+        }
+
+    def safe_layer_source(self, layer):
+        try:
+            source = layer.source()
+        except Exception:
+            return ''
+        return re.sub(r'(password|passwd|pwd)=([^ ]+)', r'\1=***', str(source), flags=re.IGNORECASE)
 
     def build_mission_layer_specs(self, selected_mappings):
         project = QgsProject.instance()
@@ -1721,7 +2009,7 @@ class MrvTeraka:
                 self.collect_layer_ids_from_value(item, referenced_ids)
 
     def unique_gpkg_layer_name(self, name, used_names):
-        base_name = self.mergin_bridge.safe_project_name(name)
+        base_name = self.mergin_bridge.safe_project_name(name) or "layer"
         candidate = base_name
         suffix = 2
         while candidate.lower() in used_names:
@@ -1737,35 +2025,9 @@ class MrvTeraka:
         mission_project.setCrs(current_project.crs())
         mission_project.setTitle(project_name)
 
-        # Ajouter Google Hybrid comme fond de carte SI présent dans le projet actuel
-        # (XYZ Layer: https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z})
-        google_hybrid_url = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-        has_google_hybrid = False
-        for lyr in current_project.mapLayers().values():
-            if isinstance(lyr, QgsRasterLayer) and google_hybrid_url in lyr.source():
-                has_google_hybrid = True
-                break
-
-        google_layer = None
-        if has_google_hybrid:
-            full_google_url = "type=xyz&url=" + google_hybrid_url
-            google_layer = QgsRasterLayer(full_google_url, "Google Hybrid", "wms")
-            if google_layer.isValid():
-                mission_project.addMapLayer(google_layer)
-                # On le met tout en bas de l'arbre des couches
-                root = mission_project.layerTreeRoot()
-                node = root.findLayer(google_layer.id())
-                if node:
-                    clone = node.clone()
-                    root.insertChildNode(-1, clone)
-                    root.removeChildNode(node)
-            else:
-                print("Failed to create Google Hybrid layer")
-                google_layer = None
-
-        added_layer_ids = {google_layer.id()} if google_layer and google_layer.isValid() else set()
+        added_layer_ids = set()
         errors = []
-        target_layers_by_source_id = {}
+        target_layers_by_source_id = self.copy_online_basemap_layers(current_project, mission_project)
         for gpkg_name, spec in layer_specs.items():
             source_layer = spec['layer']
             uri = "{}|layername={}".format(gpkg_path, gpkg_name)
@@ -1791,6 +2053,7 @@ class MrvTeraka:
             self.copy_layer_form(source_layer, layer)
             if endpoint:
                 self.configure_operator_capture_for_mergin_layer(layer, mapping)
+                self.configure_capture_defaults_for_mergin_layer(layer, mapping)
             mission_project.addMapLayer(layer, False)
             target_layers_by_source_id[source_layer.id()] = layer
 
@@ -1810,6 +2073,56 @@ class MrvTeraka:
 
         return project_file
 
+    def copy_online_basemap_layers(self, source_project, target_project):
+        """Recree les fonds de carte en ligne du projet source dans le projet terrain."""
+        copied_layers = {}
+        for source_layer in source_project.mapLayers().values():
+            if not self.is_online_basemap_layer(source_layer):
+                continue
+
+            layer = QgsRasterLayer(source_layer.source(), source_layer.name(), source_layer.providerType())
+            if not layer.isValid():
+                if self.dockwidget:
+                    self.dockwidget.merginResultsTextEdit.append(
+                        f"⚠️ Fond de carte non conservé : {source_layer.name()}"
+                    )
+                continue
+
+            try:
+                layer.setOpacity(source_layer.opacity())
+            except Exception:
+                pass
+            try:
+                for key in source_layer.customPropertyKeys():
+                    layer.setCustomProperty(key, source_layer.customProperty(key))
+            except Exception:
+                pass
+
+            target_project.addMapLayer(layer, False)
+            copied_layers[source_layer.id()] = layer
+
+        if copied_layers and self.dockwidget:
+            self.dockwidget.merginResultsTextEdit.append(
+                f"🗺️ {len(copied_layers)} fond(s) de carte en ligne conservé(s) dans le projet terrain."
+            )
+        return copied_layers
+
+    def is_online_basemap_layer(self, layer):
+        if not isinstance(layer, QgsRasterLayer) or not layer.isValid():
+            return False
+
+        try:
+            source = str(layer.source() or '').lower()
+            provider = str(layer.providerType() or '').lower()
+        except Exception:
+            return False
+
+        if 'http://' in source or 'https://' in source:
+            return True
+        if 'type=xyz' in source or 'xyz' in provider:
+            return True
+        return provider in {'wms', 'wmts', 'arcgismapserver'}
+
     def configure_operator_capture_for_mergin_layer(self, layer, mapping):
         """Default uuid_operateur to the logged-in user for field edits in Mergin Maps."""
         user_uuid = self.current_user_uuid()
@@ -1825,6 +2138,30 @@ class MrvTeraka:
             layer.setDefaultValueDefinition(field_idx, QgsDefaultValue("'{}'".format(escaped_uuid), True))
         except Exception:
             pass
+
+    def configure_capture_defaults_for_mergin_layer(self, layer, mapping):
+        """Préremplit les champs usuels au moment de la saisie terrain."""
+        user_uuid = self.current_user_uuid()
+        if user_uuid:
+            escaped_uuid = str(user_uuid).replace("'", "''")
+            for field_name in ('uuid_verificateur', 'uuid_validateur'):
+                if not self.mapping_has_column(mapping, field_name):
+                    continue
+                field_idx = self.field_index_by_name(layer, field_name)
+                if field_idx < 0:
+                    continue
+                try:
+                    layer.setDefaultValueDefinition(field_idx, QgsDefaultValue("'{}'".format(escaped_uuid), True))
+                except Exception:
+                    pass
+
+        if self.mapping_has_column(mapping, 'date_saisie'):
+            field_idx = self.field_index_by_name(layer, 'date_saisie')
+            if field_idx >= 0:
+                try:
+                    layer.setDefaultValueDefinition(field_idx, QgsDefaultValue("current_date()", True))
+                except Exception:
+                    pass
 
     def copy_layer_style(self, source_layer, target_layer):
         try:
@@ -1875,6 +2212,8 @@ class MrvTeraka:
             return value
 
         for target_layer in target_layers_by_source_id.values():
+            if target_layer.type() != QgsMapLayer.VectorLayer:
+                continue
             for idx in range(target_layer.fields().count()):
                 try:
                     setup = target_layer.editorWidgetSetup(idx)
@@ -1923,12 +2262,9 @@ class MrvTeraka:
 
         copy_children(source_root, target_root)
 
-        # S'assurer que les couches cibles qui ne sont pas dans l'arbre (non groupées) sont ajoutées
-        # mais on veut Google Hybrid en bas si possible.
+        # S'assurer que les couches cibles qui ne sont pas dans l'arbre (non groupées) sont ajoutées.
         for target_layer in target_layers_by_source_id.values():
             if target_layer.id() not in added_layer_ids:
-                # addLayer l'ajoute en haut par défaut. On l'insère à l'index 0 du root (en haut)
-                # car Google Hybrid est déjà tout en bas (-1).
                 target_root.insertChildNode(0, target_root.findLayer(target_layer.id()) or target_root.addLayer(target_layer))
                 added_layer_ids.add(target_layer.id())
 
