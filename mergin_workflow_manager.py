@@ -297,6 +297,23 @@ class MerginDataMerger:
             text = '"' + text.replace('"', '\\"') + '"'
         return text
 
+    @staticmethod
+    def _prepare_payload_rows(rows, conflict_field=None):
+        prepared_rows = []
+        conflict_field = str(conflict_field or '').lower()
+        for row in rows:
+            if not isinstance(row, dict):
+                prepared_rows.append(row)
+                continue
+
+            prepared = dict(row)
+            # Ne pas envoyer id=null à PostgREST: PostgreSQL ne déclenche pas
+            # la valeur par défaut si la colonne est explicitement fournie à NULL.
+            if prepared.get('id') in (None, '') and conflict_field != 'id':
+                prepared.pop('id', None)
+            prepared_rows.append(prepared)
+        return prepared_rows
+
     def detect_conflicts(self, original, collected, pk_field='id'):
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
@@ -401,20 +418,22 @@ class MerginDataMerger:
             items_to_update = [item for item in collected if item.get(pk_field) in modified_ids]
             for items_chunk in self._chunks(items_to_insert, 1000):
                 try:
-                    self.postgrest.insert(table, items_chunk, upsert=False)
+                    payload_chunk = self._prepare_payload_rows(items_chunk, pk_field)
+                    self.postgrest.insert(table, payload_chunk, upsert=False)
                     for item in items_chunk:
                         results['actions'].append({'type': 'inserted', 'id': item.get(pk_field)})
                 except Exception as e:
-                    results['actions'].append({'type': 'error', 'msg': f"Erreur insertion batch: {str(e)}"})
+                    results['actions'].append({'type': 'error', 'table': table, 'msg': f"Erreur insertion batch: {str(e)}"})
 
             # 3. Traiter les modifications en upsert batch.
             for items_chunk in self._chunks(items_to_update, 1000):
                 try:
-                    self.postgrest.insert(table, items_chunk, upsert=True, on_conflict=pk_field)
+                    payload_chunk = self._prepare_payload_rows(items_chunk, pk_field)
+                    self.postgrest.insert(table, payload_chunk, upsert=True, on_conflict=pk_field)
                     for item in items_chunk:
                         results['actions'].append({'type': 'updated', 'id': item.get(pk_field)})
                 except Exception as e:
-                    results['actions'].append({'type': 'error', 'msg': f"Erreur mise à jour batch: {str(e)}"})
+                    results['actions'].append({'type': 'error', 'table': table, 'msg': f"Erreur mise à jour batch: {str(e)}"})
 
             # 4. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
             deleted_ids = []

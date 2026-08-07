@@ -3099,11 +3099,18 @@ class MrvTeraka:
             ]
             if error_actions:
                 report = "\n".join(
-                    str(action.get('msg') or action.get('error') or action)
+                    "{}{}".format(
+                        f"{action.get('table')} : " if action.get('table') else "",
+                        str(action.get('msg') or action.get('error') or action)
+                    )
                     for action in error_actions[:10]
                 )
                 if len(error_actions) > 10:
                     report += f"\n... et {len(error_actions) - 10} autre(s)."
+                if self.dockwidget and hasattr(self.dockwidget, 'merginResultsTextEdit'):
+                    self.dockwidget.merginResultsTextEdit.append(
+                        "❌ Erreur(s) de synchronisation backend :\n{}".format(report)
+                    )
                 self.show_warning(
                     self.tr(u'Synchronisation terminée avec erreurs'),
                     self.tr(f"{total_actions} action(s) traitée(s), {len(error_actions)} erreur(s).\n\n{report}")
