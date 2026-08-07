@@ -594,20 +594,27 @@ class MrvTeraka:
                     json_mappings = load_layer_mapping(self.plugin_dir)
                     
                     # Pour chaque mapping du JSON, mettre à jour complètement (pas juste fusionner)
-                    for table_name, json_mapping in json_mappings.items():
-                        endpoint = json_mapping.get('endpoint', table_name) if isinstance(json_mapping, dict) else table_name
-                        if self.is_system_endpoint(table_name) or self.is_system_endpoint(endpoint):
+                    for mapping_name, json_mapping in json_mappings.items():
+                        endpoint = json_mapping.get('endpoint', mapping_name) if isinstance(json_mapping, dict) else mapping_name
+                        if self.is_system_endpoint(mapping_name) or self.is_system_endpoint(endpoint):
                             continue
-                        if table_name in mappings:
+                        target_name = endpoint if endpoint in mappings else mapping_name
+                        if target_name in mappings:
                             # Fusionner intelligemment: garder columns du schema, utiliser pk du JSON
-                            schema_columns = mappings[table_name].get('columns', [])
-                            mappings[table_name].update(json_mapping)
+                            schema_columns = mappings[target_name].get('columns', [])
+                            mappings[target_name].update(json_mapping)
                             # Ajouter les colonnes du schema si pas présentes dans JSON
                             if 'columns' not in json_mapping:
-                                mappings[table_name]['columns'] = schema_columns
+                                mappings[target_name]['columns'] = schema_columns
+                            if mapping_name != target_name:
+                                alias_mapping = dict(mappings[target_name])
+                                alias_mapping.update(json_mapping)
+                                alias_mapping['endpoint'] = endpoint
+                                mappings[mapping_name] = alias_mapping
                         else:
-                            # Mapping nouveau dans JSON
-                            mappings[table_name] = json_mapping
+                            # Mapping nouveau dans JSON seulement si son nom est le vrai endpoint.
+                            if mapping_name == endpoint:
+                                mappings[mapping_name] = json_mapping
                     
                     self.layer_mappings = self.filter_system_mappings(mappings)
                     return self.layer_mappings
@@ -616,6 +623,16 @@ class MrvTeraka:
 
         self.layer_mappings = self.filter_system_mappings(load_layer_mapping(self.plugin_dir))
         return self.layer_mappings
+
+    def available_api_endpoints(self):
+        endpoints = set()
+        for name, mapping in self.load_layer_mappings().items():
+            endpoint = mapping.get('endpoint') if isinstance(mapping, dict) else None
+            endpoint = endpoint or name
+            if self.is_system_endpoint(name) or self.is_system_endpoint(endpoint):
+                continue
+            endpoints.add(str(endpoint))
+        return sorted(endpoints)
 
     def filter_system_mappings(self, mappings):
         if not isinstance(mappings, dict):
@@ -672,6 +689,7 @@ class MrvTeraka:
 
             mapping = dict(self.get_mapping_for_endpoint(endpoint))
             mapping['endpoint'] = endpoint
+            mapping.pop('field_map', None)
 
             # ← Persister le field_map dans le fichier local
             if field_map:
@@ -1242,7 +1260,7 @@ class MrvTeraka:
         dialog = ProjectActionDialog(
             self.iface.mainWindow(),
             report['layers'],
-            list(self.load_layer_mappings().keys())
+            self.available_api_endpoints()
         )
 
         if dialog.exec_() == ProjectActionDialog.Accepted:
@@ -1414,7 +1432,7 @@ class MrvTeraka:
         dialog = ProjectActionDialog(
             self.iface.mainWindow(),
             report['layers'],
-            list(self.load_layer_mappings().keys())
+            self.available_api_endpoints()
         )
         if dialog.exec_() != ProjectActionDialog.Accepted:
             return None, None

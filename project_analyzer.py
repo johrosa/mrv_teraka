@@ -58,12 +58,23 @@ class ProjectAnalyzer:
         norm_name = name.lower().replace(' ', '_')
 
         # Match exact
-        if norm_name in self.mappings:
-            return norm_name
+        for mapping_name, mapping in self.mappings.items():
+            norm_mapping_name = str(mapping_name).lower().replace(' ', '_')
+            endpoint = mapping.get('endpoint') if isinstance(mapping, dict) else mapping_name
+            if norm_mapping_name == norm_name:
+                return endpoint
 
         # Match partiel
-        for endpoint in self.mappings.keys():
-            if endpoint in norm_name or norm_name in endpoint:
+        for mapping_name, mapping in self.mappings.items():
+            endpoint = mapping.get('endpoint') if isinstance(mapping, dict) else mapping_name
+            norm_mapping_name = str(mapping_name).lower().replace(' ', '_')
+            norm_endpoint = str(endpoint).lower()
+            if (
+                norm_mapping_name in norm_name
+                or norm_name in norm_mapping_name
+                or norm_endpoint in norm_name
+                or norm_name in norm_endpoint
+            ):
                 return endpoint
 
         return None

@@ -336,6 +336,25 @@ class ProjectActionDialog(QtWidgets.QDialog):
                 return mapping
         return {}
 
+    def _mapping_for_layer_name(self, layer_name):
+        if not layer_name:
+            return {}
+        return self._all_mappings.get(layer_name) or {}
+
+    def _initial_field_map_for_row(self, row, endpoint):
+        layer_name = self.layer_info[row].get('name')
+        layer_mapping = self._mapping_for_layer_name(layer_name)
+        if layer_mapping.get('endpoint') == endpoint and isinstance(layer_mapping.get('field_map'), dict):
+            return dict(layer_mapping.get('field_map') or {})
+        return {}
+
+    def _set_field_mapping_button_state(self, row):
+        btn = self.table.cellWidget(row, 6)
+        if not isinstance(btn, QtWidgets.QPushButton):
+            return
+        field_map = self._field_maps.get(row, {})
+        btn.setText(f"✓ {len(field_map)} champ(s)" if field_map else "Configurer…")
+
     def _set_endpoint_metadata(self, row, endpoint):
         mapping = self._mapping_for_endpoint(endpoint)
         pk_field = mapping.get('pk_field') or "id"
@@ -398,12 +417,16 @@ class ProjectActionDialog(QtWidgets.QDialog):
             combo.currentTextChanged.connect(lambda text, r=i: self._on_endpoint_changed(r, text))
             self.table.setCellWidget(i, 3, combo)
             self._set_endpoint_metadata(i, combo.currentText())
+            initial_field_map = self._initial_field_map_for_row(i, combo.currentText())
+            if initial_field_map:
+                self._field_maps[i] = initial_field_map
 
             # Colonne 6 : bouton "Configurer…"
             btn = QtWidgets.QPushButton("Configurer…")
             btn.setToolTip("Définir le mapping des champs pour cette couche")
             btn.clicked.connect(lambda checked, row=i: self._open_field_mapping(row))
             self.table.setCellWidget(i, 6, btn)
+            self._set_field_mapping_button_state(i)
 
     def _on_selection_changed(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -422,12 +445,11 @@ class ProjectActionDialog(QtWidgets.QDialog):
     def _on_endpoint_changed(self, row, text):
         """Réinitialise les mappings de champs si l'endpoint change."""
         self._set_endpoint_metadata(row, text)
-        if row in self._field_maps:
+        self._field_maps[row] = self._initial_field_map_for_row(row, text)
+        if not self._field_maps[row]:
             del self._field_maps[row]
-            btn = self.table.cellWidget(row, 6)
-            if isinstance(btn, QtWidgets.QPushButton):
-                btn.setText("Configurer…")
-            self._on_selection_changed()
+        self._set_field_mapping_button_state(row)
+        self._on_selection_changed()
 
     def _open_field_mapping(self, row):
         # Récupérer la vraie couche QGIS depuis le layer_id
@@ -453,8 +475,7 @@ class ProjectActionDialog(QtWidgets.QDialog):
         if dlg.exec_():
             field_map = dlg.get_field_map()
             self._field_maps[row] = field_map
-            btn = self.table.cellWidget(row, 6)
-            btn.setText(f"✓ {len(field_map)} champ(s)" if field_map else "Configurer…")
+            self._set_field_mapping_button_state(row)
         self._on_selection_changed()
 
     def _open_field_mapping_from_selection(self):
