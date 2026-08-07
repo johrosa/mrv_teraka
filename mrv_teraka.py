@@ -2624,31 +2624,76 @@ class MrvTeraka:
         return str(exc.code or '') in {'23503', '23502', '22P02', '22007', '22008', '22003', '23514'}
 
     @staticmethod
+    def _migration_error_signature(exc):
+        text = str(exc)
+        for prefix in ('Details:', 'Détails:'):
+            if prefix in text:
+                text = text.split(prefix, 1)[0]
+        text = re.sub(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', '<uuid>', text, flags=re.IGNORECASE)
+        text = re.sub(r'\([^)]{30,}\)', '(<row>)', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:500]
+
+    @staticmethod
+    def _prepare_api_write_rows(rows, conflict_field=None):
+        conflict_field = str(conflict_field or '').lower()
+        prepared_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                prepared_rows.append(row)
+                continue
+            prepared = dict(row)
+            if prepared.get('id') in (None, '') and conflict_field != 'id':
+                prepared.pop('id', None)
+            prepared_rows.append(prepared)
+        return prepared_rows
+
+    @staticmethod
     def _insert_rows_with_diagnostics(
         postgrest_client, endpoint, rows, conflict_field, layer_name, start_idx, results,
-        min_diagnostic_batch_size=100
+        min_diagnostic_batch_size=100, error_state=None, repeated_error_limit=10
     ):
         if not rows:
             return 0, 0
 
+        error_state = error_state if error_state is not None else {}
+
         try:
             postgrest_client.insert(
                 endpoint,
-                rows,
+                MrvTeraka._prepare_api_write_rows(rows, conflict_field),
                 upsert=True,
                 on_conflict=conflict_field,
                 show_error_ui=False,
             )
+            results.append(f"✅ {layer_name} -> {endpoint}: batch de {len(rows)} ligne(s) publié.")
             return len(rows), 0
         except Exception as exc:
-            if len(rows) <= min_diagnostic_batch_size or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
+            signature = MrvTeraka._migration_error_signature(exc)
+            if error_state.get(signature, 0) >= repeated_error_limit:
+                error_state[signature] = error_state.get(signature, 0) + len(rows)
+                error_msg = MrvTeraka._format_postgrest_error(
+                    exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
+                )
+                results.append(
+                    f"⏭️ {layer_name} -> {endpoint}: {len(rows)} ligne(s) ignorée(s), "
+                    f"même erreur déjà répétée {error_state[signature]} fois.\n{error_msg}"
+                )
+                return 0, len(rows)
+
+            if len(rows) == 1 or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
+                error_state[signature] = error_state.get(signature, 0) + len(rows)
                 error_msg = MrvTeraka._format_postgrest_error(
                     exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
                 )
                 results.append(f"❌ {error_msg}")
-                return 0, 1
+                return 0, len(rows)
 
             midpoint = len(rows) // 2
+            results.append(
+                f"🔎 {layer_name} -> {endpoint}: batch de {len(rows)} ligne(s) en erreur, "
+                f"découpage en {midpoint} + {len(rows) - midpoint}."
+            )
             left_ok, left_errors = MrvTeraka._insert_rows_with_diagnostics(
                 postgrest_client,
                 endpoint,
@@ -2658,6 +2703,8 @@ class MrvTeraka:
                 start_idx,
                 results,
                 min_diagnostic_batch_size,
+                error_state,
+                repeated_error_limit,
             )
             right_ok, right_errors = MrvTeraka._insert_rows_with_diagnostics(
                 postgrest_client,
@@ -2668,6 +2715,8 @@ class MrvTeraka:
                 start_idx + midpoint,
                 results,
                 min_diagnostic_batch_size,
+                error_state,
+                repeated_error_limit,
             )
             return left_ok + right_ok, left_errors + right_errors
 
@@ -2676,16 +2725,23 @@ class MrvTeraka:
         results, errors_count = [], 0
         CHUNK_SIZE = 1000
         MIN_DIAGNOSTIC_BATCH_SIZE = 100
+        REPEATED_ERROR_LIMIT = 10
         for i, (layer_name, endpoint, conflict_field, data) in enumerate(migration_data):
             if task.isCanceled():
                 return {'results': results, 'status': 'canceled'}
             layer_errors, migrated_count = 0, 0
+            error_state = {}
+            results.append(
+                f"🚀 {layer_name} -> {endpoint}: publication de {len(data)} ligne(s), "
+                f"conflit={conflict_field}."
+            )
 
             for start_idx in range(0, len(data), CHUNK_SIZE):
                 if task.isCanceled():
                     return {'results': results, 'status': 'canceled'}
                 end_idx = min(start_idx + CHUNK_SIZE, len(data))
                 chunk_data = data[start_idx:end_idx]
+                results.append(f"📦 {layer_name} -> {endpoint}: tentative batch {start_idx + 1}-{end_idx}.")
                 inserted, row_errors = MrvTeraka._insert_rows_with_diagnostics(
                     postgrest_client,
                     endpoint,
@@ -2695,6 +2751,8 @@ class MrvTeraka:
                     start_idx,
                     results,
                     MIN_DIAGNOSTIC_BATCH_SIZE,
+                    error_state,
+                    REPEATED_ERROR_LIMIT,
                 )
                 migrated_count += inserted
                 layer_errors += row_errors
@@ -3091,6 +3149,19 @@ class MrvTeraka:
             self.set_sync_ready(False)
             self.current_validated_data = None
             total_actions = sum(len(r.get('actions', [])) for r in (results or []))
+            sync_steps = [
+                step
+                for result in (results or [])
+                for step in result.get('steps', [])
+            ]
+            if self.dockwidget and hasattr(self.dockwidget, 'merginResultsTextEdit') and sync_steps:
+                visible_steps = sync_steps[:80]
+                steps_report = "\n".join(f"• {step}" for step in visible_steps)
+                if len(sync_steps) > len(visible_steps):
+                    steps_report += f"\n• ... {len(sync_steps) - len(visible_steps)} étape(s) supplémentaire(s) masquée(s)."
+                self.dockwidget.merginResultsTextEdit.append(
+                    "📌 Étapes de publication API :\n{}".format(steps_report)
+                )
             error_actions = [
                 action
                 for result in (results or [])
@@ -3098,6 +3169,7 @@ class MrvTeraka:
                 if action.get('type') == 'error'
             ]
             if error_actions:
+                error_row_count = sum(int(action.get('count') or 1) for action in error_actions)
                 report = "\n".join(
                     "{}{}".format(
                         f"{action.get('table')} : " if action.get('table') else "",
@@ -3113,7 +3185,7 @@ class MrvTeraka:
                     )
                 self.show_warning(
                     self.tr(u'Synchronisation terminée avec erreurs'),
-                    self.tr(f"{total_actions} action(s) traitée(s), {len(error_actions)} erreur(s).\n\n{report}")
+                    self.tr(f"{total_actions} action(s) traitée(s), {error_row_count} ligne(s) en erreur.\n\n{report}")
                 )
             else:
                 self.show_info(
@@ -3125,6 +3197,21 @@ class MrvTeraka:
             self.dockwidget.autoSyncButton.setEnabled(True)
             self.dockwidget.set_status_message("❌ Erreur de synchronisation", color="red")
             self.show_error("Erreur de synchronisation", f"{exc}\n\n{tb}")
+
+        def on_sync_progress(value, message):
+            self.set_progress(value, message)
+            if (
+                message
+                and self.dockwidget
+                and hasattr(self.dockwidget, 'merginResultsTextEdit')
+                and (
+                    message.startswith("Préparation")
+                    or message.startswith("Chargement")
+                    or message.startswith("Publication")
+                    or message.startswith("Synchronisation")
+                )
+            ):
+                self.dockwidget.merginResultsTextEdit.append(f"🔄 {message}")
 
         # On traite les payloads l'un après l'autre ou on adapte le worker
         # Pour simplifier on garde la logique séquentielle mais dans le worker
@@ -3157,10 +3244,11 @@ class MrvTeraka:
                     add_verifier_uuid=True
                 )
                 
-                worker.update_progress(int((i/total)*100), f"Synchronisation de {endpoint}...")
+                worker.update_progress(int((i/total)*100), f"Préparation {endpoint}: {len(validated_data)} ligne(s) validée(s).")
 
                 original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else None
                 if not original_data:
+                    worker.update_progress(int((i/total)*100), f"Chargement {endpoint}: données existantes pour comparaison.")
                     c_com_values = sorted({
                         str(row.get('c_com'))
                         for row in validated_data
@@ -3169,6 +3257,7 @@ class MrvTeraka:
                     filters = {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else None
                     original_data = self.postgrest.select(endpoint, filters=filters) if filters else []
 
+                worker.update_progress(int((i/total)*100), f"Publication {endpoint}: batchs API et isolation des erreurs.")
                 merge_results = self.merge_validated_data_no_ui(mapping, original_data, validated_data)
                 if merge_results:
                     all_merge_results.append(merge_results)
@@ -3186,7 +3275,7 @@ class MrvTeraka:
         self.sync_worker = Worker(multi_sync_task)
         self.sync_worker.signals.finished.connect(on_sync_finished)
         self.sync_worker.signals.error.connect(on_sync_error)
-        self.sync_worker.signals.progress.connect(lambda val, msg: self.set_progress(val, msg))
+        self.sync_worker.signals.progress.connect(on_sync_progress)
         self.sync_worker.start()
 
     def merge_validated_data_no_ui(self, mapping, original, validated):

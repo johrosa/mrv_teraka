@@ -9,7 +9,8 @@ from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
     QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QProgressBar,
-    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout, QWidget
+    QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout, QWidget,
+    QAbstractItemView
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
@@ -307,12 +308,16 @@ class DataValidationDialog(QDialog):
         # Sous-onglet: Original (Base)
         self.table_before = QTableWidget()
         self.table_before.setAlternatingRowColors(True)
+        self.table_before.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_before.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table_before.setColumnCount(0)
         data_tabs.addTab(self.table_before, "Données Originales (Base)")
 
         # Sous-onglet: Collecté (Terrain)
         self.table_collected = QTableWidget()
         self.table_collected.setAlternatingRowColors(True)
+        self.table_collected.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_collected.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table_collected.setColumnCount(0)
         data_tabs.addTab(self.table_collected, "Données Collectées (Terrain)")
 
@@ -342,6 +347,8 @@ class DataValidationDialog(QDialog):
 
         self.issues_table = QTableWidget()
         self.issues_table.setAlternatingRowColors(True)
+        self.issues_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.issues_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.issues_table.setColumnCount(6)
         self.issues_table.setHorizontalHeaderLabels(["Publier", "Table", "Ligne", "ID", "Type", "Problème"])
         self.issues_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -396,10 +403,20 @@ class DataValidationDialog(QDialog):
     def create_validation_tab(self):
         """Onglet validation ligne par ligne"""
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Validation détaillée - Cliquez sur une ligne pour voir les détails:</b>"))
+        layout.addWidget(QLabel("<b>Validation détaillée - Sélectionnez une ou plusieurs lignes:</b>"))
 
         self.table_validation = self._setup_validation_table()
         layout.addWidget(self.table_validation)
+
+        batch_layout = QHBoxLayout()
+        self.btn_exclude_selected = QPushButton("Exclure sélection")
+        self.btn_exclude_selected.clicked.connect(self.exclude_selected_validation_rows)
+        self.btn_include_selected = QPushButton("Réinclure sélection")
+        self.btn_include_selected.clicked.connect(self.include_selected_validation_rows)
+        batch_layout.addWidget(self.btn_exclude_selected)
+        batch_layout.addWidget(self.btn_include_selected)
+        batch_layout.addStretch()
+        layout.addLayout(batch_layout)
 
         pager_layout = QHBoxLayout()
         self.validation_prev_button = QPushButton("Précédent")
@@ -427,6 +444,8 @@ class DataValidationDialog(QDialog):
         """Configure et remplit le tableau de validation."""
         table = QTableWidget()
         table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         table.setColumnCount(6)
         table.setHorizontalHeaderLabels(["ID", "Statut", "Changements", "Type", "Action", "Commentaire"])
         table.itemSelectionChanged.connect(self.on_validation_row_selected)
@@ -440,7 +459,8 @@ class DataValidationDialog(QDialog):
         item_id = item.get('id', row)
         table.setItem(row, 0, QTableWidgetItem(str(item_id)))
 
-        status_label = '🆕 Nouveau' if data_index >= len(self.original_data) else '✓ Valide'
+        is_excluded = data_index in self.excluded_rows.get(self.current_table, set())
+        status_label = 'Exclu' if is_excluded else '🆕 Nouveau' if data_index >= len(self.original_data) else '✓ Valide'
         table.setItem(row, 1, QTableWidgetItem(status_label))
 
         changes = self.detect_changes(item, data_index)
@@ -455,6 +475,13 @@ class DataValidationDialog(QDialog):
 
         table.setItem(row, 4, QTableWidgetItem("Fusionner"))
         table.setItem(row, 5, QTableWidgetItem(""))
+
+        if is_excluded:
+            for col in range(table.columnCount()):
+                tbl_item = table.item(row, col)
+                if tbl_item:
+                    tbl_item.setBackground(QColor(210, 210, 210))
+                    tbl_item.setToolTip("Ligne exclue de la publication.")
 
         error_msgs = self.validation_errors.get(self.current_table, {}).get(data_index, [])
         if error_msgs:
@@ -492,6 +519,34 @@ class DataValidationDialog(QDialog):
         data_index = self.current_page * self.page_size + row
         if 0 <= data_index < len(self.collected_data):
             self.show_row_details(data_index)
+
+    def selected_validation_data_indices(self):
+        rows = sorted({index.row() for index in self.table_validation.selectedIndexes()})
+        start = self.current_page * self.page_size
+        return [
+            start + row
+            for row in rows
+            if 0 <= start + row < len(self.collected_data)
+        ]
+
+    def exclude_selected_validation_rows(self):
+        indices = self.selected_validation_data_indices()
+        if not indices:
+            return
+        excluded = self.excluded_rows.setdefault(self.current_table, set())
+        excluded.update(indices)
+        self.populate_validation_page()
+        self.update_overview_stats()
+
+    def include_selected_validation_rows(self):
+        indices = self.selected_validation_data_indices()
+        if not indices:
+            return
+        excluded = self.excluded_rows.setdefault(self.current_table, set())
+        for index in indices:
+            excluded.discard(index)
+        self.populate_validation_page()
+        self.update_overview_stats()
 
     def show_row_details(self, row):
         """Affiche les détails complets d'une ligne"""

@@ -7,6 +7,7 @@ Gère le workflow complet de préparation Mergin jusqu'à la validation et fusio
 import json
 import os
 import datetime
+import re
 from pathlib import Path
 
 
@@ -282,6 +283,8 @@ class MerginWorkflowManager:
 class MerginDataMerger:
     """Gère la fusion des données collectées avec la base de données"""
 
+    REPEATED_ERROR_LIMIT = 10
+
     def __init__(self, postgrest_client):
         self.postgrest = postgrest_client
 
@@ -313,6 +316,150 @@ class MerginDataMerger:
                 prepared.pop('id', None)
             prepared_rows.append(prepared)
         return prepared_rows
+
+    @staticmethod
+    def _row_identifier(row, pk_field='id'):
+        if not isinstance(row, dict):
+            return "ligne inconnue"
+        for key in (pk_field, 'id', 'uuid_arbre_gps', 'uuid_bosquet_gps', 'uuid_pg_gps', 'uuid_pg', 'uuid_membre'):
+            value = row.get(key)
+            if value not in (None, ""):
+                return f"{key}={value}"
+        return "ligne sans identifiant"
+
+    @staticmethod
+    def _error_signature(exc):
+        text = str(exc)
+        for prefix in ('Details:', 'Détails:'):
+            if prefix in text:
+                text = text.split(prefix, 1)[0]
+        text = re.sub(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', '<uuid>', text, flags=re.IGNORECASE)
+        text = re.sub(r'\([^)]{30,}\)', '(<row>)', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:500]
+
+    def _record_repeated_error(self, results, table, rows, pk_field, exc, error_state):
+        signature = self._error_signature(exc)
+        count = error_state.get(signature, 0) + len(rows)
+        error_state[signature] = count
+        sample = self._row_identifier(rows[0], pk_field) if rows else "ligne inconnue"
+        message = (
+            f"{table}: isolation arrêtée pour {len(rows)} ligne(s), "
+            f"même erreur déjà répétée {count} fois. Exemple {sample}."
+        )
+        results.setdefault('steps', []).append(message)
+        results['actions'].append({
+            'type': 'error',
+            'table': table,
+            'row': sample,
+            'count': len(rows),
+            'signature': signature,
+            'msg': (
+                f"{len(rows)} ligne(s) non publiées: même erreur répétée "
+                f"({count} occurrence(s)). Exemple {sample}: {str(exc)}"
+            )
+        })
+
+    def _insert_with_fallback(self, table, rows, results, action_type, pk_field='id', upsert=False, error_state=None):
+        if not rows:
+            return
+
+        error_state = error_state if error_state is not None else {}
+
+        try:
+            payload_rows = self._prepare_payload_rows(rows, pk_field)
+            self.postgrest.insert(
+                table,
+                payload_rows,
+                upsert=upsert,
+                on_conflict=pk_field if upsert else None
+            )
+            for row in rows:
+                results['actions'].append({'type': action_type, 'id': row.get(pk_field)})
+            results.setdefault('steps', []).append(
+                f"{table}: {len(rows)} ligne(s) {'mises à jour' if upsert else 'insérées'} en batch."
+            )
+            return
+        except Exception as exc:
+            signature = self._error_signature(exc)
+            if error_state.get(signature, 0) >= self.REPEATED_ERROR_LIMIT:
+                self._record_repeated_error(results, table, rows, pk_field, exc, error_state)
+                return
+
+            if len(rows) == 1:
+                row = rows[0]
+                error_state[signature] = error_state.get(signature, 0) + 1
+                results.setdefault('steps', []).append(
+                    f"{table}: ligne ignorée ({self._row_identifier(row, pk_field)}), erreur {error_state[signature]}/{self.REPEATED_ERROR_LIMIT} du même type."
+                )
+                results['actions'].append({
+                    'type': 'error',
+                    'table': table,
+                    'id': row.get(pk_field) if isinstance(row, dict) else None,
+                    'row': self._row_identifier(row, pk_field),
+                    'signature': signature,
+                    'msg': f"{self._row_identifier(row, pk_field)}: {str(exc)}"
+                })
+                return
+
+            midpoint = len(rows) // 2
+            results.setdefault('steps', []).append(
+                f"{table}: batch de {len(rows)} ligne(s) en erreur, découpage en {midpoint} + {len(rows) - midpoint}."
+            )
+            self._insert_with_fallback(table, rows[:midpoint], results, action_type, pk_field, upsert, error_state)
+            self._insert_with_fallback(table, rows[midpoint:], results, action_type, pk_field, upsert, error_state)
+
+    def _delete_with_fallback(self, table, ids, results, pk_field='id', error_state=None):
+        ids = [d_id for d_id in ids if d_id is not None]
+        if not ids:
+            return
+
+        error_state = error_state if error_state is not None else {}
+
+        try:
+            id_list = ",".join(self._postgrest_in_value(d_id) for d_id in ids)
+            self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
+            for d_id in ids:
+                results['actions'].append({'type': 'deleted', 'id': d_id})
+            results.setdefault('steps', []).append(f"{table}: {len(ids)} suppression(s) en batch.")
+            return
+        except Exception as exc:
+            signature = self._error_signature(exc)
+            if error_state.get(signature, 0) >= self.REPEATED_ERROR_LIMIT:
+                error_state[signature] = error_state.get(signature, 0) + len(ids)
+                results.setdefault('steps', []).append(
+                    f"{table}: {len(ids)} suppression(s) ignorée(s), même erreur répétée {error_state[signature]} fois."
+                )
+                results['actions'].append({
+                    'type': 'error',
+                    'table': table,
+                    'ids': ids[:5],
+                    'count': len(ids),
+                    'signature': signature,
+                    'error': f"{len(ids)} suppression(s) non publiées: même erreur répétée. {str(exc)}"
+                })
+                return
+
+            if len(ids) == 1:
+                error_state[signature] = error_state.get(signature, 0) + 1
+                results.setdefault('steps', []).append(
+                    f"{table}: suppression ignorée ({pk_field}={ids[0]}), erreur {error_state[signature]}/{self.REPEATED_ERROR_LIMIT} du même type."
+                )
+                results['actions'].append({
+                    'type': 'error',
+                    'table': table,
+                    'ids': ids,
+                    'signature': signature,
+                    'error': f"{pk_field}={ids[0]}: {str(exc)}"
+                })
+                return
+
+            midpoint = len(ids) // 2
+            results.setdefault('steps', []).append(
+                f"{table}: batch suppression de {len(ids)} en erreur, découpage en {midpoint} + {len(ids) - midpoint}."
+            )
+            self._delete_with_fallback(table, ids[:midpoint], results, pk_field, error_state)
+            self._delete_with_fallback(table, ids[midpoint:], results, pk_field, error_state)
 
     def detect_conflicts(self, original, collected, pk_field='id'):
         """Détecte les conflits entre données originales et collectées"""
@@ -399,6 +546,7 @@ class MerginDataMerger:
             'merged_at': datetime.datetime.now().isoformat(),
             'conflicts': conflicts,
             'actions': [],
+            'steps': [],
             'pk_field_used': pk_field
         }
 
@@ -409,6 +557,10 @@ class MerginDataMerger:
             for c in conflicts:
                 if c['type'] == 'added':
                     added_ids.update(c['ids'])
+            deleted_ids = []
+            for c in conflicts:
+                if c['type'] == 'deleted':
+                    deleted_ids.extend(c['ids'])
 
             # 2. Traiter les ajouts en insertion simple.
             # Un POST avec on_conflict exige une contrainte unique côté PostgreSQL.
@@ -416,52 +568,41 @@ class MerginDataMerger:
             # et peut provoquer un 400 si la colonne UUID métier n'est pas unique.
             items_to_insert = [item for item in collected if item.get(pk_field) in added_ids]
             items_to_update = [item for item in collected if item.get(pk_field) in modified_ids]
+            error_state = {}
+            results['steps'].append(
+                f"{table}: {len(items_to_insert)} ajout(s), {len(items_to_update)} mise(s) à jour, {len(deleted_ids)} suppression(s) détectée(s)."
+            )
             for items_chunk in self._chunks(items_to_insert, 1000):
-                try:
-                    payload_chunk = self._prepare_payload_rows(items_chunk, pk_field)
-                    self.postgrest.insert(table, payload_chunk, upsert=False)
-                    for item in items_chunk:
-                        results['actions'].append({'type': 'inserted', 'id': item.get(pk_field)})
-                except Exception as e:
-                    results['actions'].append({'type': 'error', 'table': table, 'msg': f"Erreur insertion batch: {str(e)}"})
+                results['steps'].append(f"{table}: tentative insertion batch de {len(items_chunk)} ligne(s).")
+                self._insert_with_fallback(table, items_chunk, results, 'inserted', pk_field, upsert=False, error_state=error_state)
 
             # 3. Traiter les modifications en upsert batch.
             for items_chunk in self._chunks(items_to_update, 1000):
-                try:
-                    payload_chunk = self._prepare_payload_rows(items_chunk, pk_field)
-                    self.postgrest.insert(table, payload_chunk, upsert=True, on_conflict=pk_field)
-                    for item in items_chunk:
-                        results['actions'].append({'type': 'updated', 'id': item.get(pk_field)})
-                except Exception as e:
-                    results['actions'].append({'type': 'error', 'table': table, 'msg': f"Erreur mise à jour batch: {str(e)}"})
+                results['steps'].append(f"{table}: tentative mise à jour batch de {len(items_chunk)} ligne(s).")
+                self._insert_with_fallback(table, items_chunk, results, 'updated', pk_field, upsert=True, error_state=error_state)
 
             # 4. Traiter les suppressions si nécessaire (stratégie merge respecte la suppression terrain)
-            deleted_ids = []
-            for c in conflicts:
-                if c['type'] == 'deleted':
-                    deleted_ids.extend(c['ids'])
-
             deleted_ids = [d_id for d_id in deleted_ids if d_id is not None]
+            delete_error_state = {}
             for ids_chunk in self._chunks(deleted_ids, 200):
-                try:
-                    id_list = ",".join(self._postgrest_in_value(d_id) for d_id in ids_chunk)
-                    self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
-                    for d_id in ids_chunk:
-                        results['actions'].append({'type': 'deleted', 'id': d_id})
-                except Exception as e:
-                    results['actions'].append({'type': 'error', 'ids': ids_chunk, 'error': str(e)})
+                results['steps'].append(f"{table}: tentative suppression batch de {len(ids_chunk)} ligne(s).")
+                self._delete_with_fallback(table, ids_chunk, results, pk_field, delete_error_state)
 
         elif strategy == 'replace':
             # Stratégie radicale : supprimer tout et réinsérer
+            results.setdefault('steps', []).append(
+                f"{table}: remplacement complet demandé ({len(original)} existante(s), {len(collected)} nouvelle(s))."
+            )
             try:
                 # On utilise 'in' pour supprimer en une seule requête si possible
                 original_ids = [o.get(pk_field) for o in original if o.get(pk_field) is not None]
+                delete_error_state = {}
                 for ids_chunk in self._chunks(original_ids, 200):
-                    # Syntaxe PostgREST: id=in.(1,2,3)
-                    id_list = ",".join(self._postgrest_in_value(o_id) for o_id in ids_chunk)
-                    self.postgrest.delete(table, {pk_field: f'in.({id_list})'})
+                    self._delete_with_fallback(table, ids_chunk, results, pk_field, delete_error_state)
 
-                self.postgrest.insert(table, collected)
+                insert_error_state = {}
+                for items_chunk in self._chunks(collected, 1000):
+                    self._insert_with_fallback(table, items_chunk, results, 'inserted', pk_field, upsert=False, error_state=insert_error_state)
                 results['actions'].append({'type': 'replace_all', 'count': len(collected)})
             except Exception as e:
                 results['actions'].append({'type': 'error', 'msg': str(e)})
