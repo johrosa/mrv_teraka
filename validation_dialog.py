@@ -283,7 +283,7 @@ class DataValidationDialog(QDialog):
 
         # Rafraîchir toutes les vues
         self.populate_data()
-        self.tabs.setCurrentIndex(0)
+        self.update_lazy_tab(self.tabs.currentIndex())
 
     def sync_table_selectors(self, table_name):
         for selector in getattr(self, 'table_selectors', []):
@@ -1521,7 +1521,8 @@ class DataValidationDialog(QDialog):
             self,
             "Confirmer validation multi-tables",
             self.validation_final_summary(),
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Cancel
         )
         if reply == QMessageBox.Yes:
             self.validated_data = self._build_validated_payload(exclude_errors=True)
@@ -1534,7 +1535,9 @@ class DataValidationDialog(QDialog):
             self, "Valider les lignes correctes",
             f"Valider les lignes correctes de {counts['tables']} table(s) ?\n"
             f"{counts['ok']} ligne(s) seront retenues."
-            + (f"\n{counts['errors']} ligne(s) avec anomalie seront exclues." if counts['errors'] else "")
+            + (f"\n{counts['errors']} ligne(s) avec anomalie seront exclues." if counts['errors'] else ""),
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Cancel
         )
         
         if reply == QMessageBox.Yes:

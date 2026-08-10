@@ -239,7 +239,8 @@ class MrvTeraka:
             self.iface.mainWindow(),
             title,
             Utils.compact_dialog_message(message),
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.No
         )
         return reply == QMessageBox.Yes
 
@@ -672,7 +673,8 @@ class MrvTeraka:
                 u'Les correspondances sélectionnées vont remplacer ou ajouter le mapping local '
                 u'pour les couches du projet actuel.\n\nContinuer ?'
             ),
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Cancel
         )
         if reply != QMessageBox.Yes:
             return False
@@ -1220,7 +1222,13 @@ class MrvTeraka:
                     u"\nVoulez-vous traiter les couches actuellement chargées dans QGIS ?\n\n"
                     u"Cela lancera l'analyse du projet pour mapper vos données locales."
                 )
-                reply = QMessageBox.question(self.iface.mainWindow(), self.tr(u'Analyse Projet'), msg, QMessageBox.Yes | QMessageBox.No)
+                reply = QMessageBox.question(
+                    self.iface.mainWindow(),
+                    self.tr(u'Analyse Projet'),
+                    msg,
+                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                    QMessageBox.Cancel
+                )
                 if reply == QMessageBox.Yes:
                     self.import_data_from_active_layers()
                     return
@@ -2402,7 +2410,8 @@ class MrvTeraka:
             self.iface.mainWindow(),
             self.tr(u'Confirmer la migration'),
             self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?").format(count=len(project_endpoints)),
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Cancel
         ) != QMessageBox.Yes:
             return
 
@@ -3302,7 +3311,8 @@ class MrvTeraka:
                 self.iface.mainWindow(),
                 self.tr(u'Confirmation Fusion'),
                 Utils.compact_dialog_message(f"Résumé des changements:\n{summary}\n\nProcéder?"),
-                QMessageBox.Yes | QMessageBox.No
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Cancel
             )
 
             if reply == QMessageBox.Yes:
