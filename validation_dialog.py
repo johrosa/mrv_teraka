@@ -118,7 +118,7 @@ class DataValidationDialog(QDialog):
         self.current_table = next(iter(self.full_collected_data.keys())) if self.full_collected_data else 'default'
         self.current_record_index = -1
         self._refreshing_ui = False
-        self.page_size = 200
+        self.page_size = 500
         self.current_page = 0
         self.data_page = 0
         self.large_table_threshold = 500
@@ -131,6 +131,7 @@ class DataValidationDialog(QDialog):
             for table_name in self.full_collected_data.keys()
         }
         self.table_selectors = []
+        self.page_size_controls = []
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -228,6 +229,43 @@ class DataValidationDialog(QDialog):
         row_layout.addWidget(selector)
         row_layout.addStretch()
         return row_layout
+
+    def create_page_size_control(self):
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("Afficher :"))
+        spin = QSpinBox()
+        spin.setRange(50, 5000)
+        spin.setSingleStep(50)
+        spin.setValue(self.page_size)
+        spin.setSuffix(" lignes")
+        spin.setToolTip("Nombre de lignes affichées par page dans les tableaux longs.")
+        spin.valueChanged.connect(self.set_page_size)
+        self.page_size_controls.append(spin)
+        control_layout.addWidget(spin)
+        return control_layout
+
+    def set_page_size(self, value):
+        value = max(50, min(5000, int(value)))
+        if value == self.page_size:
+            return
+        self.page_size = value
+        self.current_page = 0
+        self.data_page = 0
+
+        for control in getattr(self, 'page_size_controls', []):
+            blocker = QSignalBlocker(control)
+            try:
+                control.setValue(value)
+            finally:
+                del blocker
+
+        if hasattr(self, 'table_validation'):
+            self.populate_validation_page()
+        if hasattr(self, 'data_subtabs'):
+            self.populate_data_tables_page()
+        if hasattr(self, 'combo_records'):
+            self.populate_comparison_controls()
+        self.update_overview_stats()
 
     def switch_table(self, table_name):
         """Change la table active et rafraîchit l'UI."""
@@ -350,6 +388,7 @@ class DataValidationDialog(QDialog):
         pager_layout.addWidget(self.data_prev_button)
         pager_layout.addWidget(self.data_next_button)
         pager_layout.addWidget(self.data_page_label)
+        pager_layout.addLayout(self.create_page_size_control())
         pager_layout.addStretch()
         layout.addLayout(pager_layout)
         data_tabs.currentChanged.connect(lambda _: self.populate_data_tables_page())
@@ -488,6 +527,7 @@ class DataValidationDialog(QDialog):
         pager_layout.addWidget(self.validation_prev_button)
         pager_layout.addWidget(self.validation_next_button)
         pager_layout.addWidget(self.validation_page_label)
+        pager_layout.addLayout(self.create_page_size_control())
         pager_layout.addStretch()
         layout.addLayout(pager_layout)
         
