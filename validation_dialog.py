@@ -126,6 +126,10 @@ class DataValidationDialog(QDialog):
         self.validation_errors = {}
         self.excluded_rows = {}
         self.included_error_rows = {}
+        self.table_publish_state = {
+            table_name: True
+            for table_name in self.full_collected_data.keys()
+        }
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -209,7 +213,7 @@ class DataValidationDialog(QDialog):
         self.btn_validate = QPushButton("Valider et fermer")
         self.btn_validate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.btn_validate.setDefault(True)  # Permet d'utiliser 'Entrée'
-        self.btn_validate.clicked.connect(self.accept)
+        self.btn_validate.clicked.connect(self.confirm_accept)
         
         button_layout.addWidget(self.btn_cancel)
         button_layout.addWidget(self.btn_validate)
@@ -401,7 +405,31 @@ class DataValidationDialog(QDialog):
     def create_validation_tab(self):
         """Onglet validation ligne par ligne"""
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Lignes retenues pour publication</b>"))
+        layout.addWidget(QLabel("<b>Tables à publier</b>"))
+
+        self.table_status = QTableWidget()
+        self.table_status.setAlternatingRowColors(True)
+        self.table_status.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_status.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table_status.setColumnCount(7)
+        self.table_status.setHorizontalHeaderLabels([
+            "Publier", "Table", "Statut", "Retenues", "Problèmes", "Exclues", "Total"
+        ])
+        self.table_status.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_status.itemChanged.connect(self.on_table_publish_item_changed)
+        layout.addWidget(self.table_status)
+
+        table_action_layout = QHBoxLayout()
+        self.btn_publish_all_tables = QPushButton("Publier toutes")
+        self.btn_publish_all_tables.clicked.connect(lambda: self.set_all_tables_publish_state(True))
+        self.btn_unpublish_current_table = QPushButton("Retirer table active")
+        self.btn_unpublish_current_table.clicked.connect(self.unpublish_current_table)
+        table_action_layout.addWidget(self.btn_publish_all_tables)
+        table_action_layout.addWidget(self.btn_unpublish_current_table)
+        table_action_layout.addStretch()
+        layout.addLayout(table_action_layout)
+
+        layout.addWidget(QLabel("<b>Lignes retenues pour la table active</b>"))
 
         batch_layout = QHBoxLayout()
         self.btn_exclude_selected = QPushButton("Exclure sélection")
@@ -458,7 +486,8 @@ class DataValidationDialog(QDialog):
         table.setItem(row, 0, QTableWidgetItem(str(item_id)))
 
         is_excluded = data_index in self.excluded_rows.get(self.current_table, set())
-        status_label = 'Exclu' if is_excluded else '🆕 Nouveau' if data_index >= len(self.original_data) else '✓ Valide'
+        table_published = self.table_publish_state.get(self.current_table, True)
+        status_label = 'Table retirée' if not table_published else 'Exclu' if is_excluded else '🆕 Nouveau' if self.original_for_item(item, data_index) is None else '✓ Valide'
         table.setItem(row, 1, QTableWidgetItem(status_label))
 
         changes = self.detect_changes(item, data_index)
@@ -474,12 +503,12 @@ class DataValidationDialog(QDialog):
         table.setItem(row, 4, QTableWidgetItem("Fusionner"))
         table.setItem(row, 5, QTableWidgetItem(""))
 
-        if is_excluded:
+        if is_excluded or not table_published:
             for col in range(table.columnCount()):
                 tbl_item = table.item(row, col)
                 if tbl_item:
                     tbl_item.setBackground(QColor(210, 210, 210))
-                    tbl_item.setToolTip("Ligne exclue de la publication.")
+                    tbl_item.setToolTip("Table retirée de la publication." if not table_published else "Ligne exclue de la publication.")
 
         error_msgs = self.validation_errors.get(self.current_table, {}).get(data_index, [])
         if error_msgs:
@@ -494,15 +523,57 @@ class DataValidationDialog(QDialog):
     
     def has_changes(self, item, index):
         """Vérifie si l'item a des changements"""
-        if index >= len(self.original_data):
+        original = self.original_for_item(item, index)
+        if original is None:
             return True
 
-        original = self.original_data[index]
         for key in item.keys():
             if key not in original or original[key] != item[key]:
                 return True
 
         return False
+
+    def row_key_field(self, row, table_name=None):
+        if not isinstance(row, dict):
+            return None
+        table_hint = str(table_name or self.current_table or '').strip().lower()
+        candidates = []
+        if table_hint:
+            candidates.append(f"uuid_{table_hint}")
+            if table_hint.endswith('s'):
+                candidates.append(f"uuid_{table_hint[:-1]}")
+        candidates.extend([
+            'uuid_arbre_gps', 'uuid_bosquet_gps', 'uuid_pg_gps', 'uuid_pg',
+            'uuid_membre', 'uuid', 'id'
+        ])
+        lower_keys = {str(key).lower(): key for key in row.keys()}
+        for candidate in candidates:
+            key = lower_keys.get(candidate)
+            if key and row.get(key) not in (None, ''):
+                return key
+        for key in row.keys():
+            if str(key).lower().startswith('uuid') and row.get(key) not in (None, ''):
+                return key
+        return None
+
+    def normalized_row_key(self, row, table_name=None):
+        key_field = self.row_key_field(row, table_name=table_name)
+        if not key_field:
+            return None
+        value = row.get(key_field)
+        normalized = _normalize_uuid(value)
+        return key_field.lower(), normalized or str(value)
+
+    def original_for_item(self, item, fallback_index=None, table_name=None, original_data=None):
+        original_rows = self.original_data if original_data is None else original_data
+        item_key = self.normalized_row_key(item, table_name=table_name)
+        if item_key:
+            for original in original_rows:
+                if self.normalized_row_key(original, table_name=table_name) == item_key:
+                    return original
+        if fallback_index is not None and 0 <= fallback_index < len(original_rows):
+            return original_rows[fallback_index]
+        return None
 
     def on_validation_row_selected(self):
         """Affiche les détails de la ligne sélectionnée"""
@@ -534,6 +605,7 @@ class DataValidationDialog(QDialog):
         excluded = self.excluded_rows.setdefault(self.current_table, set())
         excluded.update(indices)
         self.populate_validation_page()
+        self.populate_table_status()
         self.update_overview_stats()
 
     def include_selected_validation_rows(self):
@@ -544,12 +616,13 @@ class DataValidationDialog(QDialog):
         for index in indices:
             excluded.discard(index)
         self.populate_validation_page()
+        self.populate_table_status()
         self.update_overview_stats()
 
     def show_row_details(self, row):
         """Affiche les détails complets d'une ligne"""
         collected_item = self.collected_data[row]
-        original_item = self.original_data[row] if row < len(self.original_data) else {}
+        original_item = self.original_for_item(collected_item, row) or {}
 
         # Construire le texte détaillé
         details = []
@@ -558,7 +631,7 @@ class DataValidationDialog(QDialog):
         details.append(f"{'='*60}")
 
         # Déterminer le type
-        if row >= len(self.original_data):
+        if not original_item:
             details.append("TYPE: 🆕 NOUVEL ENREGISTREMENT")
         else:
             details.append(f"TYPE: {'✏️ MODIFIÉ' if self.has_changes(collected_item, row) else '✓ INCHANGÉ'}")
@@ -626,6 +699,7 @@ class DataValidationDialog(QDialog):
             QSignalBlocker(self.table_collected),
             QSignalBlocker(self.table_before),
             QSignalBlocker(self.table_validation),
+            QSignalBlocker(self.table_status),
             QSignalBlocker(self.table_diff),
             QSignalBlocker(self.issues_table),
             QSignalBlocker(self.combo_records),
@@ -644,6 +718,8 @@ class DataValidationDialog(QDialog):
             self.detail_text.clear()
             self.table_validation.clearContents()
             self.table_validation.setRowCount(0)
+            self.table_status.clearContents()
+            self.table_status.setRowCount(0)
             self.issues_table.clearContents()
             self.issues_table.setRowCount(0)
             self.record_spin.setMaximum(max(1, len(self.collected_data)))
@@ -653,6 +729,7 @@ class DataValidationDialog(QDialog):
             self._refreshing_ui = False
 
         self.update_overview_stats()
+        self.populate_table_status()
         self.populate_issues_table()
         self.update_lazy_tab()
         # Générer recommandations
@@ -664,15 +741,23 @@ class DataValidationDialog(QDialog):
         errors = self.validation_errors.get(table_name, {})
         excluded = self.excluded_rows.get(table_name, set())
         included_errors = self.included_error_rows.get(table_name, set())
-        new_count = max(0, len(collected) - len(original))
-        modified_count = sum(
-            1
-            for idx, item in enumerate(collected[:len(original)])
-            if item != original[idx]
-        )
+        new_count = 0
+        modified_count = 0
+        for idx, item in enumerate(collected):
+            original_item = self.original_for_item(
+                item,
+                fallback_index=idx,
+                table_name=table_name,
+                original_data=original
+            )
+            if original_item is None:
+                new_count += 1
+            elif item != original_item:
+                modified_count += 1
         error_count = max(0, len(errors) - len(included_errors))
         excluded_count = len(excluded)
-        ok_count = max(0, len(collected) - error_count - excluded_count)
+        published = self.table_publish_state.get(table_name, True)
+        ok_count = max(0, len(collected) - error_count - excluded_count) if published else 0
         return {
             'collected': len(collected),
             'original': len(original),
@@ -680,6 +765,7 @@ class DataValidationDialog(QDialog):
             'modified': modified_count,
             'errors': error_count,
             'excluded': excluded_count,
+            'published': 1 if published else 0,
             'ok': ok_count,
         }
 
@@ -692,6 +778,7 @@ class DataValidationDialog(QDialog):
             'modified': 0,
             'errors': 0,
             'excluded': 0,
+            'published': 0,
             'ok': 0,
         }
         for table_name in self.full_collected_data:
@@ -703,6 +790,8 @@ class DataValidationDialog(QDialog):
     def _build_validated_payload(self, exclude_errors=True):
         payload = {}
         for table_name, rows in self.full_collected_data.items():
+            if not self.table_publish_state.get(table_name, True):
+                continue
             error_rows = set(self.validation_errors.get(table_name, {}).keys()) if exclude_errors else set()
             included_errors = self.included_error_rows.get(table_name, set())
             excluded = self.excluded_rows.get(table_name, set())
@@ -715,6 +804,63 @@ class DataValidationDialog(QDialog):
         if len(payload) == 1 and 'default' in payload:
             return payload['default']
         return payload
+
+    def populate_table_status(self):
+        blocker = QSignalBlocker(self.table_status)
+        try:
+            table_names = sorted(self.full_collected_data.keys())
+            self.table_status.clearContents()
+            self.table_status.setRowCount(len(table_names))
+            for row, table_name in enumerate(table_names):
+                counts = self._table_counts(table_name)
+                publish_item = QTableWidgetItem("")
+                publish_item.setFlags(publish_item.flags() | Qt.ItemIsUserCheckable)
+                publish_item.setCheckState(Qt.Checked if self.table_publish_state.get(table_name, True) else Qt.Unchecked)
+                publish_item.setData(Qt.UserRole, table_name)
+                self.table_status.setItem(row, 0, publish_item)
+
+                status = "Retirée" if not self.table_publish_state.get(table_name, True) else (
+                    "Avec problèmes" if counts['errors'] else "Prête"
+                )
+                values = [
+                    table_name,
+                    status,
+                    str(counts['ok'] if self.table_publish_state.get(table_name, True) else 0),
+                    str(counts['errors']),
+                    str(counts['excluded']),
+                    str(counts['collected']),
+                ]
+                for col, value in enumerate(values, start=1):
+                    item = QTableWidgetItem(value)
+                    if status == "Retirée":
+                        item.setBackground(QColor(210, 210, 210))
+                    elif status == "Avec problèmes":
+                        item.setBackground(QColor(255, 220, 180))
+                    self.table_status.setItem(row, col, item)
+            self.table_status.resizeColumnsToContents()
+        finally:
+            del blocker
+
+    def on_table_publish_item_changed(self, item):
+        if self._refreshing_ui or item is None or item.column() != 0:
+            return
+        table_name = item.data(Qt.UserRole)
+        if not table_name:
+            return
+        self.table_publish_state[table_name] = item.checkState() == Qt.Checked
+        self.populate_table_status()
+        self.update_overview_stats()
+
+    def set_all_tables_publish_state(self, publish):
+        for table_name in self.full_collected_data:
+            self.table_publish_state[table_name] = publish
+        self.populate_table_status()
+        self.update_overview_stats()
+
+    def unpublish_current_table(self):
+        self.table_publish_state[self.current_table] = False
+        self.populate_table_status()
+        self.update_overview_stats()
 
     def update_overview_stats(self):
         """Met à jour le résumé sans reconstruire les widgets."""
@@ -741,7 +887,7 @@ class DataValidationDialog(QDialog):
         self.status_strip.setText(
             "<span style='color:{color}'>{status}</span> | "
             "Table active: {table} | Tables: {tables} | Retenues: {ok} | "
-            "Problèmes: {errors} | Exclues: {excluded}".format(
+            "Problèmes: {errors} | Exclues: {excluded} | Tables publiées: {published}".format(
                 color=status_color,
                 status=status_text,
                 table=self.current_table,
@@ -749,6 +895,7 @@ class DataValidationDialog(QDialog):
                 ok=global_counts['ok'],
                 errors=global_counts['errors'],
                 excluded=global_counts['excluded'],
+                published=sum(1 for value in self.table_publish_state.values() if value),
             )
         )
 
@@ -809,6 +956,7 @@ class DataValidationDialog(QDialog):
             included.add(data_index)
         else:
             included.discard(data_index)
+        self.populate_table_status()
         self.update_overview_stats()
 
     def on_main_tab_changed(self, index):
@@ -919,7 +1067,9 @@ class DataValidationDialog(QDialog):
             self.combo_records.clear()
             start, end = self._page_bounds(self.collected_data, self.current_page)
             for i, item in enumerate(self.collected_data[start:end], start):
-                label = f"Enregistrement {i + 1} (ID: {item.get('id', 'N/A')})"
+                key = self.normalized_row_key(item)
+                key_text = "{}={}".format(key[0], key[1]) if key else f"ID: {item.get('id', 'N/A')}"
+                label = f"Enregistrement {i + 1} ({key_text})"
                 self.combo_records.addItem(label, i)
         finally:
             del blocker
@@ -965,6 +1115,13 @@ class DataValidationDialog(QDialog):
         """Affiche une erreur."""
         QMessageBox.critical(self, title, Utils.compact_dialog_message(message))
 
+    def prune_validation_decisions(self):
+        for table_name, rows in self.full_collected_data.items():
+            valid_indices = set(range(len(rows)))
+            self.excluded_rows[table_name] = self.excluded_rows.get(table_name, set()) & valid_indices
+            error_indices = set(self.validation_errors.get(table_name, {}).keys())
+            self.included_error_rows[table_name] = self.included_error_rows.get(table_name, set()) & error_indices
+
     def run_validation_rules(self, show_messages=True):
         """Exécute les règles métier automatisées sur les données collectées."""
         invalid_count = 0
@@ -975,8 +1132,6 @@ class DataValidationDialog(QDialog):
         context.appendScope(QgsExpressionContextUtils.globalScope())
 
         self.validation_errors = {}
-        self.excluded_rows = {}
-        self.included_error_rows = {}
         for table_name, table_data in self.full_collected_data.items():
             if not table_data:
                 self.validation_errors[table_name] = {}
@@ -1001,6 +1156,8 @@ class DataValidationDialog(QDialog):
                     table_errors[data_index] = [e['message'] for e in errors]
             self.validation_errors[table_name] = table_errors
 
+        self.prune_validation_decisions()
+
         if invalid_count > 0:
             if show_messages:
                 msg = f"{invalid_count} enregistrements présentent des anomalies métier."
@@ -1011,12 +1168,14 @@ class DataValidationDialog(QDialog):
             
             self.populate_validation_page()
             self.populate_issues_table()
+            self.populate_table_status()
             self.update_overview_stats()
             if show_messages:
                 self.tabs.setCurrentIndex(1)
         else:
             self.populate_validation_page()
             self.populate_issues_table()
+            self.populate_table_status()
             self.update_overview_stats()
             self.generate_recommendations()
             if show_messages:
@@ -1036,7 +1195,7 @@ class DataValidationDialog(QDialog):
         self.table_diff.setRowCount(0)
 
         collected_item = self.collected_data[index]
-        original_item = self.original_data[index] if index < len(self.original_data) else {}
+        original_item = self.original_for_item(collected_item, index) or {}
 
         all_keys = sorted(list(set(list(collected_item.keys()) + list(original_item.keys()))))
         self.table_diff.setRowCount(len(all_keys))
@@ -1119,10 +1278,10 @@ class DataValidationDialog(QDialog):
 
     def detect_changes(self, item, index):
         """Détecte les changements par rapport à l'original"""
-        if index >= len(self.original_data):
+        original = self.original_for_item(item, index)
+        if original is None:
             return "🆕 NOUVEAU"
 
-        original = self.original_data[index]
         changes = []
         
         # Comparer tous les champs
@@ -1177,6 +1336,35 @@ class DataValidationDialog(QDialog):
 
         super().accept()
 
+    def validation_final_summary(self):
+        counts = self._global_counts()
+        published_tables = [
+            table_name
+            for table_name, publish in self.table_publish_state.items()
+            if publish
+        ]
+        return (
+            f"Tables publiées : {len(published_tables)}/{counts['tables']}\n"
+            f"Lignes retenues : {counts['ok']}\n"
+            f"Lignes exclues : {counts['excluded']}\n"
+            f"Anomalies non publiées : {counts['errors']}\n\n"
+            "La validation finale concerne toutes les tables cochées, pas seulement la table affichée."
+        )
+
+    def confirm_accept(self):
+        if not any(self.table_publish_state.values()):
+            self.show_warning("Validation", "Aucune table n'est cochée pour publication.")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Confirmer validation multi-tables",
+            self.validation_final_summary(),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.validated_data = self._build_validated_payload(exclude_errors=True)
+            self.accept()
+
     def auto_merge(self):
         """Fusion automatique des données pour toutes les tables."""
         counts = self._global_counts()
@@ -1207,6 +1395,7 @@ class DataValidationDialog(QDialog):
             'errors': self.validation_errors,
             'excluded_rows': {table: sorted(rows) for table, rows in self.excluded_rows.items()},
             'included_error_rows': {table: sorted(rows) for table, rows in self.included_error_rows.items()},
+            'table_publish_state': self.table_publish_state,
             'tables': {
                 table_name: {
                     'collected': len(self.full_collected_data.get(table_name, [])),
