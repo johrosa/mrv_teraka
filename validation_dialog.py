@@ -130,6 +130,7 @@ class DataValidationDialog(QDialog):
             table_name: True
             for table_name in self.full_collected_data.keys()
         }
+        self.table_selectors = []
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -143,17 +144,6 @@ class DataValidationDialog(QDialog):
         """Initialise l'interface"""
         layout = QVBoxLayout()
         
-        # --- Sélecteur de table (pour multi-table) ---
-        if len(self.full_collected_data) > 1 or 'default' not in self.full_collected_data:
-            table_selector_layout = QHBoxLayout()
-            table_selector_layout.addWidget(QLabel("<b>Table à valider :</b>"))
-            self.table_selector = QComboBox()
-            self.table_selector.addItems(sorted(self.full_collected_data.keys()))
-            self.table_selector.currentTextChanged.connect(self.switch_table)
-            table_selector_layout.addWidget(self.table_selector)
-            table_selector_layout.addStretch()
-            layout.addLayout(table_selector_layout)
-
         # --- Titre et Description ---
         title = QLabel("Validation des données collectées")
         title_font = QFont()
@@ -193,7 +183,7 @@ class DataValidationDialog(QDialog):
         # --- Boutons d'action ---
         button_layout = QHBoxLayout()
         
-        self.btn_auto_merge = QPushButton("Valider lignes correctes")
+        self.btn_auto_merge = QPushButton("Valider toutes les lignes retenues")
         self.btn_auto_merge.clicked.connect(self.auto_merge)
         
         self.btn_manual_review = QPushButton("Traiter les problèmes")
@@ -210,7 +200,7 @@ class DataValidationDialog(QDialog):
         self.btn_cancel = QPushButton("Annuler")
         self.btn_cancel.clicked.connect(self.reject)
         
-        self.btn_validate = QPushButton("Valider et fermer")
+        self.btn_validate = QPushButton("Confirmer validation multi-tables")
         self.btn_validate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.btn_validate.setDefault(True)  # Permet d'utiliser 'Entrée'
         self.btn_validate.clicked.connect(self.confirm_accept)
@@ -225,6 +215,20 @@ class DataValidationDialog(QDialog):
         self.populate_data()
         self.run_validation_rules(show_messages=False)
 
+    def create_table_selector_row(self, label="Table active :"):
+        row_layout = QHBoxLayout()
+        row_layout.addWidget(QLabel(f"<b>{label}</b>"))
+        selector = QComboBox()
+        selector.addItems(sorted(self.full_collected_data.keys()))
+        index = selector.findText(self.current_table)
+        if index >= 0:
+            selector.setCurrentIndex(index)
+        selector.currentTextChanged.connect(self.switch_table)
+        self.table_selectors.append(selector)
+        row_layout.addWidget(selector)
+        row_layout.addStretch()
+        return row_layout
+
     def switch_table(self, table_name):
         """Change la table active et rafraîchit l'UI."""
         if not table_name or table_name == self.current_table:
@@ -237,10 +241,21 @@ class DataValidationDialog(QDialog):
         self.current_page = 0
         self.data_page = 0
         self._loaded_tabs = set()
+        self.sync_table_selectors(table_name)
 
         # Rafraîchir toutes les vues
         self.populate_data()
         self.tabs.setCurrentIndex(0)
+
+    def sync_table_selectors(self, table_name):
+        for selector in getattr(self, 'table_selectors', []):
+            blocker = QSignalBlocker(selector)
+            try:
+                index = selector.findText(table_name)
+                if index >= 0:
+                    selector.setCurrentIndex(index)
+            finally:
+                del blocker
     
     def create_overview_tab(self):
         """Onglet vue d'ensemble"""
@@ -304,6 +319,7 @@ class DataValidationDialog(QDialog):
     def create_data_tabs(self):
         """Onglet contenant les données originales et collectées"""
         layout = QVBoxLayout()
+        layout.addLayout(self.create_table_selector_row("Table à consulter :"))
         data_tabs = QTabWidget()
         self.data_subtabs = data_tabs
 
@@ -357,6 +373,16 @@ class DataValidationDialog(QDialog):
         self.issues_table.itemChanged.connect(self.on_issue_item_changed)
         layout.addWidget(self.issues_table)
 
+        issue_actions = QHBoxLayout()
+        self.btn_publish_selected_issues = QPushButton("Publier sélection")
+        self.btn_publish_selected_issues.clicked.connect(lambda: self.set_selected_issue_publish_state(True))
+        self.btn_block_selected_issues = QPushButton("Bloquer sélection")
+        self.btn_block_selected_issues.clicked.connect(lambda: self.set_selected_issue_publish_state(False))
+        issue_actions.addWidget(self.btn_publish_selected_issues)
+        issue_actions.addWidget(self.btn_block_selected_issues)
+        issue_actions.addStretch()
+        layout.addLayout(issue_actions)
+
         self.issues_hint = QLabel("")
         self.issues_hint.setStyleSheet("color: gray;")
         layout.addWidget(self.issues_hint)
@@ -368,6 +394,7 @@ class DataValidationDialog(QDialog):
     def create_comparison_tab(self):
         """Onglet comparaison et résolution de conflits"""
         layout = QVBoxLayout()
+        layout.addLayout(self.create_table_selector_row("Table à comparer :"))
         
         # Contrôles de comparaison
         ctrl_layout = QHBoxLayout()
@@ -417,24 +444,32 @@ class DataValidationDialog(QDialog):
         ])
         self.table_status.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table_status.itemChanged.connect(self.on_table_publish_item_changed)
+        self.table_status.itemSelectionChanged.connect(self.on_table_status_selection_changed)
         layout.addWidget(self.table_status)
 
         table_action_layout = QHBoxLayout()
-        self.btn_publish_all_tables = QPushButton("Publier toutes")
+        self.btn_publish_all_tables = QPushButton("Publier toutes les tables")
         self.btn_publish_all_tables.clicked.connect(lambda: self.set_all_tables_publish_state(True))
-        self.btn_unpublish_current_table = QPushButton("Retirer table active")
+        self.btn_unpublish_all_tables = QPushButton("Ne publier aucune table")
+        self.btn_unpublish_all_tables.clicked.connect(lambda: self.set_all_tables_publish_state(False))
+        self.btn_publish_current_table = QPushButton("Publier cette table")
+        self.btn_publish_current_table.clicked.connect(self.publish_current_table)
+        self.btn_unpublish_current_table = QPushButton("Ne pas publier cette table")
         self.btn_unpublish_current_table.clicked.connect(self.unpublish_current_table)
         table_action_layout.addWidget(self.btn_publish_all_tables)
+        table_action_layout.addWidget(self.btn_unpublish_all_tables)
+        table_action_layout.addWidget(self.btn_publish_current_table)
         table_action_layout.addWidget(self.btn_unpublish_current_table)
         table_action_layout.addStretch()
         layout.addLayout(table_action_layout)
 
         layout.addWidget(QLabel("<b>Lignes retenues pour la table active</b>"))
+        layout.addLayout(self.create_table_selector_row("Table des lignes :"))
 
         batch_layout = QHBoxLayout()
-        self.btn_exclude_selected = QPushButton("Exclure sélection")
+        self.btn_exclude_selected = QPushButton("Exclure lignes sélectionnées")
         self.btn_exclude_selected.clicked.connect(self.exclude_selected_validation_rows)
-        self.btn_include_selected = QPushButton("Réinclure sélection")
+        self.btn_include_selected = QPushButton("Réinclure lignes sélectionnées")
         self.btn_include_selected.clicked.connect(self.include_selected_validation_rows)
         batch_layout.addWidget(self.btn_exclude_selected)
         batch_layout.addWidget(self.btn_include_selected)
@@ -851,6 +886,19 @@ class DataValidationDialog(QDialog):
         self.populate_table_status()
         self.update_overview_stats()
 
+    def on_table_status_selection_changed(self):
+        if self._refreshing_ui:
+            return
+        selected_rows = self.table_status.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        table_item = self.table_status.item(selected_rows[0].row(), 1)
+        if table_item is None:
+            return
+        table_name = table_item.text()
+        if table_name and table_name != self.current_table:
+            self.switch_table(table_name)
+
     def set_all_tables_publish_state(self, publish):
         for table_name in self.full_collected_data:
             self.table_publish_state[table_name] = publish
@@ -859,6 +907,11 @@ class DataValidationDialog(QDialog):
 
     def unpublish_current_table(self):
         self.table_publish_state[self.current_table] = False
+        self.populate_table_status()
+        self.update_overview_stats()
+
+    def publish_current_table(self):
+        self.table_publish_state[self.current_table] = True
         self.populate_table_status()
         self.update_overview_stats()
 
@@ -956,6 +1009,47 @@ class DataValidationDialog(QDialog):
             included.add(data_index)
         else:
             included.discard(data_index)
+        self.populate_table_status()
+        self.update_overview_stats()
+
+    def selected_issue_markers(self):
+        markers = []
+        seen = set()
+        for index in self.issues_table.selectedIndexes():
+            marker_item = self.issues_table.item(index.row(), 0)
+            if marker_item is None:
+                continue
+            marker = marker_item.data(Qt.UserRole)
+            if not marker or marker in seen:
+                continue
+            seen.add(marker)
+            markers.append(marker)
+        return markers
+
+    def set_selected_issue_publish_state(self, publish):
+        markers = self.selected_issue_markers()
+        if not markers:
+            return
+
+        blocker = QSignalBlocker(self.issues_table)
+        try:
+            for table_name, data_index in markers:
+                included = self.included_error_rows.setdefault(table_name, set())
+                if publish:
+                    included.add(data_index)
+                else:
+                    included.discard(data_index)
+
+            for row in range(self.issues_table.rowCount()):
+                item = self.issues_table.item(row, 0)
+                if item is None:
+                    continue
+                marker = item.data(Qt.UserRole)
+                if marker in markers:
+                    item.setCheckState(Qt.Checked if publish else Qt.Unchecked)
+        finally:
+            del blocker
+
         self.populate_table_status()
         self.update_overview_stats()
 
@@ -1130,6 +1224,10 @@ class DataValidationDialog(QDialog):
 
         context = QgsExpressionContext()
         context.appendScope(QgsExpressionContextUtils.globalScope())
+        dataset_errors = BusinessRulesEngine.validate_dataset(
+            self.full_collected_data,
+            self.full_original_data
+        )
 
         self.validation_errors = {}
         for table_name, table_data in self.full_collected_data.items():
@@ -1151,9 +1249,17 @@ class DataValidationDialog(QDialog):
             for data_index, item_data in enumerate(table_data):
                 feat.setAttributes([item_data.get(key) for key in sorted_keys])
                 errors = BusinessRulesEngine.validate_feature(table_name, feat, context=context)
-                if errors:
+                errors.extend(dataset_errors.get(table_name, {}).get(data_index, []))
+                messages = []
+                seen_messages = set()
+                for error in errors:
+                    message = error.get('message') if isinstance(error, dict) else str(error)
+                    if message and message not in seen_messages:
+                        messages.append(message)
+                        seen_messages.add(message)
+                if messages:
                     invalid_count += 1
-                    table_errors[data_index] = [e['message'] for e in errors]
+                    table_errors[data_index] = messages
             self.validation_errors[table_name] = table_errors
 
         self.prune_validation_decisions()
