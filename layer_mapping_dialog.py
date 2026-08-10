@@ -34,6 +34,9 @@ class FieldMappingDialog(QtWidgets.QDialog):
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().setSectionsClickable(True)
         layout.addWidget(self.table)
 
         buttons = QtWidgets.QDialogButtonBox(
@@ -50,6 +53,7 @@ class FieldMappingDialog(QtWidgets.QDialog):
             return
 
         fields = [f.name() for f in self.layer.fields()]
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(fields))
 
         # Champs spécifiques à QGIS qui ne doivent pas être envoyés à l'API par défaut
@@ -78,6 +82,7 @@ class FieldMappingDialog(QtWidgets.QDialog):
             api_name = existing_field_map.get(field_name) or ""
             api_item = QtWidgets.QTableWidgetItem("" if api_name is False else api_name)
             self.table.setItem(i, 2, api_item)
+        self.table.setSortingEnabled(True)
 
     def get_field_map(self):
         """

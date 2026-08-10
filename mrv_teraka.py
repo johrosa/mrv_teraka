@@ -239,8 +239,8 @@ class MrvTeraka:
             self.iface.mainWindow(),
             title,
             Utils.compact_dialog_message(message),
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-            QMessageBox.No
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel
         )
         return reply == QMessageBox.Yes
 
@@ -673,7 +673,7 @@ class MrvTeraka:
                 u'Les correspondances sélectionnées vont remplacer ou ajouter le mapping local '
                 u'pour les couches du projet actuel.\n\nContinuer ?'
             ),
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel
         )
         if reply != QMessageBox.Yes:
@@ -1226,7 +1226,7 @@ class MrvTeraka:
                     self.iface.mainWindow(),
                     self.tr(u'Analyse Projet'),
                     msg,
-                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                    QMessageBox.Yes | QMessageBox.Cancel,
                     QMessageBox.Cancel
                 )
                 if reply == QMessageBox.Yes:
@@ -2410,7 +2410,7 @@ class MrvTeraka:
             self.iface.mainWindow(),
             self.tr(u'Confirmer la migration'),
             self.tr(u"Voulez-vous pousser les données de {count} couches vers la base de données ?").format(count=len(project_endpoints)),
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel
         ) != QMessageBox.Yes:
             return
@@ -2977,22 +2977,15 @@ class MrvTeraka:
         except Exception as exc:
             self.show_error(self.tr(u'Erreur'), exc)
 
-    def compare_project_with_db(self):
+    def compare_project_with_db(self, selected_endpoints=None):
         if not self.dockwidget or not self.check_api_auth():
             return
 
-        selected = self.dockwidget.get_selected_endpoints()
         commune_context = self.build_commune_filters()
-        
-        if selected:
-            requested_endpoints = {
-                name: mapping
-                for name in selected
-                for mapping in [self.get_layer_mapping(name)]
-                if mapping and mapping.get('endpoint')
-            }
-        else:
-            requested_endpoints = self.get_project_layer_endpoints()
+        requested_endpoints = self._requested_api_mappings(
+            selected_endpoints=selected_endpoints,
+            fallback_to_project=True
+        )
 
         if not requested_endpoints:
             self.show_warning(
@@ -3311,7 +3304,7 @@ class MrvTeraka:
                 self.iface.mainWindow(),
                 self.tr(u'Confirmation Fusion'),
                 Utils.compact_dialog_message(f"Résumé des changements:\n{summary}\n\nProcéder?"),
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel
             )
 

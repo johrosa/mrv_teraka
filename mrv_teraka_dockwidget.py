@@ -67,6 +67,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.compareButton.setToolTip("Vérifier les différences entre les sélections et la base centrale")
         self.processProjectButton.setText("Assistant Projet")
         self.processProjectButton.setToolTip("Diagnostiquer les couches, confirmer les mappings et choisir une action")
+        self.hide_embedded_endpoint_picker()
 
         self.autoPrepareButton.setToolTip("Déployer la mission sur Mergin Maps pour le terrain")
         self.autoImportButton.setToolTip("Récupérer les collectes effectuées sur mobile")
@@ -75,7 +76,7 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     def populate_table_lists(self):
         """Remplit la liste des couches disponibles avec des cases à cocher."""
-        if not self.plugin:
+        if not self.plugin or not hasattr(self, 'endpointListWidget'):
             return
         mappings = self.plugin.load_layer_mappings()
         tables = sorted(list(mappings.keys()))
@@ -91,6 +92,13 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self.endpointListWidget.addItem(item)
         
         self.endpointListWidget.blockSignals(False)
+
+    def hide_embedded_endpoint_picker(self):
+        """Masque l'ancien choix fixe; les boutons ouvrent un dialogue dédié."""
+        for widget_name in ('labelEndpoint', 'selectAllEndpointsCheckBox', 'endpointListWidget'):
+            widget = getattr(self, widget_name, None)
+            if widget:
+                widget.hide()
 
     def populate_project_list(self):
         """Remplit la liste des projets Mergin Maps détectés."""
@@ -182,6 +190,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     def on_select_all_endpoints(self, state):
         """Sélectionne ou désélectionne toutes les couches."""
+        if not hasattr(self, 'endpointListWidget'):
+            return
         self.endpointListWidget.blockSignals(True)
         for i in range(self.endpointListWidget.count()):
             item = self.endpointListWidget.item(i)
@@ -191,6 +201,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def get_selected_endpoints(self):
         """Retourne la liste des couches sélectionnées."""
         selected = []
+        if not hasattr(self, 'endpointListWidget'):
+            return selected
         for i in range(self.endpointListWidget.count()):
             item = self.endpointListWidget.item(i)
             if item.checkState() == Qt.Checked:
@@ -214,8 +226,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.saveProjectButton.clicked.connect(self.plugin.save_current_project_configuration)
 
         # Outils Données
-        self.loadDbButton.clicked.connect(self.plugin.load_database_data)
-        self.compareButton.clicked.connect(self.plugin.compare_project_with_db)
+        self.loadDbButton.clicked.connect(self.on_load_db_clicked)
+        self.compareButton.clicked.connect(self.on_compare_clicked)
         self.refreshFromApiButton.clicked.connect(self.on_refresh_from_api_clicked)
         self.processProjectButton.clicked.connect(self.plugin.analyze_and_process_project)
 
@@ -229,7 +241,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.regionComboBox.currentTextChanged.connect(self.on_region_changed)
         self.districtComboBox.currentTextChanged.connect(self.on_district_changed)
         self.selectAllCommunesCheckBox.stateChanged.connect(self.on_select_all_communes)
-        self.selectAllEndpointsCheckBox.stateChanged.connect(self.on_select_all_endpoints)
+        if hasattr(self, 'selectAllEndpointsCheckBox'):
+            self.selectAllEndpointsCheckBox.stateChanged.connect(self.on_select_all_endpoints)
 
         # Configuration
         self.refreshMappingsButton.clicked.connect(self.on_refresh_mappings_clicked)
@@ -288,6 +301,76 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                     "Aucune couche n'a été sélectionnée."
                 )
 
+    def on_load_db_clicked(self):
+        """Open endpoint selection dialog before loading API data into QGIS."""
+        if not self.plugin:
+            return
+
+        mappings = self.plugin.load_layer_mappings()
+        if not mappings:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Erreur",
+                "Aucun endpoint disponible. Synchronisez d'abord les listes API."
+            )
+            return
+
+        from .refresh_layers_dialog import RefreshLayersDialog
+
+        dlg = RefreshLayersDialog(
+            self,
+            layer_mappings=mappings,
+            title="Sélectionner les données à charger",
+            intro="Sélectionnez les endpoints à charger depuis l'API vers QGIS :",
+            item_label="Donnée"
+        )
+        if dlg.exec_():
+            selected = dlg.get_selected_layers()
+            if selected:
+                self.plugin.load_database_data(selected_endpoints=selected)
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Aucune sélection",
+                    "Aucune donnée n'a été sélectionnée."
+                )
+
+    def on_compare_clicked(self):
+        """Open layer/endpoint selection dialog before checking data against the API."""
+        if not self.plugin:
+            return
+
+        mappings = self.plugin.get_project_layer_endpoints()
+        if not mappings:
+            mappings = self.plugin.load_layer_mappings()
+        if not mappings:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Erreur",
+                "Aucune couche ou endpoint configuré n'est disponible."
+            )
+            return
+
+        from .refresh_layers_dialog import RefreshLayersDialog
+
+        dlg = RefreshLayersDialog(
+            self,
+            layer_mappings=mappings,
+            title="Sélectionner les données à vérifier",
+            intro="Sélectionnez les couches ou endpoints à comparer avec la base centrale :",
+            item_label="Couche / donnée"
+        )
+        if dlg.exec_():
+            selected = dlg.get_selected_layers()
+            if selected:
+                self.plugin.compare_project_with_db(selected_endpoints=selected)
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Aucune sélection",
+                    "Aucune donnée n'a été sélectionnée."
+                )
+
     def on_load_project_clicked(self):
         """Ouvre le fichier projet QGIS sélectionné."""
         project_file = self.projectComboBox.currentData()
@@ -324,7 +407,8 @@ class MrvTerakaDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         for group in [self.groupBoxProject, self.groupBoxDB, self.groupBoxMergin]:
             group.setEnabled(True)
 
-        self.endpointListWidget.setEnabled(True)
+        if hasattr(self, 'endpointListWidget'):
+            self.endpointListWidget.setEnabled(True)
 
         # Liste des boutons avec leur accessibilité par rôle
         buttons = [

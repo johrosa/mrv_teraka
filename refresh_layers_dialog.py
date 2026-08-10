@@ -11,9 +11,16 @@ from .layer_mapping_dialog import FieldMappingDialog
 
 
 class RefreshLayersDialog(QtWidgets.QDialog):
-    """Dialog to select layers to refresh and manage their mappings."""
+    """Dialog to select layers/endpoints and manage their mappings."""
 
-    def __init__(self, parent=None, layer_mappings=None):
+    def __init__(
+        self,
+        parent=None,
+        layer_mappings=None,
+        title="Sélectionner les couches à rafraîchir",
+        intro="Sélectionnez les couches à rafraîchir et vérifiez leurs mappings :",
+        item_label="Couche",
+    ):
         super(RefreshLayersDialog, self).__init__(parent)
 
         self.setWindowFlags(
@@ -22,7 +29,7 @@ class RefreshLayersDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowType.WindowMaximizeButtonHint |
             QtCore.Qt.WindowType.WindowCloseButtonHint
         )
-        self.setWindowTitle("Sélectionner les couches à rafraîchir")
+        self.setWindowTitle(title)
         self.resize(800, 420)
 
         self.layer_mappings = layer_mappings or {}
@@ -31,28 +38,30 @@ class RefreshLayersDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
 
         # Title label
-        title = QtWidgets.QLabel(
-            "Sélectionnez les couches à rafraîchir et vérifiez leurs mappings :"
-        )
-        layout.addWidget(title)
+        title_label = QtWidgets.QLabel(intro)
+        title_label.setWordWrap(True)
+        layout.addWidget(title_label)
 
         # Table with layers and mappings
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
-            "Sélectionner",
-            "Couche",
+            item_label,
             "Endpoint",
             "Champ PK",
             "Champ Géométrie",
             "Actions"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().setSectionsClickable(True)
+        self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
         layout.addWidget(self.table)
 
         # Buttons row
@@ -78,52 +87,47 @@ class RefreshLayersDialog(QtWidgets.QDialog):
         layout.addWidget(self.button_box)
 
         self._populate_table()
+        self.select_all()
 
     def _populate_table(self):
         """Populate the table with layer mappings."""
         self.table.setRowCount(len(self.layer_mappings))
+        self.table.setSortingEnabled(False)
 
         for i, (layer_name, mapping) in enumerate(self.layer_mappings.items()):
-            # Column 0: Checkbox
-            chk = QtWidgets.QTableWidgetItem()
-            chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            chk.setCheckState(Qt.Checked)
-            self.table.setItem(i, 0, chk)
-
-            # Column 1: Layer name
+            # Column 0: Layer name
             name_item = QtWidgets.QTableWidgetItem(layer_name)
             name_item.setFlags(name_item.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(i, 1, name_item)
+            self.table.setItem(i, 0, name_item)
 
-            # Column 2: Endpoint
+            # Column 1: Endpoint
             endpoint = mapping.get('endpoint', '—')
             endpoint_item = QtWidgets.QTableWidgetItem(endpoint)
             endpoint_item.setFlags(endpoint_item.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(i, 2, endpoint_item)
+            self.table.setItem(i, 1, endpoint_item)
 
-            # Column 3: PK field
+            # Column 2: PK field
             pk_field = mapping.get('pk_field', 'id')
             pk_item = QtWidgets.QTableWidgetItem(pk_field)
             pk_item.setFlags(pk_item.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(i, 3, pk_item)
+            self.table.setItem(i, 2, pk_item)
 
-            # Column 4: Geometry field
+            # Column 3: Geometry field
             geom_field = mapping.get('geom_field')
             geom_text = geom_field if geom_field else "Aucune"
             geom_item = QtWidgets.QTableWidgetItem(geom_text)
             geom_item.setFlags(geom_item.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(i, 4, geom_item)
+            self.table.setItem(i, 3, geom_item)
 
-            # Column 5: Edit button
+            # Column 4: Edit button
             btn = QtWidgets.QPushButton("Modifier...")
             btn.setToolTip(f"Modifier le mapping pour {layer_name}")
-            btn.clicked.connect(lambda checked, row=i: self._edit_mapping(row))
-            self.table.setCellWidget(i, 5, btn)
+            btn.clicked.connect(lambda checked, name=layer_name: self._edit_mapping(name))
+            self.table.setCellWidget(i, 4, btn)
+        self.table.setSortingEnabled(True)
 
-    def _edit_mapping(self, row):
+    def _edit_mapping(self, layer_name):
         """Open dialog to edit mapping for the given row."""
-        layer_names = list(self.layer_mappings.keys())
-        layer_name = layer_names[row]
         mapping = self.layer_mappings[layer_name]
 
         # Create a simple dialog for editing mapping
@@ -136,30 +140,34 @@ class RefreshLayersDialog(QtWidgets.QDialog):
         if dlg.exec_():
             updated_mapping = dlg.get_mapping()
             self.layer_mappings[layer_name] = updated_mapping
-            self._refresh_row(row)
+            self._refresh_row(layer_name)
 
-    def _refresh_row(self, row):
+    def _refresh_row(self, layer_name):
         """Refresh a row in the table after editing."""
-        layer_names = list(self.layer_mappings.keys())
-        layer_name = layer_names[row]
         mapping = self.layer_mappings[layer_name]
+        row = self._row_for_layer_name(layer_name)
+        if row < 0:
+            return
 
-        self.table.item(row, 2).setText(mapping.get('endpoint', '—'))
-        self.table.item(row, 3).setText(mapping.get('pk_field', 'id'))
+        self.table.item(row, 1).setText(mapping.get('endpoint', '—'))
+        self.table.item(row, 2).setText(mapping.get('pk_field', 'id'))
         geom_text = mapping.get('geom_field') if mapping.get('geom_field') else "Aucune"
-        self.table.item(row, 4).setText(geom_text)
+        self.table.item(row, 3).setText(geom_text)
 
     def select_all(self):
         """Select all layers."""
-        for i in range(self.table.rowCount()):
-            item = self.table.item(i, 0)
-            item.setCheckState(Qt.Checked)
+        self.table.selectAll()
 
     def deselect_all(self):
         """Deselect all layers."""
-        for i in range(self.table.rowCount()):
-            item = self.table.item(i, 0)
-            item.setCheckState(Qt.Unchecked)
+        self.table.clearSelection()
+
+    def _row_for_layer_name(self, layer_name):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.text() == layer_name:
+                return row
+        return -1
 
     def get_selected_layers(self):
         """
@@ -167,10 +175,11 @@ class RefreshLayersDialog(QtWidgets.QDialog):
         { 'layer_name': {'endpoint': '...', 'pk_field': '...', 'geom_field': '...'} }
         """
         selected = {}
-        layer_names = list(self.layer_mappings.keys())
-        for i in range(self.table.rowCount()):
-            if self.table.item(i, 0).checkState() == Qt.Checked:
-                layer_name = layer_names[i]
+        rows = sorted({index.row() for index in self.table.selectionModel().selectedRows()})
+        for row in rows:
+            item = self.table.item(row, 0)
+            layer_name = item.text() if item else None
+            if layer_name in self.layer_mappings:
                 selected[layer_name] = self.layer_mappings[layer_name]
         return selected
 

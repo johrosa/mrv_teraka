@@ -10,7 +10,7 @@ from qgis.PyQt.QtWidgets import (
     QTabWidget, QTableWidget, QTableWidgetItem, QComboBox,
     QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QProgressBar,
     QHeaderView, QCheckBox, QTextEdit, QGroupBox, QFormLayout, QWidget,
-    QAbstractItemView
+    QAbstractItemView, QApplication
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import QgsProject, QgsVectorLayer, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsFeature, QgsField, QgsFields
@@ -267,6 +267,26 @@ class DataValidationDialog(QDialog):
             self.populate_comparison_controls()
         self.update_overview_stats()
 
+    def create_loading_bar(self, text="Chargement..."):
+        bar = QProgressBar()
+        bar.setRange(0, 0)
+        bar.setFormat(text)
+        bar.setTextVisible(True)
+        bar.hide()
+        return bar
+
+    def set_table_loading(self, table, loading_bar, is_loading):
+        if not table or not loading_bar:
+            return
+        loading_bar.setVisible(is_loading)
+        table.setVisible(not is_loading)
+        QApplication.processEvents()
+
+    def enable_table_sorting(self, table):
+        table.setSortingEnabled(True)
+        table.horizontalHeader().setSortIndicatorShown(True)
+        table.horizontalHeader().setSectionsClickable(True)
+
     def switch_table(self, table_name):
         """Change la table active et rafraîchit l'UI."""
         if not table_name or table_name == self.current_table:
@@ -367,6 +387,7 @@ class DataValidationDialog(QDialog):
         self.table_before.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_before.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table_before.setColumnCount(0)
+        self.enable_table_sorting(self.table_before)
         data_tabs.addTab(self.table_before, "Données Originales (Base)")
 
         # Sous-onglet: Collecté (Terrain)
@@ -375,8 +396,11 @@ class DataValidationDialog(QDialog):
         self.table_collected.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_collected.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table_collected.setColumnCount(0)
+        self.enable_table_sorting(self.table_collected)
         data_tabs.addTab(self.table_collected, "Données Collectées (Terrain)")
 
+        self.data_loading_bar = self.create_loading_bar("Chargement des données...")
+        layout.addWidget(self.data_loading_bar)
         layout.addWidget(data_tabs)
 
         pager_layout = QHBoxLayout()
@@ -409,7 +433,10 @@ class DataValidationDialog(QDialog):
         self.issues_table.setColumnCount(6)
         self.issues_table.setHorizontalHeaderLabels(["Publier", "Table", "Ligne", "ID", "Type", "Problème"])
         self.issues_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.enable_table_sorting(self.issues_table)
         self.issues_table.itemChanged.connect(self.on_issue_item_changed)
+        self.issues_loading_bar = self.create_loading_bar("Chargement des problèmes...")
+        layout.addWidget(self.issues_loading_bar)
         layout.addWidget(self.issues_table)
 
         issue_actions = QHBoxLayout()
@@ -462,6 +489,7 @@ class DataValidationDialog(QDialog):
         self.table_diff.setColumnCount(4)
         self.table_diff.setHorizontalHeaderLabels(["Champ", "Base", "Terrain", "Valeur finale"])
         self.table_diff.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.enable_table_sorting(self.table_diff)
         layout.addWidget(self.table_diff)
 
         widget = QGroupBox("Résolution des Conflits")
@@ -482,6 +510,7 @@ class DataValidationDialog(QDialog):
             "Publier", "Table", "Statut", "Retenues", "Problèmes", "Exclues", "Total"
         ])
         self.table_status.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.enable_table_sorting(self.table_status)
         self.table_status.itemChanged.connect(self.on_table_publish_item_changed)
         self.table_status.itemSelectionChanged.connect(self.on_table_status_selection_changed)
         layout.addWidget(self.table_status)
@@ -516,6 +545,8 @@ class DataValidationDialog(QDialog):
         layout.addLayout(batch_layout)
 
         self.table_validation = self._setup_validation_table()
+        self.validation_loading_bar = self.create_loading_bar("Chargement des lignes...")
+        layout.addWidget(self.validation_loading_bar)
         layout.addWidget(self.table_validation)
 
         pager_layout = QHBoxLayout()
@@ -549,6 +580,7 @@ class DataValidationDialog(QDialog):
         table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         table.setColumnCount(6)
         table.setHorizontalHeaderLabels(["ID", "Statut", "Changements", "Type", "Action", "Commentaire"])
+        self.enable_table_sorting(table)
         table.itemSelectionChanged.connect(self.on_validation_row_selected)
 
         table.resizeColumnsToContents()
@@ -558,7 +590,9 @@ class DataValidationDialog(QDialog):
         """Remplit une ligne du tableau de validation."""
         data_index = row if data_index is None else data_index
         item_id = item.get('id', row)
-        table.setItem(row, 0, QTableWidgetItem(str(item_id)))
+        id_item = QTableWidgetItem(str(item_id))
+        id_item.setData(Qt.UserRole, data_index)
+        table.setItem(row, 0, id_item)
 
         is_excluded = data_index in self.excluded_rows.get(self.current_table, set())
         table_published = self.table_publish_state.get(self.current_table, True)
@@ -660,18 +694,20 @@ class DataValidationDialog(QDialog):
             return
 
         row = selected_rows[0].row()
-        data_index = self.current_page * self.page_size + row
-        if 0 <= data_index < len(self.collected_data):
+        id_item = self.table_validation.item(row, 0)
+        data_index = id_item.data(Qt.UserRole) if id_item else None
+        if isinstance(data_index, int) and 0 <= data_index < len(self.collected_data):
             self.show_row_details(data_index)
 
     def selected_validation_data_indices(self):
         rows = sorted({index.row() for index in self.table_validation.selectedIndexes()})
-        start = self.current_page * self.page_size
-        return [
-            start + row
-            for row in rows
-            if 0 <= start + row < len(self.collected_data)
-        ]
+        indices = []
+        for row in rows:
+            id_item = self.table_validation.item(row, 0)
+            data_index = id_item.data(Qt.UserRole) if id_item else None
+            if isinstance(data_index, int) and 0 <= data_index < len(self.collected_data):
+                indices.append(data_index)
+        return indices
 
     def exclude_selected_validation_rows(self):
         indices = self.selected_validation_data_indices()
@@ -740,10 +776,12 @@ class DataValidationDialog(QDialog):
 
     def populate_table_from_data(self, table, data, page=0):
         """Remplit une table à partir des données"""
+        table.setSortingEnabled(False)
         table.clearContents()
         if not data:
             table.setRowCount(0)
             table.setColumnCount(0)
+            table.setSortingEnabled(True)
             return
         
         first_item = data[0]
@@ -766,6 +804,7 @@ class DataValidationDialog(QDialog):
                 table.setItem(row, col, table_item)
         
         table.resizeColumnsToContents()
+        table.setSortingEnabled(True)
     
     def populate_data(self):
         """Remplit les tables avec les données de la table active."""
@@ -883,6 +922,7 @@ class DataValidationDialog(QDialog):
     def populate_table_status(self):
         blocker = QSignalBlocker(self.table_status)
         try:
+            self.table_status.setSortingEnabled(False)
             table_names = sorted(self.full_collected_data.keys())
             self.table_status.clearContents()
             self.table_status.setRowCount(len(table_names))
@@ -914,6 +954,7 @@ class DataValidationDialog(QDialog):
                     self.table_status.setItem(row, col, item)
             self.table_status.resizeColumnsToContents()
         finally:
+            self.table_status.setSortingEnabled(True)
             del blocker
 
     def on_table_publish_item_changed(self, item):
@@ -1005,8 +1046,18 @@ class DataValidationDialog(QDialog):
 
     def populate_issues_table(self):
         """Remplit la vue globale des lignes problématiques."""
+        estimated_rows = sum(
+            len(self.validation_errors.get(table_name, {}))
+            for table_name, publish in self.table_publish_state.items()
+            if publish
+        )
+        show_loading = estimated_rows > self.large_table_threshold
+        if show_loading:
+            self.set_table_loading(self.issues_table, self.issues_loading_bar, True)
+
         blocker = QSignalBlocker(self.issues_table)
         try:
+            self.issues_table.setSortingEnabled(False)
             rows = []
             for table_name in sorted(self.full_collected_data.keys()):
                 if not self.table_publish_state.get(table_name, True):
@@ -1051,7 +1102,10 @@ class DataValidationDialog(QDialog):
                 else:
                     self.issues_hint.setText("Aucune anomalie détectée. Les lignes correctes peuvent être validées.")
         finally:
+            self.issues_table.setSortingEnabled(True)
             del blocker
+            if show_loading:
+                self.set_table_loading(self.issues_table, self.issues_loading_bar, False)
 
     def on_issue_item_changed(self, item):
         if self._refreshing_ui or item is None or item.column() != 0:
@@ -1155,12 +1209,17 @@ class DataValidationDialog(QDialog):
         visible_data = self.original_data if self.data_subtabs.currentIndex() == 0 else self.collected_data
         self.data_page = min(self.data_page, self._max_page(visible_data))
         table = self.table_before if self.data_subtabs.currentIndex() == 0 else self.table_collected
+        show_loading = len(visible_data) > self.large_table_threshold
+        if show_loading:
+            self.set_table_loading(self.data_subtabs, self.data_loading_bar, True)
 
         blocker = QSignalBlocker(table)
         try:
             self.populate_table_from_data(table, visible_data, self.data_page)
         finally:
             del blocker
+            if show_loading:
+                self.set_table_loading(self.data_subtabs, self.data_loading_bar, False)
 
         start, end = self._page_bounds(visible_data, self.data_page)
         total = len(visible_data)
@@ -1184,16 +1243,23 @@ class DataValidationDialog(QDialog):
         self.current_page = min(self.current_page, self._max_page(self.collected_data))
         start, end = self._page_bounds(self.collected_data, self.current_page)
         page_data = self.collected_data[start:end]
+        show_loading = len(self.collected_data) > self.large_table_threshold
+        if show_loading:
+            self.set_table_loading(self.table_validation, self.validation_loading_bar, True)
 
         blocker = QSignalBlocker(self.table_validation)
         try:
+            self.table_validation.setSortingEnabled(False)
             self.table_validation.clearContents()
             self.table_validation.setRowCount(len(page_data))
             for row, item in enumerate(page_data):
                 self._fill_validation_row(self.table_validation, row, item, start + row)
             self.table_validation.resizeColumnsToContents()
         finally:
+            self.table_validation.setSortingEnabled(True)
             del blocker
+            if show_loading:
+                self.set_table_loading(self.table_validation, self.validation_loading_bar, False)
 
         total = len(self.collected_data)
         self.validation_page_label.setText(f"Lignes {start + 1 if total else 0}-{end} sur {total}")
@@ -1354,6 +1420,7 @@ class DataValidationDialog(QDialog):
 
         self.current_record_index = index
         self.table_diff.blockSignals(True)
+        self.table_diff.setSortingEnabled(False)
         self.table_diff.setRowCount(0)
 
         collected_item = self.collected_data[index]
@@ -1393,6 +1460,7 @@ class DataValidationDialog(QDialog):
                 final_item.setBackground(QColor(255, 255, 200)) # Highlight
             self.table_diff.setItem(row, 3, final_item)
 
+        self.table_diff.setSortingEnabled(True)
         self.table_diff.blockSignals(False)
 
     def on_diff_item_changed(self, item):
@@ -1521,7 +1589,7 @@ class DataValidationDialog(QDialog):
             self,
             "Confirmer validation multi-tables",
             self.validation_final_summary(),
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel
         )
         if reply == QMessageBox.Yes:
@@ -1536,7 +1604,7 @@ class DataValidationDialog(QDialog):
             f"Valider les lignes correctes de {counts['tables']} table(s) ?\n"
             f"{counts['ok']} ligne(s) seront retenues."
             + (f"\n{counts['errors']} ligne(s) avec anomalie seront exclues." if counts['errors'] else ""),
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel
         )
         
