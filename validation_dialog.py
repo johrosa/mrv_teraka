@@ -131,8 +131,8 @@ class DataValidationDialog(QDialog):
         self.original_data = self.full_original_data.get(self.current_table, [])
 
         self.validated_data = []
-        self.setWindowTitle("Validation simplifiée des données collectées")
-        self.setGeometry(100, 100, 800, 500)
+        self.setWindowTitle("Validation des données terrain")
+        self.setGeometry(80, 80, 1100, 720)
         self.initUI()
     
     def initUI(self):
@@ -158,27 +158,25 @@ class DataValidationDialog(QDialog):
         title.setFont(title_font)
         layout.addWidget(title)
         
-        desc = QLabel("Traitez les anomalies, puis validez les lignes correctes sur une ou plusieurs tables.")
+        desc = QLabel("1. Vérifiez les lignes retenues  2. Traitez les problèmes  3. Validez pour publier.")
         desc.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(desc)
+
+        self.status_strip = QLabel("")
+        self.status_strip.setWordWrap(True)
+        self.status_strip.setStyleSheet(
+            "padding: 6px; border: 1px solid #c8d3df; background: #f3f7fb; font-weight: bold;"
+        )
+        layout.addWidget(self.status_strip)
         
         # --- Onglets ---
         self.tabs = QTabWidget()
-        
-        # Onglet 1: Vue d'ensemble
-        self.tabs.addTab(self.create_overview_tab(), "Résumé")
 
-        # Onglet 2: Problèmes à traiter
-        self.tabs.addTab(self.create_issues_tab(), "Problèmes")
-        
-        # Onglet 3: Données avant/après
-        self.tabs.addTab(self.create_data_tabs(), "Données")
-        
-        # Onglet 4: Comparaison
-        self.tabs.addTab(self.create_comparison_tab(), "Comparaison")
-        
-        # Onglet 5: Validation ligne par ligne
-        self.tabs.addTab(self.create_validation_tab(), "Validation")
+        self.tabs.addTab(self.create_validation_tab(), "1. Validation")
+        self.tabs.addTab(self.create_issues_tab(), "2. Problèmes")
+        self.tabs.addTab(self.create_comparison_tab(), "3. Comparaison")
+        self.tabs.addTab(self.create_data_tabs(), "4. Données")
+        self.tabs.addTab(self.create_overview_tab(), "5. Résumé")
         self.tabs.currentChanged.connect(self.on_main_tab_changed)
         
         layout.addWidget(self.tabs)
@@ -191,10 +189,10 @@ class DataValidationDialog(QDialog):
         # --- Boutons d'action ---
         button_layout = QHBoxLayout()
         
-        self.btn_auto_merge = QPushButton("Valider les lignes correctes")
+        self.btn_auto_merge = QPushButton("Valider lignes correctes")
         self.btn_auto_merge.clicked.connect(self.auto_merge)
         
-        self.btn_manual_review = QPushButton("Voir les problèmes")
+        self.btn_manual_review = QPushButton("Traiter les problèmes")
         self.btn_manual_review.clicked.connect(self.manual_review)
         
         self.btn_export_report = QPushButton("Exporter rapport")
@@ -208,7 +206,7 @@ class DataValidationDialog(QDialog):
         self.btn_cancel = QPushButton("Annuler")
         self.btn_cancel.clicked.connect(self.reject)
         
-        self.btn_validate = QPushButton("Valider les tables retenues")
+        self.btn_validate = QPushButton("Valider et fermer")
         self.btn_validate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.btn_validate.setDefault(True)  # Permet d'utiliser 'Entrée'
         self.btn_validate.clicked.connect(self.accept)
@@ -238,7 +236,7 @@ class DataValidationDialog(QDialog):
 
         # Rafraîchir toutes les vues
         self.populate_data()
-        self.tabs.setCurrentIndex(0) # Revenir au résumé
+        self.tabs.setCurrentIndex(0)
     
     def create_overview_tab(self):
         """Onglet vue d'ensemble"""
@@ -403,10 +401,7 @@ class DataValidationDialog(QDialog):
     def create_validation_tab(self):
         """Onglet validation ligne par ligne"""
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Validation détaillée - Sélectionnez une ou plusieurs lignes:</b>"))
-
-        self.table_validation = self._setup_validation_table()
-        layout.addWidget(self.table_validation)
+        layout.addWidget(QLabel("<b>Lignes retenues pour publication</b>"))
 
         batch_layout = QHBoxLayout()
         self.btn_exclude_selected = QPushButton("Exclure sélection")
@@ -417,6 +412,9 @@ class DataValidationDialog(QDialog):
         batch_layout.addWidget(self.btn_include_selected)
         batch_layout.addStretch()
         layout.addLayout(batch_layout)
+
+        self.table_validation = self._setup_validation_table()
+        layout.addWidget(self.table_validation)
 
         pager_layout = QHBoxLayout()
         self.validation_prev_button = QPushButton("Précédent")
@@ -738,6 +736,22 @@ class DataValidationDialog(QDialog):
         else:
             self.validation_status_label.setText("<b style='color:#1b5e20'>Prêt pour validation</b>")
 
+        status_color = "#b00020" if global_counts['errors'] else "#1b5e20"
+        status_text = "Anomalies à traiter" if global_counts['errors'] else "Prêt pour validation"
+        self.status_strip.setText(
+            "<span style='color:{color}'>{status}</span> | "
+            "Table active: {table} | Tables: {tables} | Retenues: {ok} | "
+            "Problèmes: {errors} | Exclues: {excluded}".format(
+                color=status_color,
+                status=status_text,
+                table=self.current_table,
+                tables=global_counts['tables'],
+                ok=global_counts['ok'],
+                errors=global_counts['errors'],
+                excluded=global_counts['excluded'],
+            )
+        )
+
         if total_collected > self.large_table_threshold:
             self.large_table_label.setText(
                 f"Table volumineuse : affichage paginé à {self.page_size} lignes."
@@ -806,19 +820,23 @@ class DataValidationDialog(QDialog):
         if index is None:
             index = self.tabs.currentIndex()
 
-        if index == 1:
+        if index == 0:
+            self.populate_validation_page()
+            self._loaded_tabs.add(index)
+        elif index == 1:
             self.populate_issues_table()
             self._loaded_tabs.add(index)
         elif index == 2:
-            self.populate_data_tables_page()
-            self._loaded_tabs.add(index)
-        elif index == 3:
             self.populate_comparison_controls()
             if self.collected_data:
                 self.show_comparison(self.record_spin.value() - 1)
             self._loaded_tabs.add(index)
+        elif index == 3:
+            self.populate_data_tables_page()
+            self._loaded_tabs.add(index)
         elif index == 4:
-            self.populate_validation_page()
+            self.update_overview_stats()
+            self.generate_recommendations()
             self._loaded_tabs.add(index)
 
     def _page_bounds(self, data, page):
