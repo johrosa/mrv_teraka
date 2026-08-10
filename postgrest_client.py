@@ -443,14 +443,44 @@ class PostgREST:
         payload = data if isinstance(data, list) else [data]
         headers = {}
         endpoint, params = self._split_endpoint_params(table)
+        conflict_field = on_conflict or params.get('on_conflict')
         if upsert:
             # Header PostgREST pour support Upsert
             headers['Prefer'] = 'resolution=merge-duplicates'
-            conflict_field = on_conflict or params.get('on_conflict') or self._infer_uuid_conflict_field(endpoint, payload)
+            conflict_field = conflict_field or self._infer_uuid_conflict_field(endpoint, payload)
             if conflict_field:
                 params['on_conflict'] = conflict_field
 
+        payload = self._normalize_batch_object_keys(payload, conflict_field=conflict_field)
         return self._make_request('POST', endpoint, params=params or None, data=payload, show_error_ui=show_error_ui, headers=headers)
+
+    @staticmethod
+    def _normalize_batch_object_keys(payload: List[Dict[str, Any]], conflict_field: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        PostgREST exige que tous les objets d'un POST batch aient les mêmes clés.
+        Les lignes construites depuis QGIS peuvent varier selon les champs vides
+        ou optionnels; on rend donc le batch rectangulaire avant l'envoi.
+        """
+        if not isinstance(payload, list) or len(payload) <= 1:
+            return payload
+        if not all(isinstance(row, dict) for row in payload):
+            return payload
+
+        conflict_field = str(conflict_field or '').lower()
+        rows = [dict(row) for row in payload]
+
+        # Si l'upsert est basé sur un UUID, ne pas garder id seulement sur
+        # certaines lignes: id=NULL force PostgreSQL à recevoir NULL au lieu
+        # de déclencher une valeur par défaut.
+        if conflict_field != 'id' and any(row.get('id') in (None, '') for row in rows):
+            for row in rows:
+                row.pop('id', None)
+
+        keys = sorted({key for row in rows for key in row.keys()})
+        return [
+            {key: (None if row.get(key) == '' else row.get(key)) for key in keys}
+            for row in rows
+        ]
     
     def update(
         self,

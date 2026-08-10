@@ -924,6 +924,7 @@ class DataValidationDialog(QDialog):
             return
         self.table_publish_state[table_name] = item.checkState() == Qt.Checked
         self.populate_table_status()
+        self.populate_issues_table()
         self.update_overview_stats()
 
     def on_table_status_selection_changed(self):
@@ -943,16 +944,19 @@ class DataValidationDialog(QDialog):
         for table_name in self.full_collected_data:
             self.table_publish_state[table_name] = publish
         self.populate_table_status()
+        self.populate_issues_table()
         self.update_overview_stats()
 
     def unpublish_current_table(self):
         self.table_publish_state[self.current_table] = False
         self.populate_table_status()
+        self.populate_issues_table()
         self.update_overview_stats()
 
     def publish_current_table(self):
         self.table_publish_state[self.current_table] = True
         self.populate_table_status()
+        self.populate_issues_table()
         self.update_overview_stats()
 
     def update_overview_stats(self):
@@ -1005,6 +1009,8 @@ class DataValidationDialog(QDialog):
         try:
             rows = []
             for table_name in sorted(self.full_collected_data.keys()):
+                if not self.table_publish_state.get(table_name, True):
+                    continue
                 table_errors = self.validation_errors.get(table_name, {})
                 for data_index, messages in sorted(table_errors.items()):
                     item = self.full_collected_data.get(table_name, [])[data_index]
@@ -1033,7 +1039,17 @@ class DataValidationDialog(QDialog):
                     "Les lignes en anomalie sont bloquées par défaut. Cochez Publier seulement après correction ou décision métier."
                 )
             else:
-                self.issues_hint.setText("Aucune anomalie détectée. Les lignes correctes peuvent être validées.")
+                hidden_count = sum(
+                    len(self.validation_errors.get(table_name, {}))
+                    for table_name, publish in self.table_publish_state.items()
+                    if not publish
+                )
+                if hidden_count:
+                    self.issues_hint.setText(
+                        "Aucune anomalie sur les tables cochées. Les problèmes des tables non sélectionnées sont masqués."
+                    )
+                else:
+                    self.issues_hint.setText("Aucune anomalie détectée. Les lignes correctes peuvent être validées.")
         finally:
             del blocker
 

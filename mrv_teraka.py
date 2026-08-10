@@ -2548,6 +2548,7 @@ class MrvTeraka:
             '42703': "Colonne introuvable dans la table ou la vue PostgREST.",
             '42P01': "Table ou vue introuvable dans le schéma exposé.",
             'PGRST204': "Colonne introuvable dans le cache de schéma PostgREST. Recharger le cache ou vérifier le mapping.",
+            'PGRST102': "Batch invalide: toutes les lignes envoyées doivent avoir les mêmes colonnes.",
         }
         return explanations.get(str(code or ''), "")
 
