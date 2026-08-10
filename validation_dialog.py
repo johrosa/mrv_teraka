@@ -132,6 +132,7 @@ class DataValidationDialog(QDialog):
         }
         self.table_selectors = []
         self.page_size_controls = []
+        self._original_index_cache = {}
 
         self.collected_data = self.full_collected_data.get(self.current_table, [])
         self.original_data = self.full_original_data.get(self.current_table, [])
@@ -673,13 +674,34 @@ class DataValidationDialog(QDialog):
         normalized = _normalize_uuid(value)
         return key_field.lower(), normalized or str(value)
 
+    def original_index_for_table(self, table_name=None, original_data=None):
+        table_name = table_name or self.current_table
+        if original_data is not None:
+            cache_key = (table_name, id(original_data))
+            rows = original_data
+        else:
+            cache_key = (table_name, id(self.full_original_data.get(table_name, [])))
+            rows = self.full_original_data.get(table_name, [])
+
+        cached = self._original_index_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        index = {}
+        for row in rows or []:
+            key = self.normalized_row_key(row, table_name=table_name)
+            if key and key not in index:
+                index[key] = row
+        self._original_index_cache[cache_key] = index
+        return index
+
     def original_for_item(self, item, fallback_index=None, table_name=None, original_data=None):
         original_rows = self.original_data if original_data is None else original_data
         item_key = self.normalized_row_key(item, table_name=table_name)
         if item_key:
-            for original in original_rows:
-                if self.normalized_row_key(original, table_name=table_name) == item_key:
-                    return original
+            original = self.original_index_for_table(table_name=table_name, original_data=original_rows).get(item_key)
+            if original is not None:
+                return original
         if fallback_index is not None and 0 <= fallback_index < len(original_rows):
             return original_rows[fallback_index]
         return None

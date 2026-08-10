@@ -363,7 +363,8 @@ class PostgREST:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         auto_paginate: bool = True,
-        page_size: int = 5000
+        page_size: int = 5000,
+        show_error_ui: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Récupère des enregistrements d'une table avec support optionnel de la pagination automatique.
@@ -377,6 +378,7 @@ class PostgREST:
             offset: Offset initial.
             auto_paginate: Si True, récupère toutes les pages jusqu'à la limite.
             page_size: Taille de chaque page pour la pagination.
+            show_error_ui: Si False, ne tente pas d'ouvrir de dialogue d'erreur.
         
         Returns:
             Liste consolidée des enregistrements.
@@ -400,7 +402,7 @@ class PostgREST:
             params['limit'] = str(current_limit)
             params['offset'] = str(current_offset)
 
-            result = self._make_request('GET', table, params=params, show_error_ui=True)
+            result = self._make_request('GET', table, params=params, show_error_ui=show_error_ui)
             page_data = result if isinstance(result, list) else [result] if result else []
 
             if not page_data:

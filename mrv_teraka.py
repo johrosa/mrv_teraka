@@ -2935,33 +2935,81 @@ class MrvTeraka:
             )
             return
 
-        try:
-            updated_count = 0
-            skipped_count = 0
-            for layer_name, mapping in requested_endpoints.items():
+        request_items = []
+        skipped_before_fetch = 0
+        for layer_name, mapping in requested_endpoints.items():
+            endpoint_value = mapping['endpoint']
+            if self.is_system_endpoint(layer_name) or self.is_system_endpoint(endpoint_value):
+                skipped_before_fetch += 1
+                continue
+            if update_existing_only and not self._find_existing_api_layer(layer_name, endpoint_value):
+                skipped_before_fetch += 1
+                continue
+            request_items.append({
+                'layer_name': layer_name,
+                'mapping': mapping,
+                'filters': self.build_sector_filters(mapping, commune_context),
+            })
+
+        if not request_items:
+            self.show_warning(self.tr(u'Erreur'), self.tr(u'Aucune table exploitable dans la sélection.'))
+            return
+
+        action_label = self.tr(u'Actualisation') if update_existing_only else self.tr(u'Chargement')
+        self.dockwidget.set_status_message(f"{action_label} API en cours...", color="blue")
+        if hasattr(self.dockwidget, 'loadDbButton'):
+            self.dockwidget.loadDbButton.setEnabled(False)
+        if hasattr(self.dockwidget, 'refreshFromApiButton'):
+            self.dockwidget.refreshFromApiButton.setEnabled(False)
+
+        def fetch_task(worker):
+            fetched = []
+            skipped = skipped_before_fetch
+            total = len(request_items)
+            for i, item in enumerate(request_items):
+                if worker.is_cancelled:
+                    return None
+                mapping = item['mapping']
                 endpoint_value = mapping['endpoint']
-                if self.is_system_endpoint(layer_name) or self.is_system_endpoint(endpoint_value):
-                    skipped_count += 1
-                    continue
-                filters = self.build_sector_filters(mapping, commune_context)
-                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint_value, filters=filters, page_size=5000)
+                worker.update_progress(int((i / total) * 90), f"{action_label} {endpoint_value}...")
+                filters = item['filters']
+                db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(
+                    endpoint_value,
+                    filters=filters,
+                    page_size=5000,
+                    show_error_ui=False
+                )
+                if db_data:
+                    fetched.append(dict(item, db_data=db_data))
+                else:
+                    skipped += 1
+            worker.update_progress(100, f"{action_label} API terminé.")
+            return {'fetched': fetched, 'skipped': skipped}
+
+        def on_finished(result):
+            if hasattr(self.dockwidget, 'loadDbButton'):
+                self.dockwidget.loadDbButton.setEnabled(True)
+            if hasattr(self.dockwidget, 'refreshFromApiButton'):
+                self.dockwidget.refreshFromApiButton.setEnabled(True)
+            if not result:
+                return
+
+            updated_count = 0
+            skipped_count = int(result.get('skipped') or 0)
+            for item in result.get('fetched', []):
+                layer_name = item['layer_name']
+                mapping = item['mapping']
+                endpoint_value = mapping['endpoint']
                 display_name = f"{layer_name} ({endpoint_value})"
                 geom_field = mapping.get('geom_field', 'geom')
                 existing_layer = self._find_existing_api_layer(layer_name, endpoint_value)
-
                 if update_existing_only and not existing_layer:
                     skipped_count += 1
                     continue
-
-                if not db_data:
-                    skipped_count += 1
-                    continue
-
-                new_layer = self._create_api_layer_from_data(db_data, display_name, geom_field, endpoint_value)
+                new_layer = self._create_api_layer_from_data(item['db_data'], display_name, geom_field, endpoint_value)
                 if not new_layer or not new_layer.isValid():
                     skipped_count += 1
                     continue
-
                 self._replace_or_add_api_layer(new_layer, existing_layer, endpoint_value, geom_field, mapping)
                 updated_count += 1
 
@@ -2970,12 +3018,26 @@ class MrvTeraka:
             message = self.tr(u'{0} couche(s) {1} depuis l\'API.').format(updated_count, action)
             if skipped_count:
                 message += self.tr(u'\n{0} table(s) ignorée(s): aucune couche existante ou aucune donnée disponible.').format(skipped_count)
-            self.show_info(
-                title,
-                message
-            )
-        except Exception as exc:
-            self.show_error(self.tr(u'Erreur'), exc)
+            self.dockwidget.set_status_message(message.split('\n', 1)[0], color="green")
+            self.show_info(title, message)
+
+        def on_error(exc, tb):
+            if hasattr(self.dockwidget, 'loadDbButton'):
+                self.dockwidget.loadDbButton.setEnabled(True)
+            if hasattr(self.dockwidget, 'refreshFromApiButton'):
+                self.dockwidget.refreshFromApiButton.setEnabled(True)
+            self.dockwidget.set_status_message("Erreur de chargement API", color="red")
+            self.show_error(self.tr(u'Erreur'), f"{exc}\n\n{tb}")
+
+        def on_progress(value, message):
+            self.set_progress(value, message)
+
+        from .worker_thread import Worker
+        self.api_load_worker = Worker(fetch_task)
+        self.api_load_worker.signals.finished.connect(on_finished)
+        self.api_load_worker.signals.error.connect(on_error)
+        self.api_load_worker.signals.progress.connect(on_progress)
+        self.api_load_worker.start()
 
     def compare_project_with_db(self, selected_endpoints=None):
         if not self.dockwidget or not self.check_api_auth():
@@ -2994,29 +3056,82 @@ class MrvTeraka:
             )
             return
 
-        try:
-            report = [f"Statut : Connecté à {self.api_base_url}"]
+        request_items = []
+        for layer_name, mapping in requested_endpoints.items():
+            endpoint_value = mapping['endpoint']
+            if self.is_system_endpoint(layer_name) or self.is_system_endpoint(endpoint_value):
+                continue
+            request_items.append({
+                'layer_name': layer_name,
+                'mapping': mapping,
+                'filters': self.build_sector_filters(mapping, commune_context),
+            })
 
-            sector = self.get_sector_filter_value()
+        if not request_items:
+            self.show_warning(self.tr(u'Erreur'), self.tr(u'Aucun endpoint exploitable dans la sélection.'))
+            return
+
+        self.dockwidget.set_status_message("Vérification API en cours...", color="blue")
+        if hasattr(self.dockwidget, 'compareButton'):
+            self.dockwidget.compareButton.setEnabled(False)
+
+        sector = self.get_sector_filter_value()
+        commune_codes = self.get_selected_commune_codes()
+        qgis_layer_count = len([
+            layer
+            for layer in QgsProject.instance().mapLayers().values()
+            if layer.type() == QgsMapLayer.VectorLayer
+        ])
+
+        def compare_task(worker):
+            rows = []
+            total = len(request_items)
+            for i, item in enumerate(request_items):
+                if worker.is_cancelled:
+                    return None
+                endpoint_value = item['mapping']['endpoint']
+                worker.update_progress(int((i / total) * 90), f"Vérification {endpoint_value}...")
+                filters = item['filters']
+                count = 0 if self.is_empty_filter(filters) else len(
+                    self.postgrest.select(
+                        endpoint_value,
+                        select="id",
+                        filters=filters,
+                        page_size=5000,
+                        show_error_ui=False
+                    )
+                )
+                rows.append(f"{item['layer_name']} -> {endpoint_value} : {count} enregistrements")
+            worker.update_progress(100, "Vérification terminée.")
+            return rows
+
+        def on_compare_finished(rows):
+            if hasattr(self.dockwidget, 'compareButton'):
+                self.dockwidget.compareButton.setEnabled(True)
+            if rows is None:
+                return
+            report = [f"Statut : Connecté à {self.api_base_url}"]
             if sector:
                 report.append(f"Filtre Secteur : {sector}")
-
-            commune_codes = self.get_selected_commune_codes()
             if commune_codes:
                 report.append(f"Communes sélectionnées : {len(commune_codes)}")
-
-            for layer_name, mapping in requested_endpoints.items():
-                endpoint_value = mapping['endpoint']
-                filters = self.build_sector_filters(mapping, commune_context)
-                count = 0 if self.is_empty_filter(filters) else len(self.postgrest.select(endpoint_value, select="id", filters=filters))
-                report.append(f"{layer_name} -> {endpoint_value} : {count} enregistrements")
-
-            qgis_layers = [l.name() for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
-            report.append(f"Couches locales vectorielles détectées : {len(qgis_layers)}")
-
+            report.extend(rows)
+            report.append(f"Couches locales vectorielles détectées : {qgis_layer_count}")
             self.dockwidget.comparisonResultsTextEdit.setPlainText("\n".join(report))
-        except Exception as exc:
-            self.show_error("Erreur", exc)
+            self.dockwidget.set_status_message("Vérification terminée", color="green")
+
+        def on_compare_error(exc, tb):
+            if hasattr(self.dockwidget, 'compareButton'):
+                self.dockwidget.compareButton.setEnabled(True)
+            self.dockwidget.set_status_message("Erreur de vérification", color="red")
+            self.show_error("Erreur", f"{exc}\n\n{tb}")
+
+        from .worker_thread import Worker
+        self.api_compare_worker = Worker(compare_task)
+        self.api_compare_worker.signals.finished.connect(on_compare_finished)
+        self.api_compare_worker.signals.error.connect(on_compare_error)
+        self.api_compare_worker.signals.progress.connect(lambda value, message: self.set_progress(value, message))
+        self.api_compare_worker.start()
 
     def load_collected_data(self, collected_data=None, original_data=None):
         if not self.dockwidget or not self.check_api_auth():
