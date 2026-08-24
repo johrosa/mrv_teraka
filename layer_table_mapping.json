@@ -123,17 +123,6 @@
                 "remarque"
             ]
         },
-        "spatial_ref_sys": {
-            "endpoint": "spatial_ref_sys",
-            "pk_field": "id",
-            "columns": [
-                "srid",
-                "auth_name",
-                "auth_srid",
-                "srtext",
-                "proj4text"
-            ]
-        },
         "pg_photo_document": {
             "endpoint": "pg_photo_document",
             "pk_field": "id",
@@ -475,19 +464,6 @@
                 "nombre_arbres_prevus",
                 "nombre_arbre_5ans",
                 "remarque"
-            ]
-        },
-        "geometry_columns": {
-            "endpoint": "geometry_columns",
-            "pk_field": "id",
-            "columns": [
-                "f_table_catalog",
-                "f_table_schema",
-                "f_table_name",
-                "f_geometry_column",
-                "coord_dimension",
-                "srid",
-                "type"
             ]
         },
         "photo_liste_rouge_arbre_suivi": {
@@ -978,19 +954,6 @@
                 "liste_verte",
                 "liste_blanche",
                 "uuid_espece"
-            ]
-        },
-        "geography_columns": {
-            "endpoint": "geography_columns",
-            "pk_field": "id",
-            "columns": [
-                "f_table_catalog",
-                "f_table_schema",
-                "f_table_name",
-                "f_geography_column",
-                "coord_dimension",
-                "srid",
-                "type"
             ]
         },
         "nuisibles": {
