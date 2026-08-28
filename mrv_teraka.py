@@ -17,7 +17,7 @@ from .resources import *
 
 from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayer, QgsTask, QgsApplication, QgsMapLayerStyle, QgsEditorWidgetSetup, QgsFeature, QgsWkbTypes, QgsRasterLayer, QgsDefaultValue
 from .mrv_teraka_dockwidget import MrvTerakaDockWidget
-from .layer_utils import is_geojson, create_vector_layer, layer_to_list_of_dicts
+from .layer_utils import is_geojson, create_vector_layer, create_vector_layer_fast, layer_to_list_of_dicts
 from .utils import Utils
 
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode, PostgRESTError
@@ -32,6 +32,7 @@ from .project_analyzer import ProjectAnalyzer
 from .business_rules import BusinessRulesEngine
 from .mergin_api_client import MerginAPIClient
 from .mergin_plugin_bridge import MerginPluginBridge
+from .dependency_manager import missing_fast_geo_packages
 
 
 class MrvTeraka:
@@ -84,6 +85,7 @@ class MrvTeraka:
 
         self.auto_open_default_project = False
         self.auto_update_sources = False
+        self.dependency_install_task = None
 
         self.pluginIsActive = False
         self.dockwidget = None
@@ -315,6 +317,7 @@ class MrvTeraka:
             parent=self.iface.mainWindow()
         )
         self.load_saved_token()
+        self.ensure_fast_geo_dependencies()
         self.conn_checker.start()
         if self.auto_open_default_project:
             self.open_default_qgis_project()
@@ -330,6 +333,52 @@ class MrvTeraka:
     def onClosePlugin(self):
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
         self.pluginIsActive = False
+
+    def ensure_fast_geo_dependencies(self):
+        missing = missing_fast_geo_packages()
+        if not missing:
+            return
+
+        self.dependency_install_task = QgsTask.fromFunction(
+            "Installation des dépendances pyogrio MrvTeraka",
+            self._install_fast_geo_dependencies_task,
+            on_finished=self._on_fast_geo_dependencies_installed
+        )
+        QgsApplication.taskManager().addTask(self.dependency_install_task)
+        self.iface.messageBar().pushMessage(
+            "MRV Teraka",
+            "Installation des dépendances pyogrio en arrière-plan...",
+            level=0,
+            duration=5
+        )
+
+    @staticmethod
+    def _install_fast_geo_dependencies_task(task):
+        from .dependency_manager import install_missing_fast_geo_packages
+
+        task.setProgress(10)
+        result = install_missing_fast_geo_packages()
+        task.setProgress(100)
+        return result
+
+    def _on_fast_geo_dependencies_installed(self, exception, result=None):
+        self.dependency_install_task = None
+        if exception:
+            message = "Installation pyogrio échouée: {}".format(exception)
+            success = False
+        else:
+            result = result or {}
+            message = result.get('message', "Installation pyogrio terminée.")
+            success = bool(result.get('success'))
+
+        self.iface.messageBar().pushMessage(
+            "MRV Teraka",
+            message,
+            level=0 if success else 1,
+            duration=4 if success else 10
+        )
+        if self.dockwidget and hasattr(self.dockwidget, 'merginResultsTextEdit'):
+            self.dockwidget.merginResultsTextEdit.append(message)
 
     # ─────────────────────────────────────────────────────────────────────
     # AUTHENTIFICATION
@@ -1656,21 +1705,24 @@ class MrvTeraka:
         task.setProgress(5)
         if task.isCanceled():
             return {'status': 'canceled'}
-        success, err = export_to_geopackage(mission_layers, gpkg_path)
+        success, export_message = export_to_geopackage(mission_layers, gpkg_path)
         if not success:
-            return {'status': 'error', 'message': err}
+            return {'status': 'error', 'message': export_message}
 
         task.setProgress(55)
         if task.isCanceled():
             return {'status': 'canceled'}
         archive_success = True
         archive_error = ""
+        archive_export_message = ""
         if archive_layers and archive_gpkg_path:
-            archive_success, archive_error = export_to_geopackage(
+            archive_success, archive_export_message = export_to_geopackage(
                 archive_layers,
                 archive_gpkg_path,
                 continue_on_error=True
             )
+            if not archive_success:
+                archive_error = archive_export_message
 
         task.setProgress(85)
         if task.isCanceled():
@@ -1682,8 +1734,10 @@ class MrvTeraka:
         task.setProgress(100)
         return {
             'status': 'completed',
+            'export_message': export_message,
             'archive_success': archive_success,
             'archive_error': archive_error,
+            'archive_export_message': archive_export_message,
             'archive_report': {
                 'gpkg_path': archive_gpkg_path if archive_layers else None,
                 'manifest_path': archive_manifest_path,
@@ -1724,6 +1778,7 @@ class MrvTeraka:
         layer_specs = context['layer_specs']
         layers_to_export = context['layers_to_export']
         archive_report = result.get('archive_report', {})
+        export_message = result.get('export_message')
 
         if not result.get('archive_success', True) and self.dockwidget:
             self.dockwidget.merginResultsTextEdit.append(
@@ -1749,6 +1804,8 @@ class MrvTeraka:
         self.dockwidget.merginResultsTextEdit.append(
             f"📦 Projet QGIS + GeoPackage créés : {len(layers_to_export)} couches."
         )
+        if export_message:
+            self.dockwidget.merginResultsTextEdit.append(f"⚙️ {export_message}")
         if archive_report.get('vector_count'):
             self.dockwidget.merginResultsTextEdit.append(
                 "🗂️ Archive du projet source : {} couche(s) vectorielle(s) conservée(s), {} couche(s) décrite(s) dans le manifeste.".format(
@@ -2840,6 +2897,10 @@ class MrvTeraka:
         return None
 
     def _create_api_layer_from_data(self, db_data, display_name, geom_field, endpoint_value):
+        fast_layer = create_vector_layer_fast(db_data, display_name, geom_field)
+        if fast_layer:
+            return fast_layer
+
         if is_geojson(db_data):
             import tempfile
             temp_file = None
@@ -2868,11 +2929,14 @@ class MrvTeraka:
         preserved_opacity = 1.0
         layer_tree_index = None
         had_existing_layer = existing_layer is not None
-        old_temp_geojson_path = None
+        old_temp_paths = []
 
         if had_existing_layer:
             existing_layer_id = existing_layer.id()
-            old_temp_geojson_path = existing_layer.customProperty('mrv:temp_geojson_path')
+            old_temp_paths = [
+                existing_layer.customProperty('mrv:temp_geojson_path'),
+                existing_layer.customProperty('mrv:temp_gpkg_path')
+            ]
             style_doc = QgsMapLayerStyle()
             style_doc.readFromLayer(existing_layer)
             preserved_style = style_doc
@@ -2889,9 +2953,11 @@ class MrvTeraka:
 
             QgsProject.instance().removeMapLayer(existing_layer_id)
             existing_layer = None
-            if old_temp_geojson_path and os.path.exists(old_temp_geojson_path):
+            for old_temp_path in old_temp_paths:
+                if not old_temp_path or not os.path.exists(old_temp_path):
+                    continue
                 try:
-                    os.unlink(old_temp_geojson_path)
+                    os.unlink(old_temp_path)
                 except OSError:
                     pass
 

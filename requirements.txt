@@ -1,0 +1,4 @@
+pyogrio
+geopandas
+shapely
+pyarrow

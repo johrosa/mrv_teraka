@@ -4,6 +4,8 @@ Utilitaires pour la gestion des couches QGIS et conversion JSON/GeoJSON.
 """
 
 import json
+import os
+import tempfile
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsVectorLayer, QgsField, QgsFeature,
@@ -188,13 +190,222 @@ def layer_to_list_of_dicts(layer, geom_field='geom'):
         data_list.append(item)
     return data_list
 
-def export_to_geopackage(layers_map, output_path, continue_on_error=False):
-    """
-    Exporte une collection de couches vers un GeoPackage.
+def _qgis_value_to_python(value):
+    """Convertit les valeurs QGIS nulles en None pour pandas/OGR."""
+    if value is None:
+        return None
+    if hasattr(value, "isNull") and value.isNull():
+        return None
+    return value
 
-    Args:
-        layers_map: Dict {layer_name: QgsVectorLayer}
-        output_path: Chemin du fichier .gpkg
+def _ogr_safe_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+def _shapely_from_wkb(wkb):
+    try:
+        from shapely import from_wkb
+        return from_wkb(wkb)
+    except ImportError:
+        from shapely.wkb import loads
+        return loads(wkb)
+
+def _shapely_from_geojson(geom_obj):
+    from shapely.geometry import shape
+    return shape(geom_obj)
+
+def _layer_to_pyogrio_dataframe(layer):
+    import geopandas as gpd
+    import pandas as pd
+
+    fields = layer.fields()
+    field_names = [field.name() for field in fields]
+    rows = []
+    geometries = []
+    is_spatial = layer.isSpatial()
+
+    for feature in layer.getFeatures():
+        attrs = feature.attributes()
+        rows.append({
+            name: _qgis_value_to_python(attrs[index])
+            for index, name in enumerate(field_names)
+        })
+
+        if is_spatial:
+            geometry = None
+            if feature.hasGeometry():
+                qgis_geometry = feature.geometry()
+                if qgis_geometry and not qgis_geometry.isNull():
+                    geometry = _shapely_from_wkb(bytes(qgis_geometry.asWkb()))
+            geometries.append(geometry)
+
+    if is_spatial:
+        crs = layer.crs().authid() if layer.crs().isValid() else None
+        return gpd.GeoDataFrame(rows, geometry=geometries, crs=crs)
+
+    return pd.DataFrame(rows, columns=field_names)
+
+def _rows_to_pyogrio_dataframe(data, geom_field='geom', default_crs='EPSG:4326'):
+    import geopandas as gpd
+    import pandas as pd
+
+    items = data if isinstance(data, list) else [data]
+    if not items or not isinstance(items[0], dict):
+        return None
+
+    sample = items[0]
+    geom_keys = [geom_field, 'geom', 'geometry', 'the_geom']
+    actual_geom_key = next((k for k in geom_keys if k and k in sample), None)
+    attribute_keys = [k for k in sample.keys() if k != actual_geom_key]
+
+    rows = []
+    geometries = []
+    is_spatial = False
+    crs = default_crs
+
+    for item in items:
+        rows.append({
+            key: _ogr_safe_value(item.get(key))
+            for key in attribute_keys
+        })
+
+        if actual_geom_key:
+            geom_obj = _extract_geometry(item.get(actual_geom_key))
+            if geom_obj:
+                is_spatial = True
+                crs = _detect_crs(geom_obj, default_crs)
+                geometries.append(_shapely_from_geojson(geom_obj))
+            else:
+                geometries.append(None)
+
+    if is_spatial:
+        return gpd.GeoDataFrame(rows, geometry=geometries, crs=crs)
+
+    return pd.DataFrame(rows, columns=attribute_keys)
+
+def _geojson_to_pyogrio_dataframe(data, default_crs='EPSG:4326'):
+    import geopandas as gpd
+
+    features = data.get('features', [data]) if data.get('type') == 'FeatureCollection' else [data]
+    rows = []
+    geometries = []
+    crs = _detect_crs(data, default_crs)
+
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        properties = feature.get('properties') or {}
+        rows.append({
+            key: _ogr_safe_value(value)
+            for key, value in properties.items()
+        })
+        geom_obj = feature.get('geometry')
+        geometries.append(_shapely_from_geojson(geom_obj) if geom_obj else None)
+
+    return gpd.GeoDataFrame(rows, geometry=geometries, crs=crs)
+
+def _export_to_geopackage_pyogrio(layers_map, output_path, continue_on_error=False):
+    import pyogrio
+
+    expected_layers = set(layers_map.keys())
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    errors = []
+    for name, layer in layers_map.items():
+        try:
+            dataframe = _layer_to_pyogrio_dataframe(layer)
+            pyogrio.write_dataframe(
+                dataframe,
+                output_path,
+                layer=name,
+                driver="GPKG",
+                encoding="UTF-8",
+                use_arrow=True
+            )
+        except Exception as exc:
+            errors.append("{}: {}".format(name, exc))
+            if not continue_on_error:
+                return False, str(exc)
+
+    if os.path.exists(output_path) and expected_layers:
+        written_layers = set(str(row[0]) for row in pyogrio.list_layers(output_path))
+        missing_layers = expected_layers - written_layers
+        if missing_layers and not continue_on_error:
+            return False, "Couches absentes du GeoPackage pyogrio: {}".format(
+                ", ".join(sorted(missing_layers))
+            )
+        if missing_layers:
+            errors.extend("{}: couche absente après écriture pyogrio".format(name) for name in missing_layers)
+
+    if errors:
+        detail = "; ".join(errors[:5])
+        if len(errors) > 5:
+            detail += "; ... {} autre(s)".format(len(errors) - 5)
+        return False, detail
+
+    return True, "Export GeoPackage réussi avec pyogrio"
+
+def create_vector_layer_fast(data, layer_name, geom_field='geom', default_crs='EPSG:4326'):
+    """
+    Crée une couche QGIS via un GeoPackage temporaire écrit par pyogrio.
+
+    Retourne None si les dépendances rapides ne sont pas disponibles ou si
+    l'écriture échoue, afin de permettre un fallback vers create_vector_layer.
+    """
+    if not data:
+        return None
+
+    try:
+        import pyogrio
+    except ImportError:
+        return None
+
+    temp_path = None
+    try:
+        if is_geojson(data):
+            dataframe = _geojson_to_pyogrio_dataframe(data, default_crs=default_crs)
+        else:
+            dataframe = _rows_to_pyogrio_dataframe(data, geom_field=geom_field, default_crs=default_crs)
+
+        if dataframe is None:
+            return None
+
+        fd, temp_path = tempfile.mkstemp(suffix='.gpkg')
+        os.close(fd)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        pyogrio.write_dataframe(
+            dataframe,
+            temp_path,
+            layer=layer_name,
+            driver="GPKG",
+            encoding="UTF-8",
+            use_arrow=True
+        )
+
+        layer = QgsVectorLayer("{}|layername={}".format(temp_path, layer_name), layer_name, "ogr")
+        if not layer.isValid():
+            os.unlink(temp_path)
+            return None
+
+        layer.setCustomProperty('mrv:temp_gpkg_path', temp_path)
+        return layer
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+        return None
+
+def _export_to_geopackage_qgis(layers_map, output_path, continue_on_error=False):
+    """
+    Exporte une collection de couches vers un GeoPackage via le writer QGIS.
     """
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "GPKG"
@@ -248,3 +459,30 @@ def export_to_geopackage(layers_map, output_path, continue_on_error=False):
         return False, detail
 
     return True, "Export réussi"
+
+def export_to_geopackage(layers_map, output_path, continue_on_error=False):
+    """
+    Exporte une collection de couches vers un GeoPackage.
+
+    Args:
+        layers_map: Dict {layer_name: QgsVectorLayer}
+        output_path: Chemin du fichier .gpkg
+    """
+    try:
+        success, message = _export_to_geopackage_pyogrio(
+            layers_map,
+            output_path,
+            continue_on_error=continue_on_error
+        )
+        if success:
+            return success, message
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    return _export_to_geopackage_qgis(
+        layers_map,
+        output_path,
+        continue_on_error=continue_on_error
+    )
