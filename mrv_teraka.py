@@ -1059,6 +1059,68 @@ class MrvTeraka:
     def is_empty_filter(self, filters):
         return isinstance(filters, dict) and bool(filters.get(self.EMPTY_FILTER_MARKER))
 
+    def build_reference_filters_from_rows(self, mapping, rows, commune_context=None):
+        """Construit le filtre API le plus pertinent pour relire la référence BDD actuelle."""
+        if not isinstance(mapping, dict):
+            return {}
+
+        columns = mapping.get('columns', []) or []
+        if 'c_com' in columns:
+            c_com_values = sorted({
+                str(row.get('c_com'))
+                for row in (rows or [])
+                if isinstance(row, dict) and row.get('c_com') not in (None, "")
+            })
+            if c_com_values:
+                return {'c_com': 'in.({})'.format(','.join(c_com_values))}
+
+        return self.build_sector_filters(mapping, commune_context)
+
+    def fetch_current_original_data(self, collected_data, fallback_original_data=None, raise_on_error=False):
+        """Recharge depuis l'API les données de référence utilisées par la validation."""
+        fallback_original_data = fallback_original_data or {}
+        commune_context = self.build_commune_filters()
+        errors = []
+
+        if isinstance(collected_data, dict) and not is_geojson(collected_data):
+            original_payload = {}
+            for endpoint, rows in collected_data.items():
+                mapping = self.get_mapping_for_endpoint(endpoint)
+                try:
+                    filters = self.build_reference_filters_from_rows(mapping, rows, commune_context)
+                    if self.is_empty_filter(filters):
+                        original_payload[endpoint] = []
+                    else:
+                        original_payload[endpoint] = self.postgrest.select(endpoint, filters=filters)
+                except Exception as exc:
+                    errors.append(f"{endpoint}: {exc}")
+                    if isinstance(fallback_original_data, dict) and endpoint in fallback_original_data:
+                        original_payload[endpoint] = fallback_original_data.get(endpoint) or []
+                    else:
+                        original_payload[endpoint] = []
+
+            if errors and raise_on_error:
+                raise RuntimeError(
+                    "Impossible de recharger la référence BDD actuelle:\n{}".format("\n".join(errors[:10]))
+                )
+            return original_payload, errors
+
+        selected = self.dockwidget.get_selected_endpoints() if self.dockwidget else []
+        endpoint = selected[0] if selected else ""
+        mapping = self.current_data_mapping or self.get_mapping_for_endpoint(endpoint)
+        endpoint = mapping.get('endpoint', endpoint) if isinstance(mapping, dict) else endpoint
+        try:
+            filters = self.build_reference_filters_from_rows(mapping, collected_data or [], commune_context)
+            if self.is_empty_filter(filters):
+                original_data = []
+            else:
+                original_data = self.postgrest.select(endpoint, filters=filters)
+            return original_data, []
+        except Exception as exc:
+            if raise_on_error:
+                raise RuntimeError(f"Impossible de recharger la référence BDD actuelle pour {endpoint}: {exc}")
+            return fallback_original_data or [], [f"{endpoint}: {exc}"]
+
     def fetch_unique_regions(self):
         if not self.postgrest:
             return []
@@ -1357,10 +1419,13 @@ class MrvTeraka:
                 collected_payload[endpoint] = local_data
 
                 try:
-                    filters = self.build_sector_filters(mapping, commune_context)
+                    filters = self.build_reference_filters_from_rows(mapping, local_data, commune_context)
                     original_payload[endpoint] = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint, filters=filters)
-                except Exception:
+                except Exception as exc:
                     original_payload[endpoint] = []
+                    self.dockwidget.merginResultsTextEdit.append(
+                        f"⚠️ Référence BDD non chargée pour {endpoint}: {exc}"
+                    )
 
             self.current_collected_data = collected_payload
             self.current_original_data = original_payload
@@ -1388,7 +1453,7 @@ class MrvTeraka:
 
         c_data = collected_data if collected_data is not None else self.current_collected_data
         o_data = original_data if original_data is not None else self.current_original_data
-        self.load_collected_data(c_data, o_data)
+        self.load_collected_data(c_data, o_data, refresh_original_from_api=True)
 
     # ─────────────────────────────────────────────────────────────────────
     # ACTIONS SIG
@@ -2385,10 +2450,13 @@ class MrvTeraka:
             collected_payload[endpoint] = local_data
 
             try:
-                filters = self.build_sector_filters(mapping, commune_context)
+                filters = self.build_reference_filters_from_rows(mapping, local_data, commune_context)
                 original_payload[endpoint] = [] if self.is_empty_filter(filters) else self.postgrest.select(endpoint, filters=filters)
-            except Exception:
+            except Exception as exc:
                 original_payload[endpoint] = []
+                self.dockwidget.merginResultsTextEdit.append(
+                    f"⚠️ Référence BDD non chargée pour {endpoint}: {exc}"
+                )
 
         self.current_collected_data = collected_payload
         self.current_original_data = original_payload
@@ -3199,7 +3267,7 @@ class MrvTeraka:
         self.api_compare_worker.signals.progress.connect(lambda value, message: self.set_progress(value, message))
         self.api_compare_worker.start()
 
-    def load_collected_data(self, collected_data=None, original_data=None):
+    def load_collected_data(self, collected_data=None, original_data=None, refresh_original_from_api=True):
         if not self.dockwidget or not self.check_api_auth():
             return
 
@@ -3247,6 +3315,31 @@ class MrvTeraka:
                 if os.path.exists(metadata_file):
                     with open(metadata_file, 'r', encoding='utf-8') as f:
                         original_data = json.load(f)
+
+            if refresh_original_from_api:
+                if self.dockwidget and hasattr(self.dockwidget, 'merginResultsTextEdit'):
+                    self.dockwidget.merginResultsTextEdit.append(
+                        "🔄 Rechargement de la référence BDD actuelle avant validation..."
+                    )
+                fresh_original_data, reference_errors = self.fetch_current_original_data(
+                    collected_data,
+                    fallback_original_data=original_data,
+                    raise_on_error=False
+                )
+                original_data = fresh_original_data
+                self.current_original_data = fresh_original_data
+                if reference_errors:
+                    visible_errors = "\n".join(reference_errors[:5])
+                    if len(reference_errors) > 5:
+                        visible_errors += f"\n... et {len(reference_errors) - 5} autre(s)."
+                    warning = (
+                        "La référence BDD actuelle n'a pas pu être rechargée pour certaines tables. "
+                        "Le plugin utilise le dernier snapshot disponible pour ces tables:\n"
+                        f"{visible_errors}"
+                    )
+                    if self.dockwidget and hasattr(self.dockwidget, 'merginResultsTextEdit'):
+                        self.dockwidget.merginResultsTextEdit.append(f"⚠️ {warning}")
+                    self.show_warning(self.tr(u'Référence BDD partielle'), warning)
 
             if self.current_project_id:
                 self.mergin_manager.import_collected_data(self.current_project_id, collected_data)
@@ -3430,16 +3523,19 @@ class MrvTeraka:
                 
                 worker.update_progress(int((i/total)*100), f"Préparation {endpoint}: {len(validated_data)} ligne(s) validée(s).")
 
-                original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else None
-                if not original_data:
-                    worker.update_progress(int((i/total)*100), f"Chargement {endpoint}: données existantes pour comparaison.")
-                    c_com_values = sorted({
-                        str(row.get('c_com'))
-                        for row in validated_data
-                        if isinstance(row, dict) and row.get('c_com') not in (None, "")
-                    })
-                    filters = {'c_com': 'in.({})'.format(','.join(c_com_values))} if c_com_values else None
-                    original_data = self.postgrest.select(endpoint, filters=filters) if filters else []
+                worker.update_progress(int((i/total)*100), f"Chargement {endpoint}: référence BDD actuelle pour comparaison.")
+                try:
+                    filters = self.build_reference_filters_from_rows(mapping, validated_data)
+                    if self.is_empty_filter(filters):
+                        original_data = []
+                    else:
+                        original_data = self.postgrest.select(endpoint, filters=filters)
+                except Exception as exc:
+                    original_data = full_original_data.get(endpoint) if isinstance(full_original_data, dict) else []
+                    worker.update_progress(
+                        int((i/total)*100),
+                        f"Chargement {endpoint}: API indisponible, snapshot local utilisé ({exc})."
+                    )
 
                 worker.update_progress(int((i/total)*100), f"Publication {endpoint}: batchs API et isolation des erreurs.")
                 merge_results = self.merge_validated_data_no_ui(mapping, original_data, validated_data)
