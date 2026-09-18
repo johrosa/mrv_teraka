@@ -20,6 +20,7 @@ class MerginPluginBridge:
 
     def plugin(self):
         """Return the loaded official Mergin plugin instance, if available."""
+        self.last_error = ""
         try:
             from qgis.utils import plugins
         except Exception as exc:
@@ -39,6 +40,7 @@ class MerginPluginBridge:
         its client yet, ask it to create its manager/client using its saved QGIS
         auth configuration.
         """
+        self.last_error = ""
         plugin = self.plugin()
         if plugin is None:
             return None
@@ -76,6 +78,10 @@ class MerginPluginBridge:
             mc.user_info()
             return True
         except Exception as exc:
+            err_msg = str(exc).lower()
+            # If it's a network issue, assume we are connected but offline
+            if any(k in err_msg for k in ["connection", "timeout", "unreachable", "refused"]):
+                return True
             self.last_error = str(exc)
             return False
 
@@ -103,6 +109,10 @@ class MerginPluginBridge:
         namespace = self.namespace()
         if namespace:
             return "Mergin Maps connecte: {}".format(namespace)
+
+        if self.is_connected():
+            return "Mergin Maps connecte (mode hors-ligne)"
+
         if self.last_error:
             return "Mergin Maps non connecte: {}".format(self.last_error)
         return "Mergin Maps non connecte"
