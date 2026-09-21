@@ -289,11 +289,13 @@ class MerginDataMerger:
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Optimization (Bolt ⚡): Map primary keys to records for O(1) dictionary lookups
+        # reducing complexity from O(N*M) to O(N+M)
+        original_map = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
+        collected_map = {item.get(pk_field): item for item in collected if item.get(pk_field) is not None}
 
-        deleted_ids = original_ids - collected_ids
+        # Entrées supprimées
+        deleted_ids = set(original_map.keys()) - set(collected_map.keys())
         conflicts.append({
             'type': 'deleted',
             'count': len(deleted_ids),
@@ -301,7 +303,7 @@ class MerginDataMerger:
         })
 
         # Entrées ajoutées
-        new_ids = collected_ids - original_ids
+        new_ids = set(collected_map.keys()) - set(original_map.keys())
         conflicts.append({
             'type': 'added',
             'count': len(new_ids),
@@ -309,9 +311,8 @@ class MerginDataMerger:
         })
 
         # Entrées modifiées
-        for coll_item in collected:
-            item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+        for item_id, coll_item in collected_map.items():
+            orig_item = original_map.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
