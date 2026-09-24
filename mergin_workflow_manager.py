@@ -308,10 +308,16 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
+        # Index original items by pk_field for O(1) dictionary lookups instead of O(N) linear search
+        orig_dict = {o.get(pk_field): o for o in original if o.get(pk_field) is not None}
+
         # Entrées modifiées
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            if item_id is None:
+                continue
+
+            orig_item = orig_dict.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
