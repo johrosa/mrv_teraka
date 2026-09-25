@@ -286,13 +286,20 @@ class MerginDataMerger:
         self.postgrest = postgrest_client
 
     def detect_conflicts(self, original, collected, pk_field='id'):
-        """Détecte les conflits entre données originales et collectées"""
+        """
+        Détecte les conflits entre données originales et collectées.
+        ⚡ Optimization (Bolt): Uses dictionary-based indexing to reduce search complexity from O(N*M) to O(N+M).
+        """
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Indexing original and collected items by PK (excluding None keys) for O(1) lookups
+        orig_by_id = {item[pk_field]: item for item in original if item.get(pk_field) is not None}
+        coll_by_id = {item[pk_field]: item for item in collected if item.get(pk_field) is not None}
 
+        original_ids = set(orig_by_id.keys())
+        collected_ids = set(coll_by_id.keys())
+
+        # Entrées supprimées
         deleted_ids = original_ids - collected_ids
         conflicts.append({
             'type': 'deleted',
@@ -308,12 +315,12 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
-        for coll_item in collected:
-            item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
-
-            if orig_item and orig_item != coll_item:
+        # Entrées modifiées (O(1) dictionary comparison over common keys)
+        common_ids = original_ids & collected_ids
+        for item_id in common_ids:
+            orig_item = orig_by_id[item_id]
+            coll_item = coll_by_id[item_id]
+            if orig_item != coll_item:
                 conflicts.append({
                     'type': 'modified',
                     'id': item_id,
