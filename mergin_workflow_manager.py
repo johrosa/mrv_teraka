@@ -308,10 +308,11 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
+        # Entrées modifiées - Optimization: Use O(1) hash map lookup instead of O(N) generator scan
+        original_map = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            orig_item = original_map.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
