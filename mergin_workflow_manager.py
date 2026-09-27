@@ -289,10 +289,14 @@ class MerginDataMerger:
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Indexer les données par clé primaire en ignorant les clés None pour O(1) lookup
+        original_map = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
+        collected_map = {item.get(pk_field): item for item in collected if item.get(pk_field) is not None}
 
+        original_ids = set(original_map.keys())
+        collected_ids = set(collected_map.keys())
+
+        # Entrées supprimées
         deleted_ids = original_ids - collected_ids
         conflicts.append({
             'type': 'deleted',
@@ -308,10 +312,12 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
+        # Entrées modifiées (O(1) dictionary lookup au lieu de O(N) linear search)
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            if item_id is None:
+                continue
+            orig_item = original_map.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
