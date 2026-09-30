@@ -286,12 +286,12 @@ class MerginDataMerger:
         self.postgrest = postgrest_client
 
     def detect_conflicts(self, original, collected, pk_field='id'):
-        """Détecte les conflits entre données originales et collectées"""
+        """Détecte les conflits entre données originales et collectées avec lookup O(1)"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Entrées supprimées et ajoutées (filtrage des clés None pour la stabilité)
+        original_ids = {item.get(pk_field) for item in original if item.get(pk_field) is not None}
+        collected_ids = {item.get(pk_field) for item in collected if item.get(pk_field) is not None}
 
         deleted_ids = original_ids - collected_ids
         conflicts.append({
@@ -308,11 +308,17 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
+        # Optimization ⚡ Bolt: Build hash map index of original items for O(1) lookups.
+        # This reduces algorithm complexity from O(N*M) to O(N+M) during comparison.
+        original_map = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
+
         # Entrées modifiées
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            if item_id is None:
+                continue
 
+            orig_item = original_map.get(item_id)
             if orig_item and orig_item != coll_item:
                 conflicts.append({
                     'type': 'modified',
