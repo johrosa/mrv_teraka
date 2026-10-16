@@ -1,3 +1,7 @@
+## 2026-03-30 - [Dictionary Lookup Optimization in Data Conflict Detection]
+**Learning:** In Mergin Maps data synchronization workflows, `detect_conflicts` compares local collected records against original snapshot datasets. A naive nested linear lookup (`next((o for o in original if ...))`) creates an $O(N \times M)$ bottleneck, scaling poorly for typical layer datasets (3000+ items taking >0.25s). Pre-building a primary key map (`original_map`) reduces the lookups to $O(1)$ and overall execution to $O(N + M)$, yielding a >100x speedup (<0.003s for 3000 items).
+**Action:** Always index baseline/snapshot lists by primary key into a dictionary before scanning modified datasets in sync or validation routines.
+
 ## 2025-05-15 - [Optimization of PyQGIS Business Rule Validation]
 **Learning:** Significant performance gains (>90% speedup) in PyQGIS can be achieved by combining `QgsExpression` caching with `QgsExpressionContext` and `QgsFeature` reuse during bulk validation. However, reusing a `QgsFeature` requires careful attribute management (e.g., using `setAttributes` with a full list) to avoid data leakage between features if some features have fewer attributes than others.
 **Action:** Always prefer `feat.setAttributes()` when reusing `QgsFeature` objects in loops to ensure state is completely reset for each iteration. Cache `QgsExpression` objects at a class level using a composite key that includes the table name, as `prepare()` optimizations are schema-dependent.

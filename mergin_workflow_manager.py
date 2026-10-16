@@ -289,6 +289,10 @@ class MerginDataMerger:
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
+        # BOLT ⚡ OPTIMIZATION: Index original items into a dictionary by primary key
+        # to convert O(N * M) nested linear search into O(N + M) hash table lookups.
+        original_map = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
+
         # Entrées supprimées
         original_ids = {item.get(pk_field) for item in original}
         collected_ids = {item.get(pk_field) for item in collected}
@@ -311,15 +315,15 @@ class MerginDataMerger:
         # Entrées modifiées
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
-
-            if orig_item and orig_item != coll_item:
-                conflicts.append({
-                    'type': 'modified',
-                    'id': item_id,
-                    'original': orig_item,
-                    'collected': coll_item
-                })
+            if item_id is not None:
+                orig_item = original_map.get(item_id)
+                if orig_item and orig_item != coll_item:
+                    conflicts.append({
+                        'type': 'modified',
+                        'id': item_id,
+                        'original': orig_item,
+                        'collected': coll_item
+                    })
 
         return conflicts
 
