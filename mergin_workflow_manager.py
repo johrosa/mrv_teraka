@@ -289,9 +289,16 @@ class MerginDataMerger:
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
+        # Build dict lookup for O(1) primary key access (optimizing O(N^2) linear scan to O(N))
+        original_dict = {
+            item.get(pk_field): item
+            for item in original
+            if item.get(pk_field) is not None
+        }
+
         # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        original_ids = set(original_dict.keys())
+        collected_ids = {item.get(pk_field) for item in collected if item.get(pk_field) is not None}
 
         deleted_ids = original_ids - collected_ids
         conflicts.append({
@@ -308,10 +315,13 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
+        # Entrées modifiées - using fast O(1) dictionary lookup instead of O(N) linear generator search
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+            if item_id is None:
+                continue
+
+            orig_item = original_dict.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
