@@ -286,13 +286,15 @@ class MerginDataMerger:
         self.postgrest = postgrest_client
 
     def detect_conflicts(self, original, collected, pk_field='id'):
-        """Détecte les conflits entre données originales et collectées"""
+        """Détecte les conflits entre données originales et collectées avec recherche indexée O(N+M) par dictionnaire"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Indexer les éléments originaux par leur clé primaire (filtrer None)
+        original_dict = {item.get(pk_field): item for item in original if item.get(pk_field) is not None}
+        original_ids = set(original_dict.keys())
+        collected_ids = {item.get(pk_field) for item in collected if item.get(pk_field) is not None}
 
+        # Entrées supprimées
         deleted_ids = original_ids - collected_ids
         conflicts.append({
             'type': 'deleted',
@@ -308,18 +310,18 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
+        # Entrées modifiées (recherche O(1) via dictionnaire au lieu d'une boucle O(N))
         for coll_item in collected:
             item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
-
-            if orig_item and orig_item != coll_item:
-                conflicts.append({
-                    'type': 'modified',
-                    'id': item_id,
-                    'original': orig_item,
-                    'collected': coll_item
-                })
+            if item_id is not None:
+                orig_item = original_dict.get(item_id)
+                if orig_item and orig_item != coll_item:
+                    conflicts.append({
+                        'type': 'modified',
+                        'id': item_id,
+                        'original': orig_item,
+                        'collected': coll_item
+                    })
 
         return conflicts
 
