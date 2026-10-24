@@ -289,10 +289,16 @@ class MerginDataMerger:
         """Détecte les conflits entre données originales et collectées"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Optimization (Bolt ⚡): Map records by primary key to eliminate O(N*M) nested loops.
+        # This turns the modified item comparison from O(N*M) to O(N + M) hash lookups,
+        # reducing execution time significantly for datasets with thousands of records.
+        original_map = {item[pk_field]: item for item in original if item.get(pk_field) is not None}
+        collected_map = {item[pk_field]: item for item in collected if item.get(pk_field) is not None}
 
+        original_ids = set(original_map.keys())
+        collected_ids = set(collected_map.keys())
+
+        # Entrées supprimées
         deleted_ids = original_ids - collected_ids
         conflicts.append({
             'type': 'deleted',
@@ -308,10 +314,9 @@ class MerginDataMerger:
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
-        for coll_item in collected:
-            item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+        # Entrées modifiées (O(1) lookup per collected item)
+        for item_id, coll_item in collected_map.items():
+            orig_item = original_map.get(item_id)
 
             if orig_item and orig_item != coll_item:
                 conflicts.append({
