@@ -286,34 +286,40 @@ class MerginDataMerger:
         self.postgrest = postgrest_client
 
     def detect_conflicts(self, original, collected, pk_field='id'):
-        """Détecte les conflits entre données originales et collectées"""
+        """Détecte les conflits entre données originales et collectées avec complexité O(N+M)"""
         conflicts = []
 
-        # Entrées supprimées
-        original_ids = {item.get(pk_field) for item in original}
-        collected_ids = {item.get(pk_field) for item in collected}
+        # Bolt ⚡ Optimization: Build dict lookup maps for O(1) item retrieval
+        # Reduces search complexity from O(N*M) to O(N+M)
+        orig_map = {item[pk_field]: item for item in original if item.get(pk_field) is not None}
+        coll_map = {item[pk_field]: item for item in collected if item.get(pk_field) is not None}
 
-        deleted_ids = original_ids - collected_ids
+        orig_ids = set(orig_map.keys())
+        coll_ids = set(coll_map.keys())
+
+        # Entrées supprimées (dans original mais pas dans collected)
+        deleted_ids = orig_ids - coll_ids
         conflicts.append({
             'type': 'deleted',
             'count': len(deleted_ids),
             'ids': list(deleted_ids)
         })
 
-        # Entrées ajoutées
-        new_ids = collected_ids - original_ids
+        # Entrées ajoutées (dans collected mais pas dans original)
+        new_ids = coll_ids - orig_ids
         conflicts.append({
             'type': 'added',
             'count': len(new_ids),
             'ids': list(new_ids)
         })
 
-        # Entrées modifiées
-        for coll_item in collected:
-            item_id = coll_item.get(pk_field)
-            orig_item = next((o for o in original if o.get(pk_field) == item_id), None)
+        # Entrées modifiées (présentes dans les deux, mais attributs différents)
+        common_ids = orig_ids & coll_ids
+        for item_id in common_ids:
+            orig_item = orig_map[item_id]
+            coll_item = coll_map[item_id]
 
-            if orig_item and orig_item != coll_item:
+            if orig_item != coll_item:
                 conflicts.append({
                     'type': 'modified',
                     'id': item_id,
