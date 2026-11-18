@@ -401,21 +401,27 @@ class MrvTeraka:
     def authenticate_with_credentials(self, credentials, dialog=None):
         username = credentials['username']
         password = credentials['password']
-        self.api_base_url = credentials['url']
+        api_base_url = credentials['url']
+        postgrest_mode = self.postgrest_mode
 
         if credentials['mode']:
             mode_map = {
                 'Django': PostgRESTMode.DJANGO,
                 'PostgREST (Standalone)': PostgRESTMode.STANDALONE
             }
-            self.postgrest_mode = mode_map.get(credentials['mode'], PostgRESTMode.DJANGO)
+            postgrest_mode = mode_map.get(credentials['mode'], PostgRESTMode.DJANGO)
 
         try:
-            authenticator = PostgRESTAuthenticator(self.api_base_url, mode=self.postgrest_mode)
+            authenticator = PostgRESTAuthenticator(api_base_url, mode=postgrest_mode)
             token = authenticator.authenticate(username, password)
 
-            self.postgrest = PostgREST(self.api_base_url, mode=self.postgrest_mode)
-            self.postgrest.set_auth_token(token)
+            client = PostgREST(api_base_url, mode=postgrest_mode)
+            client.set_auth_token(token)
+            # A login response alone does not establish access through PostgREST.
+            client.check_connection()
+            self.postgrest = client
+            self.api_base_url = api_base_url
+            self.postgrest_mode = postgrest_mode
 
             if self.mergin_bridge.is_connected():
                 if self.dockwidget:
@@ -461,21 +467,20 @@ class MrvTeraka:
     def load_saved_token(self):
         token, api_url, mode = self.token_manager.load_token()
         if token and api_url:
+            settings = QSettings('iTeraka', 'MrvTeraka')
+            selected_url = settings.value('auth/url', api_url)
+            if selected_url.rstrip('/') != api_url.rstrip('/'):
+                # A token from another server must not override the selected target.
+                return
             self.postgrest = PostgREST(api_url, mode=PostgRESTMode[mode.upper()] if mode else PostgRESTMode.DJANGO)
             self.postgrest.set_auth_token(token)
             self.api_base_url = api_url
             self.conn_checker.set_client(self.postgrest)
 
-            if not self.postgrest.verify_token():
-                self.token_manager.clear_token()
-                self.postgrest = None
-                self.current_username = None
-                self.conn_checker.set_client(None)
-                return
-
-            settings = QSettings('iTeraka', 'MrvTeraka')
             self.current_username = settings.value('auth/username', 'Utilisateur')
             self.update_auth_ui()
+            # The background checker retries after network/server failures.
+            # Only local expiry or an explicit logout removes the saved token.
 
     def open_default_qgis_project(self):
         if os.path.exists(self.default_project_file):

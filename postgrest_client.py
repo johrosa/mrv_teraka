@@ -542,20 +542,17 @@ class PostgREST:
         """
         return self._make_request('GET', '', show_error_ui=True)
 
-    def verify_token(self) -> bool:
-        """Vérifie que le jeton actuel est accepté par le serveur via une requête HEAD légère sur la racine API."""
+    def check_connection(self):
+        """Check the authenticated API, preserving the server's error details."""
         if not self.jwt_token:
-            return False
+            raise RuntimeError("Authentification requise : aucun jeton JWT.")
+        self._make_request('HEAD', '', show_error_ui=False, timeout=5)
+
+    def verify_token(self) -> bool:
+        """Return whether the authenticated API is currently reachable."""
         try:
-            # Requête HEAD sur la racine API pour vérifier le token sans charger aucune donnée
-            self._make_request('HEAD', '', show_error_ui=False, timeout=5)
+            self.check_connection()
             return True
-        except RuntimeError as exc:
-            message = str(exc)
-            if 'HTTP 401' in message or 'HTTP 403' in message:
-                return False
-            # Autres erreurs = pas de connexion
-            return False
         except Exception:
             return False
 

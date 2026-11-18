@@ -19,6 +19,8 @@ git clone https://github.com/iTeraka/mrv_teraka.git
 2. Voir: [🔐 Connexion] dans la barre d'outils
 3. Cliquer → Formulaire authentification
 4. Entrer: email + password
+   Serveur local : mode Django, URL http://127.0.0.1:8051
+   Utiliser un compte de la base locale (un jeton distant ne fonctionne pas).
 5. ✅ Connecté! Jeton sauvegardé
 ```
 

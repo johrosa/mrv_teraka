@@ -40,19 +40,21 @@ class ConnectionChecker(QThread):
         while self.is_running:
             if self.postgrest_client:
                 try:
-                    # Vérifier le token via l'API
-                    is_valid = self.postgrest_client.verify_token()
+                    # Preserve the cause instead of treating every failure as expiry.
+                    self.postgrest_client.check_connection()
+                    is_valid = True
 
                     # Émettre le signal seulement si le statut change
                     if is_valid != self._last_status:
-                        msg = "Connecté" if is_valid else "Session expirée ou serveur injoignable"
+                        msg = "Connecté"
                         self.connection_status_changed.emit(is_valid, msg)
                         self._last_status = is_valid
 
                 except Exception as e:
-                    if self._last_status is not False:
+                    status = (False, str(e))
+                    if self._last_status != status:
                         self.connection_status_changed.emit(False, f"Erreur connexion: {str(e)}")
-                        self._last_status = False
+                        self._last_status = status
 
             # Attendre l'intervalle spécifié par petits pas pour pouvoir arrêter rapidement
             for _ in range(self.interval):
