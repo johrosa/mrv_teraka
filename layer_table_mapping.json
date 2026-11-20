@@ -1,75 +1,282 @@
 {
     "mappings": {
-        "answer_nuisible_bosquet_baseline": {
-            "endpoint": "answer_nuisible_bosquet_baseline",
+        "photo_convention": {
+            "endpoint": "photo_convention",
             "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_nuisible"
+                "uuid_pg",
+                "chemin",
+                "external_url"
             ]
         },
-        "answer_utilisation_arbre_bosquet_baseline": {
-            "endpoint": "answer_utilisation_arbre_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_utilisation_arbre"
-            ]
-        },
-        "lutte_nuisibles": {
-            "endpoint": "lutte_nuisibles",
+        "cobenefice_arbres": {
+            "endpoint": "cobenefice_arbres",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_lutte_nuisible"
+                "uuid_cobenefice_arbre"
             ]
         },
-        "audit_log_view": {
-            "endpoint": "audit_log_view",
+        "photo_autre_espece_arbre_baseline": {
+            "endpoint": "photo_autre_espece_arbre_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
-                "event_time",
-                "schema_name",
-                "table_name",
-                "operation",
-                "row_data",
-                "changed_by",
-                "changed_by_email",
-                "txid",
-                "prev_hash",
-                "row_hash"
+                "uuid_autre_espece_arbre_baseline",
+                "uuid_arbre_baseline",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url"
             ]
         },
-        "answer_sourcing_graine_arbre_baseline": {
-            "endpoint": "answer_sourcing_graine_arbre_baseline",
+        "core_userrole": {
+            "endpoint": "core_userrole",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "created_at",
+                "updated_at",
+                "role_id",
+                "user_id"
+            ]
+        },
+        "users": {
+            "endpoint": "users",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_user",
+                "operateur_id",
+                "c_com",
+                "nom",
+                "prenom",
+                "email",
+                "mot_de_passe",
+                "num_tel",
+                "annee_naissance",
+                "genre",
+                "adresse",
+                "role",
+                "photo",
+                "is_active",
+                "last_login",
+                "is_superuser",
+                "is_staff",
+                "date_joined",
+                "region",
+                "district",
+                "commune"
+            ]
+        },
+        "photo_bosquet": {
+            "endpoint": "photo_bosquet",
             "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_answer_sourcing_graine_arbre_baseline",
-                "uuid_arbre_baseline",
-                "uuid_sourcing_graine"
+                "chemin",
+                "external_url",
+                "uuid_bosquet_baseline"
             ]
         },
-        "answer_lutte_nuisible_bosquet_baseline": {
-            "endpoint": "answer_lutte_nuisible_bosquet_baseline",
+        "answer_sourcing_plant_arbre_baseline": {
+            "endpoint": "answer_sourcing_plant_arbre_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_sourcing_plant_arbre_baseline",
+                "uuid_arbre_baseline",
+                "uuid_sourcing_plant"
+            ]
+        },
+        "answer_usufruiter_bosquet_baseline": {
+            "endpoint": "answer_usufruiter_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_usufruitier_bosquet_baseline",
                 "operateur_id",
                 "c_com",
                 "uuid_bosquet_baseline",
-                "uuid_lutte_nuisible"
+                "uuid_usufruitier"
+            ]
+        },
+        "pg_photo": {
+            "endpoint": "pg_photo",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_photo",
+                "uuid_pg_suivi",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "django_content_type": {
+            "endpoint": "django_content_type",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "app_label",
+                "model"
+            ]
+        },
+        "membre_four_ameliore": {
+            "endpoint": "membre_four_ameliore",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_pg_quantif",
+                "uuid_membre"
+            ]
+        },
+        "arbre_suivi": {
+            "endpoint": "arbre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_arbre_suivi",
+                "uuid_arbre_gps",
+                "date_suivi",
+                "uuid_espece",
+                "autre_espece",
+                "sourcing",
+                "age",
+                "annee_plantation",
+                "statut_arbre",
+                "echantillon",
+                "multitiges",
+                "circonference",
+                "hauteur",
+                "remarque",
+                "uuid_campagne",
+                "date_mesure",
+                "date_maj",
+                "arbre_ettiquete",
+                "statut_observe",
+                "cause_statut_observe",
+                "nb_tiges"
+            ]
+        },
+        "calcul_carbone_arbre": {
+            "endpoint": "calcul_carbone_arbre",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_calcul_biomasse",
+                "type_source_mesure",
+                "uuid_arbre_suivi",
+                "uuid_arbre_placette_suivi",
+                "uuid_campagne",
+                "uuid_strate_census",
+                "uuid_strate_area",
+                "uuid_espece_densite",
+                "uuid_allom",
+                "uuid_modele_bgb",
+                "uuid_modele_cf",
+                "uuid_modele_c_co2",
+                "uuid_calcul_precedent",
+                "date_calcul",
+                "facteur_carbone_cf",
+                "ratio_racine_tige_r",
+                "facteur_c_co2",
+                "dbh_cm",
+                "hauteur_m",
+                "age_annees",
+                "wd_assignee",
+                "agb_kg_ms",
+                "bgb_kg_ms",
+                "biomasse_totale_kg_ms",
+                "carbone_agb_kgc",
+                "carbone_bgb_kgc",
+                "carbone_total_kgc",
+                "co2e_total_kgco2e",
+                "delta_carbone_kgc",
+                "delta_co2e_kgco2e",
+                "intervalle_annees",
+                "sequestration_nette_kgco2e",
+                "sequestration_kgco2e_an",
+                "version_calcul",
+                "est_actif",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "bien_fait_agroforesteries": {
+            "endpoint": "bien_fait_agroforesteries",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_bien"
+            ]
+        },
+        "membre_inscrit": {
+            "endpoint": "membre_inscrit",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_membre",
+                "c_com",
+                "uuid_operateur",
+                "date_saisie",
+                "date_inscription",
+                "date_qualification",
+                "date_contractualisation",
+                "statut_inscrit",
+                "fokontany",
+                "village",
+                "nom_membre",
+                "prenom_membre",
+                "nom_prenom_membre",
+                "genre",
+                "annee_naissance",
+                "cin",
+                "tel",
+                "annee_inscription",
+                "lieu_inscription",
+                "pepinieriste",
+                "leader",
+                "agent_cluster",
+                "quantificateur",
+                "deforestation",
+                "annee_deforestation",
+                "zone_riparienne",
+                "arbres_sup_10pct",
+                "liste_arbres",
+                "utilisation_arbres",
+                "nombre_arbres_prevus",
+                "nombre_arbre_5ans",
+                "remarque",
+                "region",
+                "district",
+                "commune"
+            ]
+        },
+        "answer_demarche_autorisation_bosquet_suivi": {
+            "endpoint": "answer_demarche_autorisation_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_demarche_autorisation_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_demarche_autorisation"
             ]
         },
         "bosquet_suivi": {
@@ -120,64 +327,264 @@
                 "herbe",
                 "zone_nue",
                 "total_couverture_sol",
-                "remarque"
+                "remarque",
+                "uuid_campagne"
             ]
         },
-        "pg_photo_document": {
-            "endpoint": "pg_photo_document",
+        "nuisible_bosquet": {
+            "endpoint": "nuisible_bosquet",
             "pk_field": "id",
             "columns": [
                 "id",
-                "uuid_photo_document",
+                "uuid_bosquet",
+                "uuid_nuisible"
+            ]
+        },
+        "answer_invasif_bosquet_baseline": {
+            "endpoint": "answer_invasif_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_invasif_bosquet_baseline",
                 "operateur_id",
                 "c_com",
-                "uuid_pg_document",
+                "uuid_bosquet_baseline",
+                "uuid_invasif"
+            ]
+        },
+        "petit_groupe_quantif": {
+            "endpoint": "petit_groupe_quantif",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_suivi",
+                "uuid_pg_gps",
+                "date_suivi",
+                "trois_familles",
+                "membre_pg_6_12",
+                "nbre_membre_pg",
+                "group_2ha_min",
+                "autre_projet_carbone",
+                "nom_autre_projet_teraka",
+                "projet_non_carbone",
+                "nom_projet_non_carbone",
+                "pg_eligible",
+                "arbres_plantes",
+                "objectf_plantation_5_ans",
+                "pepiniere",
+                "plan_plantation",
+                "visite_bosquet",
+                "reunion_pg",
+                "reunion_cluster",
+                "formation_cluster",
+                "valeurs_teraka",
+                "regles_eligibilite",
+                "alert",
+                "doleance",
+                "detail_alert_doleance",
+                "remarque",
+                "modif_compo_pg",
+                "membre_exclu_pg",
+                "remarque_compo_pg",
+                "statut_change",
+                "mobile_banking",
+                "no_mobile_banking",
+                "titulaire_compte_mobile_banking",
+                "representant_pg",
+                "contact_representant_pg",
+                "objectif_plantation_5_ans"
+            ]
+        },
+        "ref_modele_cf": {
+            "endpoint": "ref_modele_cf",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_modele_cf",
+                "code_modele_cf",
+                "nom_modele_cf",
+                "facteur_carbone_cf",
+                "source_reference",
+                "version",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "remarque"
+            ]
+        },
+        "auth_permission": {
+            "endpoint": "auth_permission",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "name",
+                "content_type_id",
+                "codename"
+            ]
+        },
+        "Cluster": {
+            "endpoint": "Cluster",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_cluster",
+                "nom_cluster"
+            ]
+        },
+        "photo_autre_espece_arbre_suivi": {
+            "endpoint": "photo_autre_espece_arbre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_autre_espece_arbre_suivi",
+                "uuid_arbre_suivi",
+                "operateur_id",
+                "c_com",
                 "chemin",
                 "external_url"
             ]
         },
-        "bosquet_evenement": {
-            "endpoint": "bosquet_evenement",
+        "answer_utilisation_arbre_bosquet_baseline": {
+            "endpoint": "answer_utilisation_arbre_bosquet_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
-                "uuid_bosquet_evenement",
-                "uuid_verificateur",
-                "uuid_operateur",
+                "uuid_answer_utilisation_arbre_bosquet_baseline",
                 "operateur_id",
                 "c_com",
-                "uuid_bosquet_gps",
-                "uuid_membre_source",
-                "uuid_membre_cible",
-                "uuid_nouveau_membre",
-                "date_evenement",
-                "type_evenement",
-                "statut_resultant",
-                "type_membre",
-                "exist_event_doc",
+                "uuid_bosquet_baseline",
+                "uuid_utilisation_arbre"
+            ]
+        },
+        "lutte_nuisible_bosquet": {
+            "endpoint": "lutte_nuisible_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_lutte_nuisible"
+            ]
+        },
+        "rapport_quantificateur": {
+            "endpoint": "rapport_quantificateur",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_rapport",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "operateur_id",
+                "c_com",
+                "date",
+                "uuid_membre",
+                "nom_prenom_membre",
+                "nbr_nouv_pg",
+                "nbr_suivi_pg",
+                "nbr_nouv_bosquet",
+                "nbr_suivi_bosquet",
+                "nbr_nouv_arbre",
+                "nbr_suivi_arbre",
+                "suivi_membre",
                 "statut_validation",
                 "date_validation"
             ]
         },
-        "sourcing_graines": {
-            "endpoint": "sourcing_graines",
+        "django_admin_log": {
+            "endpoint": "django_admin_log",
             "pk_field": "id",
             "columns": [
                 "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_graine"
+                "action_time",
+                "object_id",
+                "object_repr",
+                "action_flag",
+                "change_message",
+                "content_type_id",
+                "user_id"
             ]
         },
-        "answer_produit_arbre_bosquet_suivi": {
-            "endpoint": "answer_produit_arbre_bosquet_suivi",
+        "membre_exclude": {
+            "endpoint": "membre_exclude",
             "pk_field": "id",
             "columns": [
                 "id",
+                "uuid_pg_quantif",
+                "uuid_membre",
+                "raison_exclu"
+            ]
+        },
+        "ref_strate_carbone_area": {
+            "endpoint": "ref_strate_carbone_area",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_strate_area",
+                "code_strate",
+                "nom_strate",
+                "type_approche",
+                "niveau_application",
+                "description",
+                "critere_stratification",
+                "regle_affectation_json",
+                "groupe_especes",
+                "cohorte_debut",
+                "cohorte_fin",
+                "age_min_annees",
+                "age_max_annees",
+                "dbh_min_cm",
+                "dbh_max_cm",
+                "hauteur_min_m",
+                "hauteur_max_m",
+                "version_stratification",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "remarque"
+            ]
+        },
+        "invasif_bosquet": {
+            "endpoint": "invasif_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_invasif"
+            ]
+        },
+        "ref_espece_densite": {
+            "endpoint": "ref_espece_densite",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_espece_densite",
+                "uuid_espece",
+                "nom_scientifique_normalise",
+                "genre",
+                "famille",
+                "wd_espece",
+                "wd_genre",
+                "wd_famille",
+                "wd_assignee",
+                "niveau_wd",
+                "source_wd",
+                "reference_wd",
+                "version_reference",
+                "date_maj",
+                "actif",
+                "remarque"
+            ]
+        },
+        "photo_rapport_quantif": {
+            "endpoint": "photo_rapport_quantif",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_rapport",
                 "operateur_id",
                 "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_produit_arbre"
+                "photo_rapport"
             ]
         },
         "formations": {
@@ -190,18 +597,94 @@
                 "uuid_formation"
             ]
         },
-        "foncier_legals": {
-            "endpoint": "foncier_legals",
+        "paiement_pg": {
+            "endpoint": "paiement_pg",
             "pk_field": "id",
             "columns": [
                 "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_foncier_legal"
+                "uuid_paiement_pg",
+                "uuid_pg",
+                "code_pg",
+                "nom_pg",
+                "reference_facture",
+                "date_paiement",
+                "date_demande",
+                "date_verification",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "link",
+                "uuid_campagne",
+                "type_paiement",
+                "statut",
+                "montant_total_mga",
+                "date_validation",
+                "reference_paiement"
             ]
         },
-        "photo_bosquet": {
-            "endpoint": "photo_bosquet",
+        "ref_modele_allometrique": {
+            "endpoint": "ref_modele_allometrique",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_allom",
+                "code_allom",
+                "nom_allom",
+                "echelle_allom",
+                "precision_allom",
+                "genre_allom",
+                "espece_allom",
+                "variete_allom",
+                "equation_agb",
+                "variables_entree",
+                "unite_entree",
+                "unite_sortie",
+                "source_biblio",
+                "region_climatique",
+                "source_collecte",
+                "nbr_echantillon",
+                "peer_reviewed",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "lien_biblio",
+                "remarque"
+            ]
+        },
+        "answer_usufruitier_bosquet_suivi": {
+            "endpoint": "answer_usufruitier_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_usufruitier_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_usufruitier"
+            ]
+        },
+        "benchmark_plot": {
+            "endpoint": "benchmark_plot",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_benchmark_plot",
+                "uuid_pb",
+                "code_plot",
+                "role_plot",
+                "geom",
+                "surface_ha",
+                "si_t0",
+                "si_t",
+                "delta_si",
+                "zone_selection",
+                "retenu",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "photo_bosquet_suivi": {
+            "endpoint": "photo_bosquet_suivi",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -209,11 +692,444 @@
                 "c_com",
                 "chemin",
                 "external_url",
-                "uuid_bosquet_baseline"
+                "uuid_bosquet_suivi"
             ]
         },
-        "pg_nouveau_membre": {
-            "endpoint": "pg_nouveau_membre",
+        "answer_sourcing_graine_arbre_suivi": {
+            "endpoint": "answer_sourcing_graine_arbre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_sourcing_graine_arbre_suivi",
+                "uuid_arbre_suivi",
+                "uuid_sourcing_graine"
+            ]
+        },
+        "sourcing_plants": {
+            "endpoint": "sourcing_plants",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_plant"
+            ]
+        },
+        "utilisation_sol_bosquets": {
+            "endpoint": "utilisation_sol_bosquets",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_sol_use"
+            ]
+        },
+        "auth_group": {
+            "endpoint": "auth_group",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "name"
+            ]
+        },
+        "membre_suivi_bienfait_agrofor": {
+            "endpoint": "membre_suivi_bienfait_agrofor",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_bien_fait_agroforesterie_membre_suivi",
+                "uuid_bien_fait_agroforesterie",
+                "uuid_membre_suivi",
+                "bienfait",
+                "autre",
+                "uuid_bienfait_agrofor",
+                "uuid_membre"
+            ]
+        },
+        "answer_lutte_invasif_bosquet_suivi": {
+            "endpoint": "answer_lutte_invasif_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_lutte_invasif_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_lutte_invasif"
+            ]
+        },
+        "answer_utilisation_arbre_bosquet_suivi": {
+            "endpoint": "answer_utilisation_arbre_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_utilisation_arbre_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_utilisation_arbre"
+            ]
+        },
+        "bosquet_area_inventaire_espece": {
+            "endpoint": "bosquet_area_inventaire_espece",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet_area_inventaire_espece",
+                "uuid_bosquet_gps",
+                "uuid_campagne",
+                "uuid_espece",
+                "operateur_id",
+                "verificateur_id",
+                "date_inventaire",
+                "age",
+                "annee",
+                "nbr_vivant",
+                "nbr_mort",
+                "statut_qa",
+                "photo_arbre_fkey",
+                "remarque"
+            ]
+        },
+        "membre_contrat_pg": {
+            "endpoint": "membre_contrat_pg",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_operateur",
+                "uuid_membre",
+                "contrat_ges",
+                "convention_pg",
+                "date_signature"
+            ]
+        },
+        "audit_log": {
+            "endpoint": "audit_log",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "event_time",
+                "schema_name",
+                "table_name",
+                "operation",
+                "row_data",
+                "changed_by",
+                "txid",
+                "prev_hash",
+                "row_hash",
+                "event_date",
+                "hash_version",
+                "hash_time"
+            ]
+        },
+        "django_session": {
+            "endpoint": "django_session",
+            "pk_field": "id",
+            "columns": [
+                "session_key",
+                "session_data",
+                "expire_date"
+            ]
+        },
+        "dataset_mrv_externe": {
+            "endpoint": "dataset_mrv_externe",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_dataset",
+                "uuid_campagne",
+                "uuid_pb",
+                "type_dataset",
+                "fournisseur",
+                "date_reference",
+                "resolution_m",
+                "crs",
+                "version_dataset",
+                "methode_production",
+                "source_url",
+                "file_uri",
+                "checksum_sha256",
+                "date_import",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "utilisation_arbres": {
+            "endpoint": "utilisation_arbres",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_utilisation_arbre"
+            ]
+        },
+        "answer_produit_arbre_membre_suivi": {
+            "endpoint": "answer_produit_arbre_membre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_produit_arbre_membre_suivi",
+                "uuid_produit_arbre",
+                "uuid_membre_suivi",
+                "produit_arbre",
+                "autre",
+                "uuid_membre"
+            ]
+        },
+        "arbre_placette_suivi": {
+            "endpoint": "arbre_placette_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_arbre_placette_suivi",
+                "uuid_arbre_placette_gps",
+                "uuid_placette_suivi",
+                "uuid_espece",
+                "operateur_id",
+                "autre_espece",
+                "date_mesure",
+                "statut_observe",
+                "cause_statut_observe",
+                "multitiges",
+                "nb_tiges",
+                "circonference",
+                "hauteur",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "photo_espece": {
+            "endpoint": "photo_espece",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_espece",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "photo_pepiniere_suivi": {
+            "endpoint": "photo_pepiniere_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url",
+                "uuid_bosquet_suivi"
+            ]
+        },
+        "plant_bosquet": {
+            "endpoint": "plant_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_sourcing_plant"
+            ]
+        },
+        "answer_sourcing_plant_arbre_suivi": {
+            "endpoint": "answer_sourcing_plant_arbre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_sourcing_plant_arbre_suivi",
+                "uuid_arbre_suivi",
+                "uuid_sourcing_plant"
+            ]
+        },
+        "answer_produit_arbre_bosquet_baseline": {
+            "endpoint": "answer_produit_arbre_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_produit_arbre_bosquet_baseline",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_baseline",
+                "uuid_produit_arbre"
+            ]
+        },
+        "ref_modele_c_co2": {
+            "endpoint": "ref_modele_c_co2",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_modele_c_co2",
+                "code_modele_c_co2",
+                "nom_modele_c_co2",
+                "facteur_c_co2",
+                "source_reference",
+                "version",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "remarque"
+            ]
+        },
+        "calcul_projet_carbone": {
+            "endpoint": "calcul_projet_carbone",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_calcul_projet",
+                "uuid_campagne",
+                "uuid_campagne_precedente",
+                "intervalle_annees_x",
+                "cr_census_intervalle_tco2e",
+                "cr_area_intervalle_tco2e",
+                "cr_total_intervalle_tco2e",
+                "cr_census_annualise_tco2e_an",
+                "cr_area_annualise_tco2e_an",
+                "cr_total_annualise_tco2e_an",
+                "nb_resultats_census",
+                "nb_resultats_area",
+                "version_methodologie",
+                "version_calcul",
+                "date_calcul",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "graine_bosquet": {
+            "endpoint": "graine_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_sourcing_graine"
+            ]
+        },
+        "table_quantification": {
+            "endpoint": "table_quantification",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_rapport",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "operateur_id",
+                "c_com",
+                "date",
+                "uuid_membre",
+                "nom_prenom_membre",
+                "nbr_nouv_pg",
+                "nbr_suivi_pg",
+                "nbr_nouv_bosquet",
+                "nbr_suivi_bosquet",
+                "nbr_nouv_arbre",
+                "nbr_suivi_arbre",
+                "suivi_membre",
+                "statut_validation",
+                "date_validation"
+            ]
+        },
+        "paiement_pg_historique": {
+            "endpoint": "paiement_pg_historique",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_paiement_pg_historique",
+                "uuid_paiement_pg",
+                "uuid_operateur",
+                "statut",
+                "date_statut",
+                "uuid_facture"
+            ]
+        },
+        "petit_groupe_gps": {
+            "endpoint": "petit_groupe_gps",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_pg_gps",
+                "geom",
+                "uuid_pg",
+                "c_com",
+                "operateur_id",
+                "date_saisie"
+            ]
+        },
+        "pg_document": {
+            "endpoint": "pg_document",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_document",
+                "uuid_pg_historique",
+                "type_document",
+                "autre_document",
+                "date_signature",
+                "commentaire",
+                "statut_validation",
+                "date_validation",
+                "uuid_operateur",
+                "uuid_verficateur"
+            ]
+        },
+        "answer_cobenefice_arbre_bosquet_suivi": {
+            "endpoint": "answer_cobenefice_arbre_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_cobenefice_arbre_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_cobenefice_arbre"
+            ]
+        },
+        "pg_membre_evenement": {
+            "endpoint": "pg_membre_evenement",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_membre_event",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_suivi_admin",
+                "uuid_membre",
+                "date_evenement",
+                "type_evenement",
+                "statut_resultant",
+                "uuid_pg_cible",
+                "uuid_membre_cible",
+                "uuid_document",
+                "statut_validation",
+                "date_validation",
+                "motif",
+                "uuid_operateur",
+                "uuid_verificateur"
+            ]
+        },
+        "topographies": {
+            "endpoint": "topographies",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_topo"
+            ]
+        },
+        "nouveau_membre": {
+            "endpoint": "nouveau_membre",
             "pk_field": "id",
             "columns": [
                 "id",
@@ -241,7 +1157,48 @@
                 "annee_inscription",
                 "lieu_inscription",
                 "statut_validation",
-                "date_validation"
+                "date_validation",
+                "uuid_evenement",
+                "uuid_verficateur",
+                "region",
+                "district",
+                "commune"
+            ]
+        },
+        "answer_nuisible_bosquet_baseline": {
+            "endpoint": "answer_nuisible_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_nuisible_bosquet_baseline",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_baseline",
+                "uuid_nuisible"
+            ]
+        },
+        "bosquet_evenement": {
+            "endpoint": "bosquet_evenement",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet_evenement",
+                "uuid_verificateur",
+                "uuid_operateur",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_gps",
+                "uuid_membre_source",
+                "uuid_membre_cible",
+                "uuid_nouveau_membre",
+                "date_evenement",
+                "type_evenement",
+                "statut_resultant",
+                "type_membre",
+                "exist_event_doc",
+                "statut_validation",
+                "date_validation",
+                "motif"
             ]
         },
         "invasifs": {
@@ -254,24 +1211,333 @@
                 "uuid_invasif"
             ]
         },
-        "answer_sourcing_plant_arbre_baseline": {
-            "endpoint": "answer_sourcing_plant_arbre_baseline",
+        "arbre_strate": {
+            "endpoint": "arbre_strate",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_arbre_gps",
+                "uuid_arbre_suivi",
+                "uuid_campagne",
+                "uuid_strate_census",
+                "date_affectation"
+            ]
+        },
+        "lutte_nuisibles": {
+            "endpoint": "lutte_nuisibles",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_lutte_nuisible"
+            ]
+        },
+        "commune": {
+            "endpoint": "commune",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_com",
+                "c_com",
+                "geom",
+                "region",
+                "district",
+                "commune"
+            ]
+        },
+        "membre_suivi_produit_arbre": {
+            "endpoint": "membre_suivi_produit_arbre",
             "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_answer_sourcing_plant_arbre_baseline",
-                "uuid_arbre_baseline",
-                "uuid_sourcing_plant"
+                "uuid_answer_produit_arbre_membre_suivi",
+                "uuid_produit_arbre",
+                "uuid_membre_suivi",
+                "produit_arbre",
+                "autre",
+                "uuid_membre"
             ]
         },
-        "auth_group": {
-            "endpoint": "auth_group",
+        "pg_statut_historique": {
+            "endpoint": "pg_statut_historique",
             "pk_field": "id",
             "columns": [
                 "id",
-                "name"
+                "operateur_id",
+                "c_com",
+                "uuid_pg_historique",
+                "uuid_pg",
+                "uuid_pg_suivi_admin",
+                "date_evenement",
+                "statut_resultant",
+                "motif",
+                "statut_validation",
+                "date_validation",
+                "uuid_operateur",
+                "uuid_verificateur"
+            ]
+        },
+        "answer_cobenefice_arbre_membre_suivi": {
+            "endpoint": "answer_cobenefice_arbre_membre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_cobenefice_arbre_membre_suivi",
+                "uuid_cobenefice_arbre",
+                "uuid_membre_suivi",
+                "benefice",
+                "autre",
+                "uuid_benefice",
+                "uuid_membre"
+            ]
+        },
+        "placette_gps": {
+            "endpoint": "placette_gps",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_placette_gps",
+                "uuid_bosquet_gps",
+                "code_placette",
+                "caractere_placette",
+                "forme_placette",
+                "surface_m2",
+                "rayon_m",
+                "largeur_m",
+                "longueur_m",
+                "date_installation",
+                "operateur_id",
+                "statut_placette",
+                "geom",
+                "remarque"
+            ]
+        },
+        "membre": {
+            "endpoint": "membre",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_membre",
+                "uuid_pg",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "date_saisie",
+                "code_pg",
+                "nom_pg",
+                "statut_membre",
+                "date_statut",
+                "statut_actif",
+                "region",
+                "district",
+                "commune",
+                "fokontany",
+                "village",
+                "nom_membre",
+                "prenom_membre",
+                "nom_prenom_membre",
+                "genre",
+                "annee_naissance",
+                "cin",
+                "tel",
+                "date_contractualisation",
+                "annee_inscription",
+                "lieu_inscription",
+                "pepinieriste",
+                "leader",
+                "agent_cluster",
+                "quantificateur",
+                "deforestation",
+                "annee_deforestation",
+                "zone_riparienne",
+                "arbres_sup_10pct",
+                "liste_arbres",
+                "utilisation_arbres",
+                "plantation_arbres_1an",
+                "plantation_arbres_5ans",
+                "remarque"
+            ]
+        },
+        "answer_sourcing_graine_arbre_baseline": {
+            "endpoint": "answer_sourcing_graine_arbre_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_sourcing_graine_arbre_baseline",
+                "uuid_arbre_baseline",
+                "uuid_sourcing_graine"
+            ]
+        },
+        "bosquet_geom_historique": {
+            "endpoint": "bosquet_geom_historique",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet_geom_historique",
+                "geom",
+                "uuid_bosquet_gps",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "area_ha",
+                "date",
+                "source"
+            ]
+        },
+        "answer_bien_fait_agroforesterie_membre_suivi": {
+            "endpoint": "answer_bien_fait_agroforesterie_membre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_bien_fait_agroforesterie_membre_suivi",
+                "uuid_bien_fait_agroforesterie",
+                "uuid_membre_suivi",
+                "bienfait",
+                "autre",
+                "uuid_bienfait_agrofor",
+                "uuid_membre"
+            ]
+        },
+        "pg_suivi_admin": {
+            "endpoint": "pg_suivi_admin",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_suivi_admin",
+                "uuid_pg_suivi",
+                "uuid_verificateur",
+                "uuid_operateur",
+                "modif_compo_pg",
+                "statut_change",
+                "reprensentant_pg",
+                "contact_representant_pg",
+                "mobile_banking",
+                "no_mobile_banking",
+                "titulaire_compte_mobile_banking",
+                "statut_validation",
+                "date_validation",
+                "remarque",
+                "representant_pg",
+                "uuid_verficateur",
+                "uuid_pg",
+                "uuid_pg_gps"
+            ]
+        },
+        "photo_autorisation_bosquet_suivi": {
+            "endpoint": "photo_autorisation_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url",
+                "uuid_answer_demarche_autorisation_bosquet_suivi"
+            ]
+        },
+        "photo_liste_rouge_arbre_suivi": {
+            "endpoint": "photo_liste_rouge_arbre_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_liste_rouge_arbre_suivi",
+                "uuid_arbre_suivi",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "gazette": {
+            "endpoint": "gazette",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "title",
+                "url",
+                "date_out",
+                "created_at",
+                "updated_at",
+                "createdAt",
+                "updatedAt"
+            ]
+        },
+        "bosquet_evenement_document": {
+            "endpoint": "bosquet_evenement_document",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_evenement_doc",
+                "uuid_bosquet_evenement",
+                "type_document",
+                "detail_autre",
+                "date_document",
+                "lien_document",
+                "commentaire",
+                "uuid_bosquet_event_doc"
+            ]
+        },
+        "answer_demarche_autorisation_bosquet_baseline": {
+            "endpoint": "answer_demarche_autorisation_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_demarche_autorisation_bosquet_baseline",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_baseline",
+                "uuid_demarche_autorisation"
+            ]
+        },
+        "usufruitiers": {
+            "endpoint": "usufruitiers",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_usufruitier"
+            ]
+        },
+        "RapportClusterPg": {
+            "endpoint": "RapportClusterPg",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_rapport_cluster_pg",
+                "uuid_rapport_cluster",
+                "uuid_pg",
+                "present",
+                "excuse",
+                "nb_arbres_vivant",
+                "nb_arbres_plantes",
+                "nb_arbres_pepiniere"
+            ]
+        },
+        "nuisibles": {
+            "endpoint": "nuisibles",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_nuisible"
             ]
         },
         "communes": {
@@ -288,14 +1554,623 @@
                 "commune"
             ]
         },
-        "utilisation_arbres": {
-            "endpoint": "utilisation_arbres",
+        "core_role": {
+            "endpoint": "core_role",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "code",
+                "description",
+                "created_at",
+                "updated_at",
+                "level"
+            ]
+        },
+        "espece_modele_biomasse": {
+            "endpoint": "espece_modele_biomasse",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_espece_modele",
+                "uuid_espece_densite",
+                "uuid_allom",
+                "dbh_min_cm",
+                "dbh_max_cm",
+                "hauteur_min_m",
+                "hauteur_max_m",
+                "age_min_annees",
+                "age_max_annees",
+                "priorite",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "source_justification",
+                "remarque"
+            ]
+        },
+        "audit_log_view": {
+            "endpoint": "audit_log_view",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "event_date",
+                "event_time",
+                "schema_name",
+                "table_name",
+                "operation",
+                "row_data",
+                "changed_by",
+                "changed_by_email",
+                "txid",
+                "prev_hash",
+                "row_hash",
+                "hash_version",
+                "hash_time"
+            ]
+        },
+        "photo_liste_rouge_arbre_baseline": {
+            "endpoint": "photo_liste_rouge_arbre_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_liste_rouge_arbre_baseline",
+                "uuid_arbre_baseline",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "foncier_coutumiers": {
+            "endpoint": "foncier_coutumiers",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_utilisation_arbre"
+                "uuid_foncier_coutumier"
+            ]
+        },
+        "bosquet_photo_document": {
+            "endpoint": "bosquet_photo_document",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_photo_doc",
+                "uuid_bosquet_evenement_doc",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "photo_autorisation_bosquet": {
+            "endpoint": "photo_autorisation_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "chemin",
+                "external_url",
+                "uuid_answer_demarche_autorisation_bosquet_baseline"
+            ]
+        },
+        "photo_contrat": {
+            "endpoint": "photo_contrat",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "pg_infos": {
+            "endpoint": "pg_infos",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_pg",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "date_saisie",
+                "date_verification",
+                "operateur_id",
+                "c_com",
+                "code_pg",
+                "nom_pg",
+                "nom_cluster",
+                "region",
+                "district",
+                "commune",
+                "fokontany",
+                "village",
+                "date_inscription",
+                "annee_inscription",
+                "lieu_inscription",
+                "date_contrat_ges",
+                "statut_pg",
+                "date_statut",
+                "representant_pg",
+                "contact_representant_pg",
+                "objectif_plantation_5_ans",
+                "remarque"
+            ]
+        },
+        "answer_nuisible_bosquet_suivi": {
+            "endpoint": "answer_nuisible_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_nuisible_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_nuisible"
+            ]
+        },
+        "pg_suivi": {
+            "endpoint": "pg_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_suivi",
+                "uuid_pg_gps",
+                "date_suivi",
+                "trois_familles",
+                "membre_pg_6_12",
+                "nbre_membre_pg",
+                "group_2ha_min",
+                "autre_projet_carbone",
+                "nom_autre_projet_teraka",
+                "projet_non_carbone",
+                "nom_projet_non_carbone",
+                "pg_eligible",
+                "arbres_plantes",
+                "objectf_plantation_5_ans",
+                "pepiniere",
+                "plan_plantation",
+                "visite_bosquet",
+                "reunion_pg",
+                "reunion_cluster",
+                "formation_cluster",
+                "valeurs_teraka",
+                "regles_eligibilite",
+                "alert",
+                "doleance",
+                "detail_alert_doleance",
+                "remarque",
+                "modif_compo_pg",
+                "membre_exclu_pg",
+                "remarque_compo_pg",
+                "statut_change",
+                "mobile_banking",
+                "no_mobile_banking",
+                "titulaire_compte_mobile_banking",
+                "representant_pg",
+                "contact_representant_pg",
+                "objectif_plantation_5_ans"
+            ]
+        },
+        "answer_produit_arbre_bosquet_suivi": {
+            "endpoint": "answer_produit_arbre_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_produit_arbre_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_produit_arbre"
+            ]
+        },
+        "future_bosquet": {
+            "endpoint": "future_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_sol_use"
+            ]
+        },
+        "pg_photo_membre_evenement": {
+            "endpoint": "pg_photo_membre_evenement",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_photo_membre_event",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_membre_event",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "calcul_census_strate": {
+            "endpoint": "calcul_census_strate",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_calcul_census",
+                "uuid_campagne",
+                "uuid_campagne_precedente",
+                "uuid_strate_census",
+                "uuid_calcul_precedent",
+                "n_population_initiale",
+                "n_echantillon_biomasse",
+                "n_evalue_mortalite",
+                "n_morts_cumules",
+                "mortalite_mt",
+                "agb_moyen_pu",
+                "bgb_moyen_pu",
+                "agb_bgb_moyen_pu",
+                "c_moyen_pu_tc",
+                "stock_woody_tc",
+                "delta_cwp_tco2e",
+                "incertitude_stock_up_pct",
+                "incertitude_mortalite_um_pct",
+                "incertitude_totale_unc_pct",
+                "pe_bburn_tco2e",
+                "pe_fert_tco2e",
+                "pe_total_tco2e",
+                "intervalle_annees_x",
+                "cr_intervalle_tco2e",
+                "cr_annualise_tco2e_an",
+                "date_calcul",
+                "remarque"
+            ]
+        },
+        "django_migrations": {
+            "endpoint": "django_migrations",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "app",
+                "name",
+                "applied"
+            ]
+        },
+        "arbre_placette_gps": {
+            "endpoint": "arbre_placette_gps",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_arbre_placette_gps",
+                "uuid_placette_gps",
+                "numero_arbre_placette",
+                "tag_arbre",
+                "date_creation",
+                "operateur_id",
+                "statut_identite",
+                "geom",
+                "remarque"
+            ]
+        },
+        "answer_invasif_bosquet_suivi": {
+            "endpoint": "answer_invasif_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_invasif_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_invasif"
+            ]
+        },
+        "paiement_membre": {
+            "endpoint": "paiement_membre",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_paiement_membre",
+                "uuid_paiement_pg",
+                "uuid_membre",
+                "prix_unitaire_liste_verte",
+                "prix_unitaire_liste_grise_blanche_noire",
+                "nbr_arbre_liste_verte",
+                "nbr_arbre_liste_grise",
+                "nbr_arbre_liste_blanche",
+                "nbr_arbre_liste_noire",
+                "commentaire",
+                "type_approche",
+                "uuid_campagne",
+                "nbr_annee_paiement_liste_verte",
+                "nbr_annee_paiement_liste_grise",
+                "nbr_annee_paiement_liste_blanche",
+                "nbr_annee_paiement_liste_noire",
+                "nb_arbres_eligibles_total",
+                "montant_total_mga",
+                "version_regle_paiement",
+                "statut_qa",
+                "date_calcul"
+            ]
+        },
+        "historique_bosquet": {
+            "endpoint": "historique_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_sol_use"
+            ]
+        },
+        "membre_pg_historique": {
+            "endpoint": "membre_pg_historique",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "uuid_membre",
+                "uuid_pg",
+                "code_pg",
+                "nom_pg",
+                "date_historique"
+            ]
+        },
+        "produits_arbres": {
+            "endpoint": "produits_arbres",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_produit_arbre"
+            ]
+        },
+        "pg_suivi_adm": {
+            "endpoint": "pg_suivi_adm",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_suivi_admin",
+                "uuid_pg_suivi",
+                "uuid_verificateur",
+                "uuid_operateur",
+                "modif_compo_pg",
+                "statut_change",
+                "reprensentant_pg",
+                "contact_representant_pg",
+                "mobile_banking",
+                "no_mobile_banking",
+                "titulaire_compte_mobile_banking",
+                "statut_validation",
+                "date_validation",
+                "remarque",
+                "representant_pg",
+                "uuid_verficateur",
+                "uuid_pg",
+                "uuid_pg_gps"
+            ]
+        },
+        "calcul_area_strate": {
+            "endpoint": "calcul_area_strate",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_calcul_area",
+                "uuid_campagne",
+                "uuid_campagne_precedente",
+                "uuid_strate_area",
+                "uuid_calcul_precedent",
+                "uuid_pb",
+                "surface_a_ha",
+                "c_woody_ab_tc_ha",
+                "ratio_r",
+                "agb_moyen_pu",
+                "bgb_moyen_pu",
+                "agb_bgb_moyen_pu",
+                "c_woody_tc_ha",
+                "c_woody_t0_tc_ha",
+                "delta_c_woody_tc",
+                "delta_c_herb_tc",
+                "delta_c_dw_tc",
+                "delta_c_li_tc",
+                "delta_c_biomass_tc",
+                "delta_c_soc_tc",
+                "delta_cwp_tco2e",
+                "pb_t_pct",
+                "unc_t_pct",
+                "pe_tco2e",
+                "leakage_lk_tco2e",
+                "intervalle_annees_x",
+                "cr_intervalle_tco2e",
+                "cr_annualise_tco2e_an",
+                "version_calcul",
+                "statut_qa",
+                "date_calcul",
+                "remarque",
+                "c_soc_t_tc_ha",
+                "c_soc_t0_tc_ha",
+                "n_echantillons_soc",
+                "methode_esm_soc"
+            ]
+        },
+        "answer_sol_actuel_bosquet_suivi": {
+            "endpoint": "answer_sol_actuel_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_sol_actuel_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_sol_use"
+            ]
+        },
+        "pg_photo_document": {
+            "endpoint": "pg_photo_document",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_photo_document",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_document",
+                "chemin",
+                "external_url"
+            ]
+        },
+        "pb_control_match": {
+            "endpoint": "pb_control_match",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_match",
+                "uuid_pb",
+                "uuid_project_plot",
+                "uuid_control_plot",
+                "distance_matching",
+                "score_matching",
+                "max_abs_z",
+                "covariables_json",
+                "retenu",
+                "motif_exclusion",
+                "version_matching",
+                "date_calcul",
+                "remarque"
+            ]
+        },
+        "arbre_baseline": {
+            "endpoint": "arbre_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_arbre_baseline",
+                "operateur_id",
+                "c_com",
+                "uuid_arbre_gps",
+                "date_baseline",
+                "uuid_espece",
+                "autre_espece",
+                "sourcing",
+                "age",
+                "annee_plantation",
+                "remarque",
+                "uuid_campagne"
+            ]
+        },
+        "lutte_invasifs": {
+            "endpoint": "lutte_invasifs",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_lutte_invasif"
+            ]
+        },
+        "actuelle_bosquet": {
+            "endpoint": "actuelle_bosquet",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet",
+                "uuid_sol_use"
+            ]
+        },
+        "sol_types": {
+            "endpoint": "sol_types",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_sol_type"
+            ]
+        },
+        "RapportCluster": {
+            "endpoint": "RapportCluster",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_rapport_cluster",
+                "uuid_cluster",
+                "c_com",
+                "village",
+                "hameau",
+                "tel_cluster",
+                "date_rapport",
+                "nb_femmes",
+                "nb_hommes",
+                "duree",
+                "is_gazette",
+                "nb_gazette",
+                "theme",
+                "bonne_pratiques",
+                "suggestions",
+                "is_formation",
+                "formateur",
+                "theme_formation",
+                "leader",
+                "co_leader",
+                "comptable"
+            ]
+        },
+        "type_doc_foncier": {
+            "endpoint": "type_doc_foncier",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "nom",
+                "nom_malagasy",
+                "uuid_type_doc_foncier"
+            ]
+        },
+        "performance_benchmark": {
+            "endpoint": "performance_benchmark",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_pb",
+                "uuid_campagne",
+                "uuid_strate_area",
+                "date_reference",
+                "methode_si",
+                "methode_matching",
+                "nb_project_plots",
+                "nb_control_plots",
+                "si_project_moyen",
+                "si_control_moyen",
+                "pb_t_pct",
+                "fournisseur_principal",
+                "version_pb",
+                "source_resultat_uri",
+                "checksum_resultat",
+                "date_calcul",
+                "statut_qa",
+                "remarque"
+            ]
+        },
+        "campagne_suivi": {
+            "endpoint": "campagne_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_campagne",
+                "code_campagne",
+                "nom_campagne",
+                "annee",
+                "type_campagne",
+                "objectif_campagne",
+                "date_debut",
+                "date_fin",
+                "date_reference",
+                "type_approche",
+                "version_protocole",
+                "version_formulaire",
+                "responsable_mrv",
+                "statut",
+                "remarque"
             ]
         },
         "bosquet_baseline": {
@@ -358,333 +2233,75 @@
                 "herbe",
                 "zone_nue",
                 "total_couverture_sol",
-                "remarque"
+                "remarque",
+                "uuid_campagne"
             ]
         },
-        "answer_lutte_invasif_bosquet_baseline": {
-            "endpoint": "answer_lutte_invasif_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_lutte_invasif"
-            ]
-        },
-        "core_userrole": {
-            "endpoint": "core_userrole",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "created_at",
-                "updated_at",
-                "role_id",
-                "user_id"
-            ]
-        },
-        "bosquet_photo_document": {
-            "endpoint": "bosquet_photo_document",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_photo_doc",
-                "uuid_bosquet_evenement_doc",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "answer_usufruiter_bosquet_baseline": {
-            "endpoint": "answer_usufruiter_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_usufruitier"
-            ]
-        },
-        "demarche_autorisations": {
-            "endpoint": "demarche_autorisations",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_demarche_autorisation"
-            ]
-        },
-        "sol_couleurs": {
-            "endpoint": "sol_couleurs",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_sol_couleur"
-            ]
-        },
-        "membre_inscrit": {
-            "endpoint": "membre_inscrit",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_membre",
-                "c_com",
-                "uuid_operateur",
-                "date_saisie",
-                "date_inscription",
-                "date_qualification",
-                "date_contractualisation",
-                "statut_inscrit",
-                "fokontany",
-                "village",
-                "nom_membre",
-                "prenom_membre",
-                "nom_prenom_membre",
-                "genre",
-                "annee_naissance",
-                "cin",
-                "tel",
-                "annee_inscription",
-                "lieu_inscription",
-                "pepinieriste",
-                "leader",
-                "agent_cluster",
-                "quantificateur",
-                "deforestation",
-                "annee_deforestation",
-                "zone_riparienne",
-                "arbres_sup_10pct",
-                "liste_arbres",
-                "utilisation_arbres",
-                "nombre_arbres_prevus",
-                "nombre_arbre_5ans",
-                "remarque"
-            ]
-        },
-        "photo_liste_rouge_arbre_suivi": {
-            "endpoint": "photo_liste_rouge_arbre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_liste_rouge_arbre_suivi",
-                "uuid_arbre_suivi",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "arbre_gps": {
-            "endpoint": "arbre_gps",
+        "soc_suivi": {
+            "endpoint": "soc_suivi",
             "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
-                "operateur_id",
-                "c_com",
-                "uuid_arbre_gps",
+                "uuid_soc_suivi",
+                "uuid_campagne",
                 "uuid_bosquet_gps",
+                "uuid_placette_suivi",
+                "uuid_strate_area",
+                "uuid_soc_reference",
+                "code_echantillon",
+                "type_echantillon",
+                "date_prelevement",
+                "operateur_id",
                 "geom",
-                "numero_arbre",
-                "statut_arbre"
+                "profondeur_sup_cm",
+                "profondeur_inf_cm",
+                "epaisseur_cm",
+                "volume_cylindre_cm3",
+                "masse_sol_sec_g",
+                "densite_apparente_g_cm3",
+                "fragments_grossiers_pct",
+                "soc_pct",
+                "methode_soc",
+                "methode_densite",
+                "laboratoire",
+                "date_analyse",
+                "masse_sol_fine_mg_ha",
+                "stock_soc_tc_ha",
+                "masse_sol_equivalente_ref_mg_ha",
+                "stock_soc_esm_tc_ha",
+                "methode_esm",
+                "inclure_calcul",
+                "statut_qa",
+                "remarque"
             ]
         },
-        "photo_autorisation_bosquet_suivi": {
-            "endpoint": "photo_autorisation_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url",
-                "uuid_answer_demarche_autorisation_bosquet_suivi"
-            ]
-        },
-        "answer_demarche_autorisation_bosquet_suivi": {
-            "endpoint": "answer_demarche_autorisation_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_answer_demarche_autorisation_bosquet_suivi",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_demarche_autorisation"
-            ]
-        },
-        "paiement_pg": {
-            "endpoint": "paiement_pg",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_paiement_pg",
-                "uuid_pg",
-                "code_pg",
-                "nom_pg",
-                "reference_facture",
-                "date_paiement",
-                "date_demande",
-                "date_verification",
-                "uuid_operateur",
-                "uuid_verificateur",
-                "link"
-            ]
-        },
-        "pg_infos": {
-            "endpoint": "pg_infos",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_pg",
-                "uuid_operateur",
-                "uuid_verificateur",
-                "date_saisie",
-                "date_verification",
-                "operateur_id",
-                "c_com",
-                "code_pg",
-                "nom_pg",
-                "fokontany",
-                "village",
-                "date_inscription",
-                "annee_inscription",
-                "lieu_inscription",
-                "date_contrat_ges",
-                "statut_pg",
-                "date_statut",
-                "representant_pg",
-                "contact_representant_pg",
-                "objectif_plantation_5_ans",
-                "remarque",
-                "nom_cluster"
-            ]
-        },
-        "topographies": {
-            "endpoint": "topographies",
+        "sourcing_graines": {
+            "endpoint": "sourcing_graines",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_topo"
+                "uuid_graine"
             ]
         },
-        "audit_log": {
-            "endpoint": "audit_log",
+        "placette_suivi": {
+            "endpoint": "placette_suivi",
             "pk_field": "id",
             "columns": [
                 "id",
-                "event_time",
-                "schema_name",
-                "table_name",
-                "operation",
-                "row_data",
-                "changed_by",
-                "txid",
-                "prev_hash",
-                "row_hash"
-            ]
-        },
-        "answer_utilisation_arbre_bosquet_suivi": {
-            "endpoint": "answer_utilisation_arbre_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
+                "uuid_placette_suivi",
+                "uuid_placette_gps",
+                "uuid_campagne",
+                "uuid_strate_area",
                 "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_utilisation_arbre"
-            ]
-        },
-        "photo_liste_rouge_arbre_baseline": {
-            "endpoint": "photo_liste_rouge_arbre_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_liste_rouge_arbre_baseline",
-                "uuid_arbre_baseline",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "paiement_membre": {
-            "endpoint": "paiement_membre",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_paiement_membre",
-                "uuid_paiement_pg",
-                "uuid_membre",
-                "prix_unitaire_liste_verte",
-                "prix_unitaire_liste_grise_blanche_noire",
-                "nbr_arbre_liste_verte",
-                "nbr_arbre_liste_grise",
-                "nbr_arbre_liste_blanche",
-                "nbr_arbre_liste_noire",
-                "commentaire"
-            ]
-        },
-        "Cluster": {
-            "endpoint": "Cluster",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_cluster",
-                "nom_cluster"
-            ]
-        },
-        "pg_suivi": {
-            "endpoint": "pg_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_pg_suivi",
-                "uuid_pg_gps",
-                "date_suivi",
-                "trois_familles",
-                "membre_pg_6_12",
-                "nbre_membre_pg",
-                "group_2ha_min",
-                "autre_projet_carbone",
-                "nom_autre_projet_teraka",
-                "projet_non_carbone",
-                "nom_projet_non_carbone",
-                "pg_eligible",
-                "arbres_plantes",
-                "objectf_plantation_5_ans",
-                "pepiniere",
-                "plan_plantation",
-                "visite_bosquet",
-                "reunion_pg",
-                "reunion_cluster",
-                "formation_cluster",
-                "valeurs_teraka",
-                "regles_eligibilite",
-                "alert",
-                "doleance",
-                "detail_alert_doleance",
+                "date_mesure",
+                "surface_effective_m2",
+                "nb_arbres_mesures",
+                "statut_qa",
+                "photo_placette",
                 "remarque"
-            ]
-        },
-        "answer_produit_arbre_bosquet_baseline": {
-            "endpoint": "answer_produit_arbre_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_produit_arbre"
             ]
         },
         "core_fieldmapping": {
@@ -701,242 +2318,14 @@
                 "updated_at"
             ]
         },
-        "answer_cobenefice_arbre_membre_suivi": {
-            "endpoint": "answer_cobenefice_arbre_membre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_answer_cobenefice_arbre_membre_suivi",
-                "uuid_cobenefice_arbre",
-                "uuid_membre_suivi"
-            ]
-        },
-        "RapportClusterPg": {
-            "endpoint": "RapportClusterPg",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_rapport_cluster_pg",
-                "uuid_rapport_cluster",
-                "uuid_pg",
-                "present",
-                "excuse",
-                "nb_arbres_vivant",
-                "nb_arbres_plantes",
-                "nb_arbres_pepiniere"
-            ]
-        },
-        "foncier_coutumiers": {
-            "endpoint": "foncier_coutumiers",
+        "demarche_autorisations": {
+            "endpoint": "demarche_autorisations",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_foncier_coutumier"
-            ]
-        },
-        "bosquet_gps": {
-            "endpoint": "bosquet_gps",
-            "geom_field": "geom",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_bosquet_gps",
-                "uuid_membre",
-                "uuid_operateur",
-                "uuid_verificateur",
-                "uuid_pg",
-                "operateur_id",
-                "c_com",
-                "num_bosquet",
-                "code_bosquet",
-                "statut_bosquet",
-                "date_statut",
-                "area_ha",
-                "date_creation",
-                "geom"
-            ]
-        },
-        "pg_statut_historique": {
-            "endpoint": "pg_statut_historique",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_pg_historique",
-                "uuid_pg",
-                "uuid_suivi_admin",
-                "date_evenement",
-                "statut_resultant",
-                "motif",
-                "statut_validation",
-                "date_validation"
-            ]
-        },
-        "answer_sourcing_graine_arbre_suivi": {
-            "endpoint": "answer_sourcing_graine_arbre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_answer_sourcing_graine_arbre_suivi",
-                "uuid_arbre_suivi",
-                "uuid_sourcing_graine"
-            ]
-        },
-        "answer_nuisible_bosquet_suivi": {
-            "endpoint": "answer_nuisible_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_nuisible"
-            ]
-        },
-        "answer_sourcing_plant_arbre_suivi": {
-            "endpoint": "answer_sourcing_plant_arbre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_answer_sourcing_plant_arbre_suivi",
-                "uuid_arbre_suivi",
-                "uuid_sourcing_plant"
-            ]
-        },
-        "answer_sol_actuel_bosquet_baseline": {
-            "endpoint": "answer_sol_actuel_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_sol_use"
-            ]
-        },
-        "photo_pepiniere_suivi": {
-            "endpoint": "photo_pepiniere_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url",
-                "uuid_bosquet_suivi"
-            ]
-        },
-        "pg_photo": {
-            "endpoint": "pg_photo",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_photo",
-                "uuid_pg_suivi",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "answer_cobenefice_arbre_bosquet_baseline": {
-            "endpoint": "answer_cobenefice_arbre_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_cobenefice_arbre"
-            ]
-        },
-        "answer_cobenefice_arbre_bosquet_suivi": {
-            "endpoint": "answer_cobenefice_arbre_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_cobenefice_arbre"
-            ]
-        },
-        "pg_membre_evenement": {
-            "endpoint": "pg_membre_evenement",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_membre_event",
-                "operateur_id",
-                "c_com",
-                "uuid_pg_suivi_admin",
-                "uuid_membre",
-                "date_evenement",
-                "type_evenement",
-                "statut_resultant",
-                "uuid_pg_cible",
-                "uuid_membre_cible",
-                "uuid_document",
-                "statut_validation",
-                "date_validation",
-                "motif"
-            ]
-        },
-        "lutte_invasifs": {
-            "endpoint": "lutte_invasifs",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_lutte_invasif"
-            ]
-        },
-        "django_migrations": {
-            "endpoint": "django_migrations",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "app",
-                "name",
-                "applied"
-            ]
-        },
-        "RapportCluster": {
-            "endpoint": "RapportCluster",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_rapport_cluster",
-                "uuid_cluster",
-                "c_com",
-                "village",
-                "hameau",
-                "tel_cluster",
-                "date_rapport",
-                "nb_femmes",
-                "nb_hommes",
-                "duree",
-                "is_gazette",
-                "nb_gazette",
-                "theme",
-                "bonne_pratiques",
-                "suggestions",
-                "is_formation",
-                "formateur",
-                "theme_formation",
-                "leader",
-                "co_leader",
-                "comptable"
+                "uuid_demarche_autorisation"
             ]
         },
         "especes_arbres": {
@@ -953,17 +2342,63 @@
                 "liste_rouge",
                 "liste_verte",
                 "liste_blanche",
-                "uuid_espece"
+                "uuid_espece",
+                "nom_espece",
+                "synonymes",
+                "noms_vernac_mg",
+                "noms_vernac_fr",
+                "noms_vernac_en",
+                "nom_espece_full",
+                "count_bd_28122024",
+                "origine",
+                "endemique",
+                "potentiel_invasif",
+                "restreinte_dredd_mnp",
+                "statut_iucn",
+                "tendances_population",
+                "categorie_teraka",
+                "date_categorie",
+                "services_ecosystemiques_prioritaires_et_usages",
+                "source_iucn",
+                "source_inaturalist"
             ]
         },
-        "nuisibles": {
-            "endpoint": "nuisibles",
+        "foncier_legals": {
+            "endpoint": "foncier_legals",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_nuisible"
+                "uuid_foncier_legal"
+            ]
+        },
+        "arbre_geom_historique": {
+            "endpoint": "arbre_geom_historique",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "uuid_arbre_geom_historique",
+                "uuid_arbre_gps",
+                "date",
+                "source",
+                "geom",
+                "operateur_id",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "id"
+            ]
+        },
+        "answer_sol_actuel_bosquet_baseline": {
+            "endpoint": "answer_sol_actuel_bosquet_baseline",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_sol_actuel_bosque_baseline",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_baseline",
+                "uuid_sol_use"
             ]
         },
         "auth_group_permissions": {
@@ -975,58 +2410,56 @@
                 "permission_id"
             ]
         },
-        "paiement_pg_historique": {
-            "endpoint": "paiement_pg_historique",
+        "answer_lutte_invasif_bosquet_baseline": {
+            "endpoint": "answer_lutte_invasif_bosquet_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
-                "uuid_paiement_pg_historique",
-                "uuid_paiement_pg",
-                "uuid_operateur",
-                "statut",
-                "date_statut"
-            ]
-        },
-        "cobenefice_arbres": {
-            "endpoint": "cobenefice_arbres",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_cobenefice_arbre"
-            ]
-        },
-        "usufruitiers": {
-            "endpoint": "usufruitiers",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_usufruitier"
-            ]
-        },
-        "django_session": {
-            "endpoint": "django_session",
-            "pk_field": "id",
-            "columns": [
-                "session_key",
-                "session_data",
-                "expire_date"
-            ]
-        },
-        "photo_autre_espece_arbre_baseline": {
-            "endpoint": "photo_autre_espece_arbre_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_autre_espece_arbre_baseline",
-                "uuid_arbre_baseline",
+                "uuid_answer_lutte_invasif_bosquet_baseline",
                 "operateur_id",
                 "c_com",
+                "uuid_bosquet_baseline",
+                "uuid_lutte_invasif"
+            ]
+        },
+        "photo_pg": {
+            "endpoint": "photo_pg",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_pg",
                 "chemin",
                 "external_url"
+            ]
+        },
+        "membre_suivi_benefice_teraka": {
+            "endpoint": "membre_suivi_benefice_teraka",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_answer_cobenefice_arbre_membre_suivi",
+                "uuid_cobenefice_arbre",
+                "uuid_membre_suivi",
+                "benefice",
+                "autre",
+                "uuid_benefice",
+                "uuid_membre"
+            ]
+        },
+        "answer_lutte_nuisible_bosquet_suivi": {
+            "endpoint": "answer_lutte_nuisible_bosquet_suivi",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_answer_lutte_nuisible_bosquet_suivi",
+                "operateur_id",
+                "c_com",
+                "uuid_bosquet_suivi",
+                "uuid_lutte_nuisible"
             ]
         },
         "photo_pepiniere": {
@@ -1041,14 +2474,151 @@
                 "uuid_bosquet_baseline"
             ]
         },
-        "sol_types": {
-            "endpoint": "sol_types",
+        "sol_couleurs": {
+            "endpoint": "sol_couleurs",
             "pk_field": "id",
             "columns": [
                 "id",
                 "nom",
                 "nom_malagasy",
-                "uuid_sol_type"
+                "uuid_sol_couleur"
+            ]
+        },
+        "ref_modele_bgb": {
+            "endpoint": "ref_modele_bgb",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_modele_bgb",
+                "code_modele_bgb",
+                "nom_modele_bgb",
+                "ratio_racine_tige_r",
+                "source_reference",
+                "version",
+                "date_debut_validite",
+                "date_fin_validite",
+                "actif",
+                "remarque"
+            ]
+        },
+        "membres": {
+            "endpoint": "membres",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "operateur_id",
+                "c_com",
+                "uuid_membre",
+                "uuid_pg",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "date_saisie",
+                "code_pg",
+                "nom_pg",
+                "statut_membre",
+                "date_statut",
+                "statut_actif",
+                "region",
+                "district",
+                "commune",
+                "fokontany",
+                "village",
+                "nom_membre",
+                "prenom_membre",
+                "nom_prenom_membre",
+                "genre",
+                "annee_naissance",
+                "cin",
+                "tel",
+                "date_contractualisation",
+                "annee_inscription",
+                "lieu_inscription",
+                "pepinieriste",
+                "leader",
+                "agent_cluster",
+                "quantificateur",
+                "deforestation",
+                "annee_deforestation",
+                "zone_riparienne",
+                "arbres_sup_10pct",
+                "liste_arbres",
+                "utilisation_arbres",
+                "plantation_arbres_1an",
+                "plantation_arbres_5ans",
+                "remarque"
+            ]
+        },
+        "pg_nouveau_membre": {
+            "endpoint": "pg_nouveau_membre",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_membre",
+                "operateur_id",
+                "c_com",
+                "uuid_pg_membre_event",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "date_saisie",
+                "uuid_pg",
+                "code_pg",
+                "nom_pg",
+                "statut_membre",
+                "date_statut",
+                "fokontany",
+                "village",
+                "nom_membre",
+                "prenom_membre",
+                "nom_prenom_membre",
+                "genre",
+                "annee_naissance",
+                "cin",
+                "tel",
+                "annee_inscription",
+                "lieu_inscription",
+                "statut_validation",
+                "date_validation",
+                "uuid_evenement",
+                "uuid_verficateur",
+                "region",
+                "district",
+                "commune"
+            ]
+        },
+        "formation_small_group": {
+            "endpoint": "formation_small_group",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_pg_quantif",
+                "uuid_membre",
+                "formation_id",
+                "autre"
+            ]
+        },
+        "bosquet_gps": {
+            "endpoint": "bosquet_gps",
+            "geom_field": "geom",
+            "pk_field": "id",
+            "columns": [
+                "id",
+                "uuid_bosquet_gps",
+                "uuid_membre",
+                "uuid_operateur",
+                "uuid_verificateur",
+                "uuid_pg",
+                "c_com",
+                "num_bosquet",
+                "code_bosquet",
+                "statut_bosquet",
+                "date_statut",
+                "area_ha",
+                "date_creation",
+                "geom",
+                "operateur_id",
+                "type_approche_carbone",
+                "statut_eligibilite_carbone",
+                "date_classification_carbone"
             ]
         },
         "membre_suivi": {
@@ -1078,63 +2648,48 @@
                 "difficulte_programme",
                 "difficulte_commentaire",
                 "risque_erosion_inondation",
-                "bien_etre_general"
+                "bien_etre_general",
+                "uuid_verficateur",
+                "id_operateur",
+                "date_saisie"
             ]
         },
-        "answer_usufruitier_bosquet_suivi": {
-            "endpoint": "answer_usufruitier_bosquet_suivi",
+        "arbre_gps": {
+            "endpoint": "arbre_gps",
+            "geom_field": "geom",
             "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_usufruitier"
-            ]
-        },
-        "arbre_suivi": {
-            "endpoint": "arbre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_arbre_suivi",
                 "uuid_arbre_gps",
-                "date_suivi",
-                "uuid_espece",
-                "autre_espece",
-                "sourcing",
-                "age",
-                "annee_plantation",
+                "uuid_bosquet_gps",
+                "geom",
+                "numero_arbre",
                 "statut_arbre",
-                "echantillon",
-                "multitiges",
-                "circonference",
-                "hauteur",
-                "remarque"
+                "cause_statut",
+                "date_statut"
             ]
         },
-        "answer_invasif_bosquet_suivi": {
-            "endpoint": "answer_invasif_bosquet_suivi",
+        "photo_doc_foncier": {
+            "endpoint": "photo_doc_foncier",
             "pk_field": "id",
             "columns": [
                 "id",
                 "operateur_id",
                 "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_invasif"
+                "uuid_bosquet_gps",
+                "chemin",
+                "external_url"
             ]
         },
-        "answer_sol_actuel_bosquet_suivi": {
-            "endpoint": "answer_sol_actuel_bosquet_suivi",
+        "lutte_invasif_bosquet": {
+            "endpoint": "lutte_invasif_bosquet",
             "pk_field": "id",
             "columns": [
                 "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_sol_use"
+                "uuid_bosquet",
+                "uuid_lutte_invasif"
             ]
         },
         "pg_gps": {
@@ -1147,386 +2702,49 @@
                 "geom",
                 "uuid_pg",
                 "c_com",
-                "operateur_id"
-            ]
-        },
-        "bosquet_geom_historique": {
-            "endpoint": "bosquet_geom_historique",
-            "geom_field": "geom",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_bosquet_geom_historique",
-                "geom",
-                "uuid_bosquet_gps",
-                "uuid_operateur",
-                "uuid_verificateur",
-                "area_ha",
-                "date",
-                "source"
-            ]
-        },
-        "answer_lutte_invasif_bosquet_suivi": {
-            "endpoint": "answer_lutte_invasif_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
                 "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_lutte_invasif"
+                "date_saisie"
             ]
         },
-        "pg_suivi_admin": {
-            "endpoint": "pg_suivi_admin",
+        "ref_strate_carbone_census": {
+            "endpoint": "ref_strate_carbone_census",
             "pk_field": "id",
             "columns": [
                 "id",
-                "operateur_id",
-                "c_com",
-                "uuid_suivi_admin",
-                "uuid_pg_suivi",
-                "uuid_verificateur",
-                "uuid_operateur",
-                "modif_compo_pg",
-                "statut_change",
-                "reprensentant_pg",
-                "contact_representant_pg",
-                "mobile_banking",
-                "no_mobile_banking",
-                "titulaire_compte_mobile_banking",
-                "statut_validation",
-                "date_validation",
-                "remarque"
-            ]
-        },
-        "pg_photo_membre_evenement": {
-            "endpoint": "pg_photo_membre_evenement",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_photo_membre_event",
-                "operateur_id",
-                "c_com",
-                "uuid_pg_membre_event",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "type_doc_foncier": {
-            "endpoint": "type_doc_foncier",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_type_doc_foncier"
-            ]
-        },
-        "bosquet_evenement_document": {
-            "endpoint": "bosquet_evenement_document",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_evenement_doc",
-                "uuid_bosquet_evenement",
-                "type_document",
-                "detail_autre",
-                "date_document",
-                "lien_document",
-                "commentaire"
-            ]
-        },
-        "auth_permission": {
-            "endpoint": "auth_permission",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "name",
-                "content_type_id",
-                "codename"
-            ]
-        },
-        "photo_autorisation_bosquet": {
-            "endpoint": "photo_autorisation_bosquet",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url",
-                "uuid_answer_demarche_autorisation_bosquet_baseline"
-            ]
-        },
-        "answer_invasif_bosquet_baseline": {
-            "endpoint": "answer_invasif_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_baseline",
-                "uuid_invasif"
-            ]
-        },
-        "photo_bosquet_suivi": {
-            "endpoint": "photo_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url",
-                "uuid_bosquet_suivi"
-            ]
-        },
-        "django_content_type": {
-            "endpoint": "django_content_type",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "app_label",
-                "model"
-            ]
-        },
-        "utilisation_sol_bosquets": {
-            "endpoint": "utilisation_sol_bosquets",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_sol_use"
-            ]
-        },
-        "users": {
-            "endpoint": "users",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_user",
-                "operateur_id",
-                "c_com",
-                "nom",
-                "prenom",
-                "email",
-                "mot_de_passe",
-                "num_tel",
-                "annee_naissance",
-                "genre",
-                "adresse",
-                "role",
-                "photo",
-                "is_active",
-                "last_login",
-                "is_superuser",
-                "is_staff",
-                "date_joined"
-            ]
-        },
-        "pg_document": {
-            "endpoint": "pg_document",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_pg_document",
-                "uuid_pg_historique",
-                "type_document",
-                "autre_document",
-                "date_signature",
-                "commentaire",
-                "statut_validation",
-                "date_validation"
-            ]
-        },
-        "answer_bien_fait_agroforesterie_membre_suivi": {
-            "endpoint": "answer_bien_fait_agroforesterie_membre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_answer_bien_fait_agroforesterie_membre_suivi",
-                "uuid_bien_fait_agroforesterie",
-                "uuid_membre_suivi"
-            ]
-        },
-        "photo_autre_espece_arbre_suivi": {
-            "endpoint": "photo_autre_espece_arbre_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_autre_espece_arbre_suivi",
-                "uuid_arbre_suivi",
-                "operateur_id",
-                "c_com",
-                "chemin",
-                "external_url"
-            ]
-        },
-        "test_audit_table": {
-            "endpoint": "test_audit_table",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "data"
-            ]
-        },
-        "produits_arbres": {
-            "endpoint": "produits_arbres",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_produit_arbre"
-            ]
-        },
-        "answer_lutte_nuisible_bosquet_suivi": {
-            "endpoint": "answer_lutte_nuisible_bosquet_suivi",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "operateur_id",
-                "c_com",
-                "uuid_bosquet_suivi",
-                "uuid_lutte_nuisible"
-            ]
-        },
-        "arbre_baseline": {
-            "endpoint": "arbre_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_arbre_baseline",
-                "operateur_id",
-                "c_com",
-                "uuid_arbre_gps",
-                "date_baseline",
-                "uuid_espece",
-                "autre_espece",
-                "sourcing",
+                "uuid_strate_census",
+                "code_strate",
+                "nom_strate",
+                "major_strata",
+                "especes",
                 "age",
-                "annee_plantation",
+                "cohorte",
+                "regle_affectation_json",
+                "actif",
                 "remarque"
             ]
         },
-        "sourcing_plants": {
-            "endpoint": "sourcing_plants",
+        "answer_cobenefice_arbre_bosquet_baseline": {
+            "endpoint": "answer_cobenefice_arbre_bosquet_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_plant"
-            ]
-        },
-        "django_admin_log": {
-            "endpoint": "django_admin_log",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "action_time",
-                "object_id",
-                "object_repr",
-                "action_flag",
-                "change_message",
-                "content_type_id",
-                "user_id"
-            ]
-        },
-        "answer_demarche_autorisation_bosquet_baseline": {
-            "endpoint": "answer_demarche_autorisation_bosquet_baseline",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_answer_demarche_autorisation_bosquet_baseline",
+                "uuid_answer_cobenefice_arbre_bosquet_baseline",
                 "operateur_id",
                 "c_com",
                 "uuid_bosquet_baseline",
-                "uuid_demarche_autorisation"
+                "uuid_cobenefice_arbre"
             ]
         },
-        "answer_produit_arbre_membre_suivi": {
-            "endpoint": "answer_produit_arbre_membre_suivi",
+        "answer_lutte_nuisible_bosquet_baseline": {
+            "endpoint": "answer_lutte_nuisible_bosquet_baseline",
             "pk_field": "id",
             "columns": [
                 "id",
+                "uuid_answer_lutte_nuisible_bosquet_baseline",
                 "operateur_id",
                 "c_com",
-                "uuid_answer_produit_arbre_membre_suivi",
-                "uuid_produit_arbre",
-                "uuid_membre_suivi"
-            ]
-        },
-        "membre": {
-            "endpoint": "membre",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "uuid_membre",
-                "c_com",
-                "uuid_operateur",
-                "uuid_verificateur",
-                "date_saisie",
-                "uuid_pg",
-                "code_pg",
-                "nom_pg",
-                "statut_membre",
-                "date_statut",
-                "fokontany",
-                "village",
-                "nom_membre",
-                "prenom_membre",
-                "nom_prenom_membre",
-                "genre",
-                "annee_naissance",
-                "cin",
-                "tel",
-                "annee_inscription",
-                "lieu_inscription",
-                "date_contractualisation",
-                "pepinieriste",
-                "leader",
-                "agent_cluster",
-                "quantificateur",
-                "deforestation",
-                "annee_deforestation",
-                "zone_riparienne",
-                "arbres_sup_10pct",
-                "liste_arbres",
-                "utilisation_arbres",
-                "plantation_arbres_1an",
-                "plantation_arbres_5ans",
-                "remarque"
-            ]
-        },
-        "bien_fait_agroforesteries": {
-            "endpoint": "bien_fait_agroforesteries",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "nom",
-                "nom_malagasy",
-                "uuid_bien"
-            ]
-        },
-        "core_role": {
-            "endpoint": "core_role",
-            "pk_field": "id",
-            "columns": [
-                "id",
-                "code",
-                "description",
-                "created_at",
-                "updated_at",
-                "level"
+                "uuid_bosquet_baseline",
+                "uuid_lutte_nuisible"
             ]
         }
     }
