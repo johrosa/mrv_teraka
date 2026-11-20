@@ -249,6 +249,39 @@ mergin_workflows/
 
 ## ⚙️ Configuration
 
+### Migrations et requêtes API
+
+Modifiez `config.ini` à la racine du plugin, puis redémarrez QGIS.
+Les valeurs doivent être des entiers strictement positifs. Un paramètre absent
+ou invalide reprend sa valeur par défaut; une valeur invalide est signalée dans
+les journaux Python. Si le fichier est absent ou illisible, les défauts sont utilisés.
+
+| Section | Paramètre | Défaut | Rôle |
+|---------|-----------|--------|------|
+| `migration` | `batch_size` | 1000 | Nombre maximal d'entités par requête de migration |
+| `migration` | `repeated_error_limit` | 10 | Seuil de requêtes rejetées avec la même erreur avant de limiter le diagnostic |
+| `postgrest` | `page_size` | 5000 | Nombre d'enregistrements demandés par page |
+| `postgrest` | `request_timeout` | 20 | Délai des requêtes API, en secondes |
+| `postgrest` | `connection_timeout` | 5 | Délai de vérification de connexion, en secondes |
+| `postgrest` | `auth_timeout` | 15 | Délai d'authentification, en secondes |
+| `postgrest` | `connection_check_interval` | 60 | Intervalle de vérification de connexion, en secondes |
+
+Par exemple, définissez `batch_size = 200` pour envoyer au maximum 200 entités
+par requête. Les lots sont envoyés successivement; en cas d'erreur de données,
+ils peuvent être divisés en lots plus petits pour isoler les lignes en échec.
+Les appels Python peuvent toujours préciser `page_size` ou `timeout` explicitement.
+Les correspondances couches/tables restent définies dans `layer_table_mapping.json`.
+
+Les migrations vers `commune` et `communes` utilisent le code unique `c_com`
+pour mettre à jour les communes existantes. Les ID locaux sont exclus de l'envoi
+et les `uuid_com` existants sont préservés. Pour les autres tables, les UUID
+métier restent prioritaires. Un mapping peut préciser `conflict_field` pour
+choisir explicitement une colonne unique (ou plusieurs, séparées par des virgules),
+sans changer `pk_field`.
+Les conflits d'unicité peuvent être isolés par découpage des lots. Un délai réseau
+dépassé est signalé comme un résultat non confirmé, car le serveur peut avoir
+appliqué l'écriture malgré l'absence de réponse.
+
 ### API (Django/PostgREST)
 ```python
 # Dans mrv_teraka.py

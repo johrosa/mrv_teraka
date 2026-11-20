@@ -14,6 +14,8 @@ from enum import Enum
 import re
 import requests
 
+from .plugin_config import CONFIG
+
 
 class PostgRESTMode(Enum):
     """Modes de PostgREST supportés"""
@@ -200,12 +202,15 @@ class PostgREST:
         endpoint: str,
         params: Optional[Dict[str, str]] = None,
         data: Optional[Dict[str, Any]] = None,
-        timeout: int = 20,
+        timeout: Optional[int] = None,
         show_error_ui: bool = False,
         headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """Effectue une requête HTTP vers PostgREST."""
         from .utils import Utils
+
+        if timeout is None:
+            timeout = CONFIG.request_timeout
         
         # Normaliser les UUID dans les données si présentes
         if data:
@@ -363,7 +368,7 @@ class PostgREST:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         auto_paginate: bool = True,
-        page_size: int = 5000,
+        page_size: Optional[int] = None,
         show_error_ui: bool = True
     ) -> List[Dict[str, Any]]:
         """
@@ -377,12 +382,16 @@ class PostgREST:
             limit: Limite globale.
             offset: Offset initial.
             auto_paginate: Si True, récupère toutes les pages jusqu'à la limite.
-            page_size: Taille de chaque page pour la pagination.
+            page_size: Taille de chaque page (config.ini si omise).
             show_error_ui: Si False, ne tente pas d'ouvrir de dialogue d'erreur.
         
         Returns:
             Liste consolidée des enregistrements.
         """
+        if page_size is None:
+            page_size = CONFIG.page_size
+        if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size <= 0:
+            raise ValueError('page_size doit être un entier strictement positif')
         all_data = []
         current_offset = offset or 0
         remaining_limit = limit
@@ -546,7 +555,7 @@ class PostgREST:
         """Check the authenticated API, preserving the server's error details."""
         if not self.jwt_token:
             raise RuntimeError("Authentification requise : aucun jeton JWT.")
-        self._make_request('HEAD', '', show_error_ui=False, timeout=5)
+        self._make_request('HEAD', '', show_error_ui=False, timeout=CONFIG.connection_timeout)
 
     def verify_token(self) -> bool:
         """Return whether the authenticated API is currently reachable."""
@@ -766,7 +775,7 @@ class PostgRESTAuthenticator:
         )
         
         try:
-            with urllib.request.urlopen(request, timeout=15) as response:
+            with urllib.request.urlopen(request, timeout=CONFIG.auth_timeout) as response:
                 response_text = response.read().decode('utf-8')
                 response_data = json.loads(response_text)
         except urllib.error.HTTPError as e:

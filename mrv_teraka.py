@@ -22,6 +22,7 @@ from .utils import Utils
 
 from .postgrest_client import PostgREST, PostgRESTAuthenticator, PostgRESTMode, PostgRESTError
 from .config_postgrest import load_layer_mapping
+from .plugin_config import CONFIG
 from .auth_dialog import AuthDialog
 from .token_manager import TokenManager
 from .mergin_workflow_manager import MerginWorkflowManager, MerginDataMerger
@@ -56,7 +57,7 @@ class MrvTeraka:
         self.mergin_bridge = MerginPluginBridge()
         self.current_project_id = None
 
-        self.conn_checker = ConnectionChecker(interval=60)
+        self.conn_checker = ConnectionChecker(interval=CONFIG.connection_check_interval)
         self.conn_checker.connection_status_changed.connect(self.on_connection_status_changed)
         self.mergin_validation_ready = False
         self.current_collected_data = None
@@ -845,13 +846,21 @@ class MrvTeraka:
         return str(column).lower() in self.mapping_columns(mapping)
 
     def conflict_field_for_mapping(self, mapping):
-        """Préfère uuid_<endpoint> pour les upserts quand cette colonne existe."""
+        """Choisit une clé métier stable pour les upserts, distincte des ID locaux."""
         if not isinstance(mapping, dict):
             return 'id'
 
-        endpoint = str(mapping.get('endpoint') or '').strip().lower()
+        explicit_field = str(mapping.get('conflict_field') or '').strip().lower()
+        if explicit_field:
+            return explicit_field
+
+        endpoint = str(mapping.get('endpoint') or '').strip('/').split('/')[-1].lower()
         columns = self.mapping_columns(mapping)
         pk_field = str(mapping.get('pk_field', 'id') or 'id').lower()
+
+        # c_com est unique côté serveur; les id/uuid_com locaux peuvent différer.
+        if endpoint in {'commune', 'communes'} and 'c_com' in columns:
+            return 'c_com'
 
         candidates = []
         if endpoint:
@@ -2545,7 +2554,7 @@ class MrvTeraka:
         ) != QMessageBox.Yes:
             return
 
-        EXECUTION_ORDER = ["communes", "pg_infos","pg_gps", "membre", "bosquet_gps", "arbre_gps", "arbre_baseline"]
+        EXECUTION_ORDER = ["commune", "communes", "pg_infos","pg_gps", "membre", "bosquet_gps", "arbre_gps", "arbre_baseline"]
 
         def get_priority(pair):
             name = pair[1].get('endpoint', '').lower()
@@ -2708,7 +2717,7 @@ class MrvTeraka:
         row = rows[0]
         if not isinstance(row, dict):
             return None
-        for key in ('id', 'uuid_bosquet_gps', 'uuid_pg_gps', 'uuid_pg', 'uuid_membre', 'uuid_arbre_gps'):
+        for key in ('c_com', 'id', 'uuid_com', 'uuid_bosquet_gps', 'uuid_pg_gps', 'uuid_pg', 'uuid_membre', 'uuid_arbre_gps'):
             value = row.get(key)
             if value not in (None, ""):
                 return f"{key}={value}"
@@ -2723,7 +2732,7 @@ class MrvTeraka:
             elif len(rows) == 1:
                 packet_label = f"Ligne {start_idx + 1}"
             else:
-                packet_label = f"Paquet {start_idx}-{end_idx}"
+                packet_label = f"Paquet {start_idx + 1}-{end_idx}"
             lines = [
                 f"{layer_name} -> {endpoint} [{packet_label}]",
                 f"HTTP {exc.status_code} {exc.reason}",
@@ -2750,18 +2759,18 @@ class MrvTeraka:
                 lines.append(f"{row_label}: {sample_id}")
             if rows and len(rows) > 1:
                 lines.append(
-                    "Note: ce paquet est conservé groupé pour accélérer la migration; "
-                    "une des lignes du paquet contient probablement l'erreur."
+                    "La requête entière a été rejetée; cela ne signifie pas que toutes "
+                    "les lignes du paquet sont invalides."
                 )
             return "\n".join(lines)
 
-        return f"{layer_name} -> {endpoint} [Paquet {start_idx}-{end_idx}]\n{str(exc)}"
+        return f"{layer_name} -> {endpoint} [Paquet {start_idx + 1}-{end_idx}]\n{str(exc)}"
 
     @staticmethod
     def _is_probably_row_level_postgrest_error(exc):
         if not isinstance(exc, PostgRESTError):
             return False
-        return str(exc.code or '') in {'23503', '23502', '22P02', '22007', '22008', '22003', '23514'}
+        return str(exc.code or '') in {'23503', '23505', '23502', '21000', '22P02', '22007', '22008', '22003', '23514'}
 
     @staticmethod
     def _migration_error_signature(exc):
@@ -2783,16 +2792,41 @@ class MrvTeraka:
                 prepared_rows.append(row)
                 continue
             prepared = dict(row)
-            if prepared.get('id') in (None, '') and conflict_field != 'id':
+            # Un ID local ne doit pas remplacer l'ID serveur lors d'un upsert
+            # utilisant une autre clé (code commune, UUID métier, etc.).
+            conflict_columns = {column.strip() for column in conflict_field.split(',')}
+            if conflict_field and 'id' not in conflict_columns:
                 prepared.pop('id', None)
             prepared_rows.append(prepared)
         return prepared_rows
 
     @staticmethod
+    def _prepare_migration_rows(postgrest_client, endpoint, rows, conflict_field):
+        prepared = MrvTeraka._prepare_api_write_rows(rows, conflict_field)
+        endpoint_name = str(endpoint).strip('/').split('/')[-1].lower()
+        if endpoint_name in {'commune', 'communes'} and conflict_field == 'c_com':
+            # Garder également les UUID des communes déjà présentes. Les nouvelles
+            # communes conservent leur UUID local, nécessaire à leur insertion.
+            if any(isinstance(row, dict) and 'uuid_com' in row for row in prepared):
+                existing = postgrest_client.select(
+                    endpoint, select='c_com,uuid_com', show_error_ui=False,
+                )
+                server_uuids = {
+                    str(row['c_com']): row['uuid_com'] for row in existing
+                    if row.get('c_com') is not None and row.get('uuid_com')
+                }
+                for row in prepared:
+                    if isinstance(row, dict) and str(row.get('c_com')) in server_uuids:
+                        row['uuid_com'] = server_uuids[str(row['c_com'])]
+        return prepared
+
+    @staticmethod
     def _insert_rows_with_diagnostics(
         postgrest_client, endpoint, rows, conflict_field, layer_name, start_idx, results,
-        min_diagnostic_batch_size=100, error_state=None, repeated_error_limit=10
+        min_diagnostic_batch_size=100, error_state=None, repeated_error_limit=None
     ):
+        if repeated_error_limit is None:
+            repeated_error_limit = CONFIG.migration_repeated_error_limit
         if not rows:
             return 0, 0
 
@@ -2809,20 +2843,31 @@ class MrvTeraka:
             results.append(f"✅ {layer_name} -> {endpoint}: batch de {len(rows)} ligne(s) publié.")
             return len(rows), 0
         except Exception as exc:
+            if not isinstance(exc, PostgRESTError):
+                # Après un timeout, le serveur peut avoir validé l'écriture.
+                # Ne pas découper/rejouer automatiquement un résultat inconnu.
+                error_state['_unconfirmed_rows'] = error_state.get('_unconfirmed_rows', 0) + len(rows)
+                results.append(
+                    f"⚠️ {layer_name} -> {endpoint} [Paquet {start_idx + 1}-{start_idx + len(rows)}]: "
+                    f"résultat non confirmé pour {len(rows)} ligne(s).\n{exc}\n"
+                    "Le serveur peut avoir appliqué la requête; vérifier la connexion et relancer la migration par upsert."
+                )
+                return 0, len(rows)
+
             signature = MrvTeraka._migration_error_signature(exc)
             if error_state.get(signature, 0) >= repeated_error_limit:
-                error_state[signature] = error_state.get(signature, 0) + len(rows)
+                error_state[signature] = error_state.get(signature, 0) + 1
                 error_msg = MrvTeraka._format_postgrest_error(
                     exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
                 )
                 results.append(
-                    f"⏭️ {layer_name} -> {endpoint}: {len(rows)} ligne(s) ignorée(s), "
-                    f"même erreur déjà répétée {error_state[signature]} fois.\n{error_msg}"
+                    f"⏭️ {layer_name} -> {endpoint}: lot de {len(rows)} ligne(s) non publié, "
+                    f"diagnostic limité après {error_state[signature]} requêtes rejetées avec la même erreur.\n{error_msg}"
                 )
                 return 0, len(rows)
 
             if len(rows) == 1 or not MrvTeraka._is_probably_row_level_postgrest_error(exc):
-                error_state[signature] = error_state.get(signature, 0) + len(rows)
+                error_state[signature] = error_state.get(signature, 0) + 1
                 error_msg = MrvTeraka._format_postgrest_error(
                     exc, layer_name, endpoint, start_idx, start_idx + len(rows), rows
                 )
@@ -2863,9 +2908,9 @@ class MrvTeraka:
     @staticmethod
     def _do_migration_task(task, migration_data, postgrest_client):
         results, errors_count = [], 0
-        CHUNK_SIZE = 1000
+        chunk_size = CONFIG.migration_batch_size
         MIN_DIAGNOSTIC_BATCH_SIZE = 100
-        REPEATED_ERROR_LIMIT = 10
+        repeated_error_limit = CONFIG.migration_repeated_error_limit
         for i, (layer_name, endpoint, conflict_field, data) in enumerate(migration_data):
             if task.isCanceled():
                 return {'results': results, 'status': 'canceled'}
@@ -2876,10 +2921,21 @@ class MrvTeraka:
                 f"conflit={conflict_field}."
             )
 
-            for start_idx in range(0, len(data), CHUNK_SIZE):
+            try:
+                data = MrvTeraka._prepare_migration_rows(postgrest_client, endpoint, data, conflict_field)
+            except Exception as exc:
+                errors_count += len(data)
+                results.append(
+                    f"❌ {layer_name} -> {endpoint}: préparation impossible, aucune écriture tentée "
+                    f"pour {len(data)} ligne(s).\n{exc}"
+                )
+                task.setProgress((i + 1) / len(migration_data) * 100)
+                continue
+
+            for start_idx in range(0, len(data), chunk_size):
                 if task.isCanceled():
                     return {'results': results, 'status': 'canceled'}
-                end_idx = min(start_idx + CHUNK_SIZE, len(data))
+                end_idx = min(start_idx + chunk_size, len(data))
                 chunk_data = data[start_idx:end_idx]
                 results.append(f"📦 {layer_name} -> {endpoint}: tentative batch {start_idx + 1}-{end_idx}.")
                 inserted, row_errors = MrvTeraka._insert_rows_with_diagnostics(
@@ -2892,16 +2948,18 @@ class MrvTeraka:
                     results,
                     MIN_DIAGNOSTIC_BATCH_SIZE,
                     error_state,
-                    REPEATED_ERROR_LIMIT,
+                    repeated_error_limit,
                 )
                 migrated_count += inserted
                 layer_errors += row_errors
                 errors_count += row_errors
 
             if layer_errors:
+                unconfirmed = error_state.get('_unconfirmed_rows', 0)
                 results.append(
-                    f"⚠️ {layer_name} -> {endpoint}: {migrated_count}/{len(data)} ligne(s) migrée(s), "
-                    f"{layer_errors} erreur(s) de données."
+                    f"⚠️ {layer_name} -> {endpoint}: {migrated_count}/{len(data)} ligne(s) confirmée(s) migrée(s), "
+                    f"{layer_errors - unconfirmed} ligne(s) non publiée(s), "
+                    f"{unconfirmed} ligne(s) au résultat non confirmé."
                 )
             else:
                 results.append(f"✅ {layer_name} -> {endpoint}: {migrated_count} ligne(s) migrée(s).")
@@ -3115,7 +3173,6 @@ class MrvTeraka:
                 db_data = [] if self.is_empty_filter(filters) else self.postgrest.select(
                     endpoint_value,
                     filters=filters,
-                    page_size=5000,
                     show_error_ui=False
                 )
                 if db_data:
@@ -3236,7 +3293,6 @@ class MrvTeraka:
                         endpoint_value,
                         select="id",
                         filters=filters,
-                        page_size=5000,
                         show_error_ui=False
                     )
                 )

@@ -3,12 +3,19 @@
 import ast
 import importlib.util
 from pathlib import Path
+import sys
+from types import ModuleType
 import unittest
 from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('connection_client', ROOT / 'postgrest_client.py')
+package = ModuleType('_connection_test_plugin')
+package.__path__ = [str(ROOT)]
+sys.modules[package.__name__] = package
+spec = importlib.util.spec_from_file_location(
+    '_connection_test_plugin.postgrest_client', ROOT / 'postgrest_client.py',
+)
 client_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(client_module)
 

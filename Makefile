@@ -44,11 +44,11 @@ PLUGINNAME = mrv_teraka
 
 PY_FILES = \
 	__init__.py \
-	mrv_teraka.py mrv_teraka_dockwidget.py
+	mrv_teraka.py mrv_teraka_dockwidget.py plugin_config.py
 
 UI_FILES = mrv_teraka_dockwidget_base.ui
 
-EXTRAS = metadata.txt icon.png
+EXTRAS = metadata.txt icon.png config.ini
 
 EXTRA_DIRS =
 

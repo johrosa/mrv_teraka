@@ -101,6 +101,8 @@ def normalize_layer_mapping(layer_name: str, mapping) -> Dict[str, str]:
             normalized['columns'] = columns
         if isinstance(mapping.get('field_map'), dict):
             normalized['field_map'] = mapping['field_map']
+        if isinstance(mapping.get('conflict_field'), str) and mapping['conflict_field'].strip():
+            normalized['conflict_field'] = mapping['conflict_field'].strip()
         return normalized
 
     return {
